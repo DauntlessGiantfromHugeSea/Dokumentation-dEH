@@ -1161,6 +1161,15 @@ def patient_sensitive_full(row: sqlite3.Row) -> dict:
     }
 
 
+def list_admin_users_with_pin(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Admin-User, die einen PIN gesetzt haben — für Dropdowns in Unlock-UI."""
+    return conn.execute(
+        "SELECT id, username, full_name FROM users "
+        "WHERE is_admin = 1 AND admin_pin_hash IS NOT NULL "
+        "ORDER BY full_name COLLATE NOCASE, username COLLATE NOCASE"
+    ).fetchall()
+
+
 def set_admin_pin(conn: sqlite3.Connection, user_id: int,
                   pin: Optional[str]) -> None:
     """Hasht PIN (Werkzeug). pin=None löscht die PIN."""

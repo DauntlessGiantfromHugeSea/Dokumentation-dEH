@@ -66,14 +66,133 @@
       {{ kv("Stammnummer", protocol.patient_stammnummer) }}
     {% endif %}
   </div>
-  {% if d.get("strasse") or d.get("plz") or d.get("stadt") or d.get("telefon") or d.get("krankenkasse") %}
-  <div class="protocol-meta">
-    {{ kv("Straße", d.get("strasse")) }}
-    {{ kv("PLZ", d.get("plz")) }}
-    {{ kv("Ort", d.get("stadt")) }}
-    {{ kv("Telefon", d.get("telefon")) }}
-    {{ kv("Krankenkasse", d.get("krankenkasse")) }}
-  </div>
+  {% set has_contact = d.get("strasse") or d.get("plz") or d.get("stadt") or d.get("telefon") or d.get("krankenkasse") %}
+  {% if has_contact and current_user.is_admin %}
+    <div class="protocol-meta">
+      {{ kv("Straße", d.get("strasse")) }}
+      {{ kv("PLZ", d.get("plz")) }}
+      {{ kv("Ort", d.get("stadt")) }}
+      {{ kv("Telefon", d.get("telefon")) }}
+      {{ kv("Krankenkasse", d.get("krankenkasse")) }}
+    </div>
+  {% elif has_contact %}
+    <div id="contactLockedZone" class="unlock-zone" style="margin-top: 12px;">
+      <div class="protocol-meta">
+        <div class="kv">
+          <div class="label">Anschrift &amp; Kontakt</div>
+          <div class="value">
+            <span class="badge muted-badge">vertraulich · Admin-PIN zum Entschlüsseln</span>
+          </div>
+        </div>
+      </div>
+      <p class="muted" style="font-size: 0.85rem; margin: 6px 0 8px;">
+        Adresse, Krankenkasse und Telefonnummer dürfen nur von Admins
+        eingesehen werden — oder per Admin-PIN für eine Sitzung freigegeben.
+      </p>
+      <button class="btn small" type="button" id="contactUnlockBtn">
+        Daten entschlüsseln (Admin-PIN)
+      </button>
+      <form id="contactUnlockForm" class="card stack"
+            style="display:none; margin-top: 10px; padding: 14px;">
+        <div class="row">
+          <label class="field">
+            Admin
+            <select id="contactAdminSel" required></select>
+          </label>
+          <label class="field">
+            Admin-PIN
+            <input id="contactPin" type="password" inputmode="numeric"
+                   autocomplete="off" required>
+          </label>
+        </div>
+        <div class="btn-row">
+          <button class="btn" type="submit">Freigeben</button>
+          <button class="btn secondary" type="button" id="contactCancel">Abbrechen</button>
+        </div>
+        <p id="contactErr" class="flash error" style="display:none; margin: 0;"></p>
+      </form>
+      <div id="contactResult" style="display:none; margin-top: 12px;"></div>
+    </div>
+    <script>
+    (function () {
+      const btn = document.getElementById('contactUnlockBtn');
+      const form = document.getElementById('contactUnlockForm');
+      const sel = document.getElementById('contactAdminSel');
+      const cancel = document.getElementById('contactCancel');
+      const errEl = document.getElementById('contactErr');
+      const resultEl = document.getElementById('contactResult');
+      const pinEl = document.getElementById('contactPin');
+      const escapeHtml = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+        c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+      async function loadAdmins() {
+        try {
+          const res = await fetch('/api/admin-list', { credentials: 'same-origin' });
+          const data = await res.json();
+          if (!data.admins || !data.admins.length) {
+            sel.innerHTML = '<option value="">— kein Admin mit PIN —</option>';
+            return;
+          }
+          sel.innerHTML = data.admins.map(
+            a => `<option value="${escapeHtml(a.username)}">${escapeHtml(a.label)}</option>`
+          ).join('');
+        } catch (_) {
+          sel.innerHTML = '<option value="">— Fehler beim Laden —</option>';
+        }
+      }
+      btn.addEventListener('click', async () => {
+        await loadAdmins();
+        form.style.display = 'block';
+        btn.style.display = 'none';
+        setTimeout(() => pinEl.focus(), 50);
+      });
+      cancel.addEventListener('click', () => {
+        form.style.display = 'none';
+        btn.style.display = 'inline-block';
+        errEl.style.display = 'none';
+        pinEl.value = '';
+      });
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errEl.style.display = 'none';
+        try {
+          const res = await fetch("{{ url_for('api_central_reveal_contact', pid=protocol.id) }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              admin_username: sel.value,
+              admin_pin: pinEl.value.trim(),
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            errEl.textContent = data.error || 'Freigabe fehlgeschlagen.';
+            errEl.style.display = 'block';
+            pinEl.value = '';
+            return;
+          }
+          form.style.display = 'none';
+          const c = data.contact || {};
+          let html = '<div class="card-header" style="background:#1f6b3a;">' +
+            'Freigegeben durch ' + escapeHtml(data.approved_by) +
+            ' · ' + new Date().toLocaleString('de-DE') + '</div>';
+          html += '<div class="protocol-meta" style="margin-top: 12px;">' +
+            (c.strasse ? `<div class="kv"><div class="label">Straße</div><div class="value">${escapeHtml(c.strasse)}</div></div>` : '') +
+            (c.plz ? `<div class="kv"><div class="label">PLZ</div><div class="value">${escapeHtml(c.plz)}</div></div>` : '') +
+            (c.stadt ? `<div class="kv"><div class="label">Ort</div><div class="value">${escapeHtml(c.stadt)}</div></div>` : '') +
+            (c.telefon ? `<div class="kv"><div class="label">Telefon</div><div class="value">${escapeHtml(c.telefon)}</div></div>` : '') +
+            (c.krankenkasse ? `<div class="kv"><div class="label">Krankenkasse</div><div class="value">${escapeHtml(c.krankenkasse)}</div></div>` : '') +
+            '</div>';
+          resultEl.innerHTML = '<div class="card" style="border-left: 4px solid #1f6b3a;">' + html + '</div>';
+          resultEl.style.display = 'block';
+        } catch (_) {
+          errEl.textContent = 'Netzwerkfehler.';
+          errEl.style.display = 'block';
+        }
+      });
+    })();
+    </script>
   {% endif %}
   {% if protocol.patient_id %}
     <p class="muted" style="margin: 8px 0 0; font-size: 0.85rem;">

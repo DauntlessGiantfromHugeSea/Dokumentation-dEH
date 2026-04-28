@@ -283,7 +283,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
 
     @app.route("/protocols/<int:protocol_id>")
-    @decentral_view_required
+    @login_required
     def protocol_detail(protocol_id: int):
         db = models.get_db()
         protocol = models.get_protocol(db, protocol_id)
@@ -329,7 +329,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         return redirect(url_for("index"))
 
     @app.route("/protocols/<int:protocol_id>/comments", methods=["POST"])
-    @decentral_view_required
+    @login_required
     def protocol_add_comment(protocol_id: int):
         db = models.get_db()
         if not models.get_protocol(db, protocol_id):
@@ -342,7 +342,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         return redirect(url_for("protocol_detail", protocol_id=protocol_id))
 
     @app.route("/protocols/<int:protocol_id>/pdf")
-    @decentral_view_required
+    @login_required
     def protocol_pdf(protocol_id: int):
         db = models.get_db()
         protocol = models.get_protocol(db, protocol_id)
@@ -367,7 +367,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                                format_dt=models.format_dt)
 
     @app.route("/patients/<int:patient_id>")
-    @decentral_view_required
+    @login_required
     def patient_detail(patient_id: int):
         db = models.get_db()
         patient = models.get_patient(db, patient_id)
@@ -728,15 +728,14 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             abort(404)
-        if (current_user.is_zentral_only
-                and rec.get("created_by") != current_user.id):
-            abort(403)
+        # Lesen ist für alle eingeloggten User erlaubt (auch zentral_writer
+        # darf Vorbehandlungen sehen). Schreiben/Löschen prüft weiter unten.
         comments = models.list_central_comments(db, pid)
         # Geschwister-Berichte (beide Typen) für diesen Patienten anzeigen,
         # sofern wir eine Patienten-Verknüpfung haben.
         decentral_siblings = []
         central_siblings = []
-        if rec.get("patient_id") and not current_user.is_zentral_only:
+        if rec.get("patient_id"):
             decentral_siblings = models.list_patient_protocols(
                 db, rec["patient_id"]
             )
@@ -940,10 +939,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     def api_central_patient_history():
         """Liste aller Berichte (dezentral + zentral) eines Patienten —
-        Datenquelle für das Vorbehandlungs-Popup. Für zentral_writer
-        gesperrt (sie sehen nur Anzahlen, keinen Inhalt)."""
-        if current_user.is_zentral_only:
-            abort(403)
+        Datenquelle für die Vorbehandlungs-Sidebar. Für alle eingeloggten
+        User erlaubt; sensitive Patient-Felder sind gestrippt (für
+        Admin-Kram gibt es /api/patient/<id>/sensitive)."""
         db = models.get_db()
         try:
             pid = int(request.args.get("patient_id") or 0)
@@ -955,7 +953,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not patient:
             return {"error": "not found"}, 404
         return {
-            "patient": dict(patient),
+            "patient": {
+                "id": patient["id"],
+                "name": patient["name"],
+                "geburtsdatum": patient["geburtsdatum"],
+                "stammnummer": patient["stammnummer"],
+            },
             "history": models.patient_history(db, pid),
         }
 
@@ -1192,6 +1195,60 @@ def create_app(test_config: dict | None = None) -> Flask:
         row = models.get_user_by_id(db, current_user.id)
         return render_template("account_pin.html",
                                has_pin=bool(row["admin_pin_hash"]))
+
+    @app.route("/api/central/protokolle/<int:pid>/reveal-contact",
+               methods=["POST"])
+    @login_required
+    def api_central_reveal_contact(pid: int):
+        """Gibt Adresse + Krankenkasse + Telefon eines zentralen Berichts
+        an Nicht-Admins frei, wenn ein Admin sich per PIN verifiziert."""
+        db = models.get_db()
+        rec = models.get_central_protocol(db, pid)
+        if not rec:
+            return {"error": "not found"}, 404
+        body = request.get_json(silent=True) or {}
+        admin_username = (body.get("admin_username") or "").strip()
+        admin_pin = (body.get("admin_pin") or "").strip()
+        if not admin_username or not admin_pin:
+            return {"error": "Admin und PIN erforderlich."}, 400
+        approver = models.verify_admin_pin(db, admin_username, admin_pin)
+        if not approver:
+            return {"error": "Admin oder PIN falsch — oder PIN nicht gesetzt."}, 401
+        # Audit als zusätzliche Notfall-Freigabe protokollieren
+        if rec.get("patient_id"):
+            models.log_emergency_unlock(db, rec["patient_id"],
+                                        requested_by=current_user.id,
+                                        approved_by=approver["id"])
+            db.commit()
+        d = rec.get("data") or {}
+        def _scalar(v):
+            if isinstance(v, list):
+                return v[0] if v else ""
+            return v or ""
+        return {
+            "contact": {
+                "strasse": _scalar(d.get("strasse")),
+                "plz": _scalar(d.get("plz")),
+                "stadt": _scalar(d.get("stadt")),
+                "telefon": _scalar(d.get("telefon")),
+                "krankenkasse": _scalar(d.get("krankenkasse")),
+            },
+            "approved_by": approver["full_name"] or approver["username"],
+        }
+
+    # ----- Admin-Liste für Unlock-Dropdowns -----
+
+    @app.route("/api/admin-list")
+    @login_required
+    def api_admin_list():
+        """Liefert Admins mit gesetztem PIN — für die Auswahl beim
+        Entschlüsseln-Dialog."""
+        rows = models.list_admin_users_with_pin(models.get_db())
+        return {"admins": [
+            {"username": r["username"],
+             "label": r["full_name"] or r["username"]}
+            for r in rows
+        ]}
 
     # ----- Sensitive Patient-Daten (Notfallkontakt + Med) -----
 

@@ -189,6 +189,37 @@
     font-weight: 600;
   }
   .vh-unlock-btn:hover { background: #ffe89c; }
+  .vh-unlock-inline {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .vh-unlock-inline select,
+  .vh-unlock-inline input {
+    font: inherit;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #fff;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .vh-unlock-inline button[type="submit"] {
+    background: var(--primary, #d32f2f);
+    color: #fff;
+    border: 0;
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+  }
+  .vh-unlock-err {
+    color: #b3261e;
+    font-size: 0.8rem;
+    margin: 0;
+  }
   .vh-unlocked-meta {
     font-size: 0.75rem;
     color: var(--muted);
@@ -1474,21 +1505,15 @@ const IS_ZENTRAL_ONLY = {{ 'true' if current_user.is_zentral_only else 'false' }
     `;
     setBody(html);
     if (m.patient_id) {
-      // Notfallkontakt + Indikatoren immer zeigen (auch zentral_writer);
-      // /api/patient/<id>/sensitive maskiert für Nicht-Admins automatisch.
+      // Notfallkontakt + Indikatoren immer zeigen (Admin sieht direkt,
+      // Voll-User + zentral_writer sehen Indikatoren + Entschlüsseln).
       renderEmergencyPanel(m.patient_id);
-      // Behandlungs-Historie nur für Voll-User (zentral_writer darf
-      // andere Berichte nicht einsehen).
+      // Behandlungs-Historie für alle eingeloggten User.
       const histPane = document.getElementById('vh-history-pane');
-      if (!IS_ZENTRAL_ONLY) {
-        if (histPane) histPane.innerHTML =
-          '<p class="muted" style="font-size:0.85rem;">Lade Vorbehandlungen …</p>';
-        const history = await fetchHistory(m.patient_id);
-        if (histPane) histPane.innerHTML = renderHistoryRows(history);
-      } else if (histPane) {
-        histPane.innerHTML =
-          '<p class="muted" style="font-size:0.78rem;margin-top:10px;">Behandlungs-Historie eingeschränkt — nur Anzahlen oben.</p>';
-      }
+      if (histPane) histPane.innerHTML =
+        '<p class="muted" style="font-size:0.85rem;">Lade Vorbehandlungen …</p>';
+      const history = await fetchHistory(m.patient_id);
+      if (histPane) histPane.innerHTML = renderHistoryRows(history);
     }
   }
 
@@ -1568,30 +1593,73 @@ const IS_ZENTRAL_ONLY = {{ 'true' if current_user.is_zentral_only else 'false' }
     return html;
   }
 
-  // Click handler in sidebarBody catches "unlock" via existing delegate
-  // (added to existing handler below).
+  // Inline-Mini-Form direkt im Notfall-Panel: Admin auswählen + PIN.
   async function unlockEmergency(patientId) {
-    const adminUsername = prompt('Admin-Username:');
-    if (!adminUsername) return;
-    const adminPin = prompt('Admin-PIN:');
-    if (!adminPin) return;
+    const pane = document.getElementById('vh-emergency-pane');
+    if (!pane) return;
+    // Render form into the pane (replacing the unlock button)
+    pane.querySelectorAll('.vh-unlock-btn').forEach(b => b.remove());
+    const formId = 'vh-unlock-form-' + patientId;
+    const errId = 'vh-unlock-err-' + patientId;
+    const selId = 'vh-unlock-sel-' + patientId;
+    const pinId = 'vh-unlock-pin-' + patientId;
+    const formHtml = `
+      <form id="${formId}" class="vh-unlock-inline">
+        <select id="${selId}" required>
+          <option value="">— Admin wählen —</option>
+        </select>
+        <input id="${pinId}" type="password" inputmode="numeric"
+               autocomplete="off" required placeholder="PIN">
+        <button type="submit">Freigeben</button>
+        <p id="${errId}" class="vh-unlock-err" style="display:none;"></p>
+      </form>`;
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = formHtml;
+    pane.querySelector('.vh-emergency').appendChild(wrapper.firstElementChild);
+    const sel = document.getElementById(selId);
+    const pinEl = document.getElementById(pinId);
+    const errEl = document.getElementById(errId);
+    // Load admin list
     try {
-      const res = await fetch(`/api/patient/${patientId}/unlock-emergency`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ admin_username: adminUsername, admin_pin: adminPin }),
-      });
-      const payload = await res.json();
-      if (!res.ok) {
-        alert(payload.error || 'Freigabe fehlgeschlagen.');
-        return;
+      const res = await fetch('/api/admin-list', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.admins && data.admins.length) {
+        sel.innerHTML = data.admins.map(
+          a => `<option value="${escapeHtml(a.username)}">${escapeHtml(a.label)}</option>`
+        ).join('');
+        pinEl.focus();
+      } else {
+        sel.innerHTML = '<option value="">— kein Admin mit PIN —</option>';
       }
-      const pane = document.getElementById('vh-emergency-pane');
-      if (pane) pane.innerHTML = renderEmergencyHtml(patientId, payload, true);
     } catch (_) {
-      alert('Netzwerkfehler — Freigabe fehlgeschlagen.');
+      sel.innerHTML = '<option value="">— Fehler beim Laden —</option>';
     }
+    document.getElementById(formId).addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errEl.style.display = 'none';
+      try {
+        const res = await fetch(`/api/patient/${patientId}/unlock-emergency`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            admin_username: sel.value,
+            admin_pin: pinEl.value.trim(),
+          }),
+        });
+        const payload = await res.json();
+        if (!res.ok) {
+          errEl.textContent = payload.error || 'Freigabe fehlgeschlagen.';
+          errEl.style.display = 'block';
+          pinEl.value = '';
+          return;
+        }
+        pane.innerHTML = renderEmergencyHtml(patientId, payload, true);
+      } catch (_) {
+        errEl.textContent = 'Netzwerkfehler.';
+        errEl.style.display = 'block';
+      }
+    });
   }
 
   function renderMulti(matches) {

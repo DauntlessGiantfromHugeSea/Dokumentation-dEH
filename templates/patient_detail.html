@@ -107,8 +107,8 @@
       <form id="unlockForm" class="card stack" style="display:none; margin-top: 10px; padding: 14px;">
         <div class="row">
           <label class="field">
-            Admin-Benutzername
-            <input id="unlockUser" autocomplete="off" required>
+            Admin
+            <select id="unlockUser" required></select>
           </label>
           <label class="field">
             Admin-PIN
@@ -140,16 +140,32 @@
           c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       }
 
-      btn.addEventListener('click', () => {
+      async function loadAdmins() {
+        try {
+          const res = await fetch('/api/admin-list', { credentials: 'same-origin' });
+          const data = await res.json();
+          if (!data.admins || !data.admins.length) {
+            userEl.innerHTML = '<option value="">— kein Admin mit PIN —</option>';
+            return;
+          }
+          userEl.innerHTML = data.admins.map(
+            a => `<option value="${escapeHtml(a.username)}">${escapeHtml(a.label)}</option>`
+          ).join('');
+        } catch (_) {
+          userEl.innerHTML = '<option value="">— Fehler beim Laden —</option>';
+        }
+      }
+      btn.addEventListener('click', async () => {
+        await loadAdmins();
         form.style.display = 'block';
         btn.style.display = 'none';
-        setTimeout(() => userEl.focus(), 50);
+        setTimeout(() => pinEl.focus(), 50);
       });
       cancel.addEventListener('click', () => {
         form.style.display = 'none';
         btn.style.display = 'inline-block';
         errEl.style.display = 'none';
-        userEl.value = ''; pinEl.value = '';
+        pinEl.value = '';
       });
 
       form.addEventListener('submit', async (e) => {
@@ -161,7 +177,7 @@
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
             body: JSON.stringify({
-              admin_username: userEl.value.trim(),
+              admin_username: userEl.value,
               admin_pin: pinEl.value.trim(),
             }),
           });
