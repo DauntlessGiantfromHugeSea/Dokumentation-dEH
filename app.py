@@ -391,6 +391,95 @@ def create_app(test_config: dict | None = None) -> Flask:
                                sensitive_fields=set(models.SENSITIVE_PATIENT_FIELDS),
                                format_dt=models.format_dt)
 
+    @app.route("/patients/<int:patient_id>/akte")
+    @decentral_view_required
+    def patient_akte(patient_id: int):
+        """Vorschauseite für den vollständigen Akten-Export.
+        Zeigt, was im PDF landet, plus den Download-Button.
+        Sensible Daten erscheinen nur für Admins; Voll-User sehen
+        gemaskt und können den Export trotzdem auslösen — die PDF
+        enthält dann nur die nicht-vertraulichen Teile."""
+        db = models.get_db()
+        patient = models.get_patient(db, patient_id)
+        if not patient:
+            abort(404)
+        decentral = models.list_patient_protocols(db, patient_id)
+        central = models.list_central_protocols(db, patient_id=patient_id)
+        change_log = models.list_patient_changes(db, patient_id)
+        unlocks = db.execute(
+            """
+            SELECT eu.*, u1.username AS req_user, u1.full_name AS req_full,
+                   u2.username AS app_user, u2.full_name AS app_full
+            FROM emergency_unlocks eu
+            LEFT JOIN users u1 ON u1.id = eu.requested_by
+            LEFT JOIN users u2 ON u2.id = eu.approved_by
+            WHERE eu.patient_id = ?
+            ORDER BY eu.unlocked_at DESC, eu.id DESC
+            """,
+            (patient_id,),
+        ).fetchall()
+        return render_template(
+            "patient_akte.html",
+            patient=patient,
+            decentral=decentral,
+            central=central,
+            change_log=change_log,
+            unlocks=unlocks,
+            sensitive_visible=current_user.is_admin,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/patients/<int:patient_id>/akte.pdf")
+    @decentral_view_required
+    def patient_akte_pdf(patient_id: int):
+        db = models.get_db()
+        patient = models.get_patient(db, patient_id)
+        if not patient:
+            abort(404)
+        # Sammle alles ein
+        decentral = []
+        for p in models.list_patient_protocols(db, patient_id):
+            full = models.get_protocol(db, p["id"])
+            full_dict = dict(full)
+            full_dict["comments"] = [dict(c) for c in models.list_comments(db, p["id"])]
+            decentral.append(full_dict)
+        central = []
+        for c in models.list_central_protocols(db, patient_id=patient_id):
+            rec = models.get_central_protocol(db, c["id"])
+            rec["comments"] = [dict(cm) for cm in
+                               models.list_central_comments(db, c["id"])]
+            central.append(rec)
+        change_log = [dict(r) for r in models.list_patient_changes(db, patient_id)]
+        # Sensitive Daten landen nur dann im PDF, wenn ein Admin den Export auslöst
+        include_sensitive = current_user.is_admin
+        from akte_export import render_patient_akte_pdf
+        pdf_bytes = render_patient_akte_pdf(
+            patient=dict(patient),
+            decentral=decentral,
+            central=central,
+            change_log=change_log,
+            include_sensitive=include_sensitive,
+            exporter_label=(current_user.full_name or current_user.username),
+            field_label=models.PATIENT_FIELD_LABELS,
+            sensitive_fields=set(models.SENSITIVE_PATIENT_FIELDS),
+        )
+        # Audit-Eintrag, dass exportiert wurde — als spezieller Pseudo-Feldname
+        db.execute(
+            "INSERT INTO patient_changes "
+            "(patient_id, changed_by, field_name, old_value, new_value) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (patient_id, current_user.id, "__akte_export__", None,
+             "Admin-Sicht" if include_sensitive else "Standard-Sicht"),
+        )
+        db.commit()
+        safe_name = (patient["name"] or "Patient").replace(" ", "_")
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"Akte_{safe_name}.pdf",
+        )
+
     @app.route("/patients/<int:patient_id>/edit", methods=["GET", "POST"])
     @decentral_view_required
     def patient_edit(patient_id: int):

@@ -1043,6 +1043,7 @@ PATIENT_FIELD_LABELS = {
     "has_medications": "Medikamente (ja/nein)",
     "medications_text": "Medikamente (Details)",
     "extras_notes": "Sonstige Hinweise",
+    "__akte_export__": "Akten-PDF exportiert",
 }
 
 SENSITIVE_PATIENT_FIELDS = (

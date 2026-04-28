@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Akte exportieren — {{ patient.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Akten-Export</h1>
+    <p class="tagline">
+      Vollständiger Auszug für Rettungsdienst, Eltern oder Ärzte.
+    </p>
+  </div>
+  <div class="btn-row">
+    <a class="btn"
+       href="{{ url_for('patient_akte_pdf', patient_id=patient.id) }}">
+      Akte als PDF herunterladen
+    </a>
+    <a class="btn secondary"
+       href="{{ url_for('patient_detail', patient_id=patient.id) }}">
+      Zurück
+    </a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    Was im PDF enthalten sein wird
+    {% if sensitive_visible %}
+      <span class="card-header-badge">Admin-Export · vertrauliche Daten enthalten</span>
+    {% else %}
+      <span class="card-header-badge muted-badge">Standard-Export · ohne vertrauliche Daten</span>
+    {% endif %}
+  </div>
+
+  <ul style="margin: 0; padding-left: 22px; line-height: 1.8;">
+    <li><strong>Stammdaten</strong> — Name, Geburtsdatum, Stammnummer</li>
+    <li>
+      <strong>Notfallkontakt + Allergien + Medikamente</strong> —
+      {% if sensitive_visible %}
+        <span class="badge totp-on">vollständig</span>
+        Inhalte werden in dein PDF aufgenommen, weil du als
+        <strong>Administrator</strong> exportierst.
+      {% else %}
+        <span class="badge muted-badge">nur Indikatoren (ja/nein)</span>
+        Details bleiben Admins vorbehalten.
+      {% endif %}
+    </li>
+    <li>
+      <strong>{{ decentral|length }} dezentrale Berichte</strong> mit allen
+      Feldern (Hergang, Verletzung, Maßnahmen, Material, …) und allen
+      Kommentaren
+    </li>
+    <li>
+      <strong>{{ central|length }} zentrale Notfallprotokolle</strong> —
+      Stammdaten, Einsatz, Notfall, Erstbefund, Vitalwerte (Erstbefund +
+      Übergabe), Diagnose, Maßnahmen, Verlauf, Übergabe, Abschluss + alle
+      Kommentare
+    </li>
+    <li><strong>Änderungs-Historie</strong> aller Stammdaten ({{ change_log|length }} Einträge)</li>
+    <li><strong>Footer</strong> auf jeder Seite mit Exporter-Name, Erstellungs-Zeitstempel und Sicht-Modus</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-header">Patient — Stammdaten</div>
+  <div class="protocol-meta">
+    <div class="kv"><div class="label">Name</div>
+      <div class="value">{{ patient.name }}</div></div>
+    <div class="kv"><div class="label">Geburtsdatum</div>
+      <div class="value">{{ format_dt(patient.geburtsdatum) }}</div></div>
+    <div class="kv"><div class="label">Stammnummer</div>
+      <div class="value">{{ patient.stammnummer or '—' }}</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Behandlungs-Historie ({{ decentral|length + central|length }})</div>
+  {% if decentral or central %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Bericht</th>
+          <th>Typ</th>
+          <th>Datum</th>
+          <th>Eingetragen von</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in decentral %}
+        <tr>
+          <td class="id">{{ p.laufende_nr or '#dEH' ~ p.id }}</td>
+          <td><span class="badge type-d">dEH</span></td>
+          <td>{{ format_dt(p.eh_datum_uhrzeit) or format_dt(p.created_at) }}</td>
+          <td>{{ p.author_full_name or p.author_username or '—' }}</td>
+        </tr>
+        {% endfor %}
+        {% for c in central %}
+        <tr>
+          <td class="id">{{ c.laufende_nr or '#zEH' ~ c.id }}</td>
+          <td><span class="badge type-z">zEH</span></td>
+          <td>{{ format_dt(c.datum) or format_dt(c.created_at) }}</td>
+          <td>—</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Keine Berichte zu dieser Person.</p>
+  {% endif %}
+</div>
+
+{% if unlocks %}
+<div class="card">
+  <div class="card-header">Notfall-Datenfreigaben (Audit)</div>
+  <table class="data">
+    <thead>
+      <tr><th>Wann</th><th>Angefordert von</th><th>Freigegeben durch</th></tr>
+    </thead>
+    <tbody>
+      {% for u in unlocks %}
+      <tr>
+        <td>{{ format_dt(u.unlocked_at) }}</td>
+        <td>{{ u.req_full or u.req_user or '—' }}</td>
+        <td>{{ u.app_full or u.app_user or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<p class="muted" style="font-size: 0.85rem; margin-top: 16px;">
+  Beim Klick auf <em>Akte als PDF herunterladen</em> wird der Vorgang
+  inkl. Sicht-Modus in der Änderungs-Historie protokolliert.
+</p>
+{% endblock %}

@@ -559,8 +559,39 @@
 
       <form id="protocol-form" autocomplete="off">
 
-        <!-- 1. Einsatz -->
+        <!-- 1. Patient -->
         <section class="page" data-page="1">
+          <h2>Patient</h2>
+
+          <div class="section">
+            <div class="label">Person</div>
+            <div class="grid cols-2">
+              <div class="field"><label for="vorname">Vorname</label><input type="text" id="vorname" name="vorname" autofocus /></div>
+              <div class="field"><label for="nachname">Nachname</label><input type="text" id="nachname" name="nachname" /></div>
+              <div class="field"><label for="geburtsdatum">Geburtsdatum</label><input type="date" id="geburtsdatum" name="geburtsdatum" /></div>
+              <div class="field"><label for="geschlecht">Geschlecht</label>
+                <select id="geschlecht" name="geschlecht">
+                  <option value="">–</option><option>männlich</option><option>weiblich</option>
+                  <option>divers</option><option>unbekannt</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="label">Anschrift &amp; Kontakt</div>
+            <div class="grid cols-2">
+              <div class="field full"><label for="strasse">Straße</label><input type="text" id="strasse" name="strasse" /></div>
+              <div class="field"><label for="plz">PLZ</label><input type="text" id="plz" name="plz" inputmode="numeric" /></div>
+              <div class="field"><label for="stadt">Stadt</label><input type="text" id="stadt" name="stadt" /></div>
+              <div class="field"><label for="krankenkasse">Krankenkasse</label><input type="text" id="krankenkasse" name="krankenkasse" /></div>
+              <div class="field"><label for="telefon">Telefon</label><input type="tel" id="telefon" name="telefon" /></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. Einsatz -->
+        <section class="page" data-page="2">
           <h2>Einsatz</h2>
 
           <div class="section">
@@ -598,8 +629,8 @@
           </div>
         </section>
 
-        <!-- 2. Notfall -->
-        <section class="page" data-page="2">
+        <!-- 3. Notfall -->
+        <section class="page" data-page="3">
           <h2>Notfall</h2>
 
           <div class="section">
@@ -621,8 +652,8 @@
           </div>
         </section>
 
-        <!-- 3. Erstbefund (ABCDE) -->
-        <section class="page" data-page="3">
+        <!-- 4. Erstbefund (ABCDE) -->
+        <section class="page" data-page="4">
           <h2>Erstbefund</h2>
 
           <div class="pair-grid">
@@ -685,8 +716,8 @@
           </div>
         </section>
 
-        <!-- 4. Vitalwerte 1 -->
-        <section class="page" data-page="4">
+        <!-- 5. Vitalwerte 1 -->
+        <section class="page" data-page="5">
           <h2>Vitalwerte (Erstbefund)</h2>
           <div class="section">
             <div class="label">Messung <span class="hint">Erstbefund</span></div>
@@ -711,8 +742,8 @@
           </div>
         </section>
 
-        <!-- 5. Maßnahmen + Diagnose -->
-        <section class="page" data-page="5">
+        <!-- 6. Maßnahmen + Diagnose -->
+        <section class="page" data-page="6">
           <h2>Maßnahmen &amp; Diagnose</h2>
 
           <div class="section">
@@ -729,8 +760,8 @@
           </div>
         </section>
 
-        <!-- 6. Verlauf -->
-        <section class="page" data-page="6">
+        <!-- 7. Verlauf -->
+        <section class="page" data-page="7">
           <h2>Verlauf</h2>
           <div class="section">
             <div class="label">Zeitlicher Verlauf <span class="hint">während Einsatz</span></div>
@@ -738,8 +769,8 @@
           </div>
         </section>
 
-        <!-- 7. Übergabe + Vitalwerte 2 -->
-        <section class="page" data-page="7">
+        <!-- 8. Übergabe + Vitalwerte 2 -->
+        <section class="page" data-page="8">
           <h2>Übergabe</h2>
 
           <div class="section">
@@ -821,35 +852,9 @@
           </div>
         </section>
 
-        <!-- 8. Patient + Abschluss -->
-        <section class="page" data-page="8">
-          <h2>Patient &amp; Abschluss</h2>
-
-          <div class="section">
-            <div class="label">Person</div>
-            <div class="grid cols-2">
-              <div class="field"><label for="vorname">Vorname</label><input type="text" id="vorname" name="vorname" autofocus /></div>
-              <div class="field"><label for="nachname">Nachname</label><input type="text" id="nachname" name="nachname" /></div>
-              <div class="field"><label for="geburtsdatum">Geburtsdatum</label><input type="date" id="geburtsdatum" name="geburtsdatum" /></div>
-              <div class="field"><label for="geschlecht">Geschlecht</label>
-                <select id="geschlecht" name="geschlecht">
-                  <option value="">–</option><option>männlich</option><option>weiblich</option>
-                  <option>divers</option><option>unbekannt</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="label">Anschrift &amp; Kontakt</div>
-            <div class="grid cols-2">
-              <div class="field full"><label for="strasse">Straße</label><input type="text" id="strasse" name="strasse" /></div>
-              <div class="field"><label for="plz">PLZ</label><input type="text" id="plz" name="plz" inputmode="numeric" /></div>
-              <div class="field"><label for="stadt">Stadt</label><input type="text" id="stadt" name="stadt" /></div>
-              <div class="field"><label for="krankenkasse">Krankenkasse</label><input type="text" id="krankenkasse" name="krankenkasse" /></div>
-              <div class="field"><label for="telefon">Telefon</label><input type="tel" id="telefon" name="telefon" /></div>
-            </div>
-          </div>
+        <!-- 9. Abschluss -->
+        <section class="page" data-page="9">
+          <h2>Abschluss</h2>
 
           <div class="section">
             <div class="label">Einsatzbeschreibung</div>
@@ -870,7 +875,7 @@
 
       <div class="nav">
         <button class="btn" id="btn-prev">← Zurück</button>
-        <div class="nav-info"><span id="page-indicator">Seite 1 von 8</span></div>
+        <div class="nav-info"><span id="page-indicator">Seite 1 von 9</span></div>
         <button class="btn primary" id="btn-next">Weiter →</button>
       </div>
     </div>
@@ -881,7 +886,7 @@
 
 <script>
 (() => {
-  const TOTAL_PAGES = 8;
+  const TOTAL_PAGES = 9;
   const SAVE_DEBOUNCE_MS = 600;
   let currentPage = 1;
   let currentId = null;
@@ -889,14 +894,15 @@
   let dirty = false;
 
   const pages = [
-    { num: 1, title: 'Einsatz' },
-    { num: 2, title: 'Notfall' },
-    { num: 3, title: 'Erstbefund' },
-    { num: 4, title: 'Vitalwerte' },
-    { num: 5, title: 'Maßn. & Dx' },
-    { num: 6, title: 'Verlauf' },
-    { num: 7, title: 'Übergabe' },
-    { num: 8, title: 'Patient' },
+    { num: 1, title: 'Patient' },
+    { num: 2, title: 'Einsatz' },
+    { num: 3, title: 'Notfall' },
+    { num: 4, title: 'Erstbefund' },
+    { num: 5, title: 'Vitalwerte' },
+    { num: 6, title: 'Maßn. & Dx' },
+    { num: 7, title: 'Verlauf' },
+    { num: 8, title: 'Übergabe' },
+    { num: 9, title: 'Abschluss' },
   ];
 
   // Daten für dynamische chip-Gruppen

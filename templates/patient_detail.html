@@ -10,6 +10,9 @@
     </p>
   </div>
   <div class="btn-row">
+    <a class="btn small"
+       href="{{ url_for('patient_akte', patient_id=patient.id) }}"
+       title="Vollständigen Akten-Auszug als PDF erzeugen">Akte exportieren</a>
     <a class="btn small secondary"
        href="{{ url_for('patient_edit', patient_id=patient.id) }}">Bearbeiten</a>
     <a class="btn small secondary"
