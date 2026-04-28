@@ -9,6 +9,9 @@ from functools import wraps
 from pathlib import Path
 
 import click
+import io as _io
+import pyotp
+import segno
 from flask import (
     Flask,
     Response,
@@ -18,6 +21,7 @@ from flask import (
     render_template,
     request,
     send_file,
+    session,
     url_for,
 )
 from flask_login import (
@@ -32,6 +36,21 @@ from flask_login import (
 import models
 from pdf_export import render_protocol_pdf
 from pdf_fill import render_pdf as render_central_pdf
+
+
+TOTP_ISSUER = "Erste-Hilfe-Camp"
+
+
+def _qr_svg_for_uri(uri: str) -> str:
+    qr = segno.make(uri, error="m")
+    buf = _io.BytesIO()
+    qr.save(buf, kind="svg", xmldecl=False, scale=5, border=2)
+    return buf.getvalue().decode("utf-8")
+
+
+def _login_landing(user) -> str:
+    """Where a user lands right after a successful (full) login."""
+    return url_for("central_index") if user.is_zentral_only else url_for("index")
 
 
 def admin_required(view):
@@ -109,20 +128,20 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if current_user.is_authenticated:
-            return redirect(url_for("index"))
+            return redirect(_login_landing(current_user))
         if request.method == "POST":
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
             row = models.get_user_by_username(models.get_db(), username)
             if row and models.verify_password(row, password):
-                user = User(row)
-                login_user(user)
-                # zentral_writer lands on the central SPA, not the dezentral list.
-                default = (
-                    url_for("central_index") if user.is_zentral_only
-                    else url_for("index")
-                )
-                return redirect(request.args.get("next") or default)
+                # Step 1 done. Don't login_user yet — require TOTP first.
+                session.clear()
+                session["pending_user_id"] = row["id"]
+                if request.args.get("next"):
+                    session["pending_next"] = request.args["next"]
+                if not row["totp_secret"] or not row["totp_confirmed"]:
+                    return redirect(url_for("setup_totp"))
+                return redirect(url_for("two_factor"))
             flash("Benutzername oder Passwort falsch.", "error")
         return render_template("login.html")
 
@@ -130,7 +149,77 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     def logout():
         logout_user()
+        session.clear()
         return redirect(url_for("login"))
+
+    @app.route("/setup-totp", methods=["GET", "POST"])
+    def setup_totp():
+        user_id = session.get("pending_user_id")
+        if not user_id:
+            return redirect(url_for("login"))
+        db = models.get_db()
+        user_row = models.get_user_by_id(db, user_id)
+        if not user_row:
+            session.clear()
+            return redirect(url_for("login"))
+
+        # Generate a fresh secret if none yet, or if the previous one was
+        # confirmed (shouldn't happen for an unconfirmed user, but defensive).
+        secret = user_row["totp_secret"]
+        if not secret or user_row["totp_confirmed"]:
+            secret = pyotp.random_base32()
+            models.set_totp_secret(db, user_id, secret, confirmed=False)
+            db.commit()
+
+        if request.method == "POST":
+            code = (request.form.get("code") or "").strip().replace(" ", "")
+            if pyotp.TOTP(secret).verify(code, valid_window=1):
+                models.set_totp_confirmed(db, user_id, True)
+                db.commit()
+                # Complete login.
+                next_url = session.pop("pending_next", None)
+                session.pop("pending_user_id", None)
+                user = User(models.get_user_by_id(db, user_id))
+                login_user(user)
+                flash("2FA erfolgreich eingerichtet.", "success")
+                return redirect(next_url or _login_landing(user))
+            flash("Code falsch — bitte noch einmal versuchen.", "error")
+
+        uri = pyotp.TOTP(secret).provisioning_uri(
+            name=user_row["username"], issuer_name=TOTP_ISSUER,
+        )
+        return render_template(
+            "setup_totp.html",
+            qr_svg=_qr_svg_for_uri(uri),
+            secret=secret,
+            username=user_row["username"],
+        )
+
+    @app.route("/two-factor", methods=["GET", "POST"])
+    def two_factor():
+        user_id = session.get("pending_user_id")
+        if not user_id:
+            return redirect(url_for("login"))
+        db = models.get_db()
+        user_row = models.get_user_by_id(db, user_id)
+        if (not user_row or not user_row["totp_secret"]
+                or not user_row["totp_confirmed"]):
+            # Nothing to verify against — back to login (or setup).
+            session.clear()
+            return redirect(url_for("login"))
+
+        if request.method == "POST":
+            code = (request.form.get("code") or "").strip().replace(" ", "")
+            if pyotp.TOTP(user_row["totp_secret"]).verify(code, valid_window=1):
+                next_url = session.pop("pending_next", None)
+                session.pop("pending_user_id", None)
+                user = User(user_row)
+                login_user(user)
+                return redirect(next_url or _login_landing(user))
+            flash("Code falsch.", "error")
+
+        return render_template("two_factor.html",
+                               username=user_row["username"])
 
     # ----- Protocols -----
 
@@ -552,6 +641,22 @@ def create_app(test_config: dict | None = None) -> Flask:
         db.commit()
         flash(f"Rolle für '{row['username']}' geändert auf '{role}'.",
               "success")
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/users/<int:user_id>/reset-totp", methods=["POST"])
+    @admin_required
+    def admin_user_reset_totp(user_id: int):
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        models.reset_totp(db, user_id)
+        db.commit()
+        flash(
+            f"2FA für '{row['username']}' zurückgesetzt — User muss bei "
+            f"nächster Anmeldung erneut einen Authenticator einrichten.",
+            "success",
+        )
         return redirect(url_for("admin_users"))
 
     @app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])

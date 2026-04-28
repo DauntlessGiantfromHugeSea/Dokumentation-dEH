@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Bestätigungscode{% endblock %}
+{% block content %}
+<div class="login-wrap card">
+  <h1>Bestätigungscode</h1>
+  <p class="subtitle" style="text-align:center;">
+    Konto <strong>{{ username }}</strong>
+  </p>
+
+  <p class="muted" style="text-align:center; margin: 0 0 14px;">
+    Gib den 6-stelligen Code aus deiner Authenticator-App ein.
+  </p>
+
+  <form method="post" class="stack">
+    <label class="field">
+      Code
+      <input name="code" inputmode="numeric" pattern="\s*\d(?:\s*\d){5}\s*"
+             autocomplete="one-time-code" maxlength="9" required autofocus
+             placeholder="123 456">
+    </label>
+    <button class="btn" type="submit">Anmelden</button>
+    <a class="btn secondary" href="{{ url_for('login') }}">Abbrechen</a>
+  </form>
+
+  <p class="muted" style="margin-top: 14px; font-size: 0.85rem;
+                          text-align: center;">
+    Authenticator-App verloren? Bitte einen Admin um 2FA-Reset.
+  </p>
+</div>
+{% endblock %}

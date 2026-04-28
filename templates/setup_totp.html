@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}2FA einrichten{% endblock %}
+{% block content %}
+<div class="login-wrap card">
+  <h1>2FA einrichten</h1>
+  <p class="subtitle" style="text-align:center;">
+    für Konto <strong>{{ username }}</strong>
+  </p>
+
+  <ol class="totp-steps">
+    <li>Authenticator-App öffnen
+      (<em>Google Authenticator</em>, <em>Microsoft Authenticator</em>,
+      <em>Authy</em>, <em>1Password</em>, <em>Aegis</em>, …)</li>
+    <li>QR-Code scannen — oder Schlüssel manuell eintippen</li>
+    <li>Den 6-stelligen Code unten eingeben</li>
+  </ol>
+
+  <div class="qr-box">
+    {{ qr_svg | safe }}
+  </div>
+
+  <details class="manual-key">
+    <summary>QR funktioniert nicht? Schlüssel manuell eingeben</summary>
+    <p class="muted" style="font-size: 0.85rem; margin: 8px 0 4px;">
+      Konto-Name: <code>{{ username }}@Erste-Hilfe-Camp</code>
+    </p>
+    <p style="margin: 4px 0;">
+      <code class="totp-secret">{{ secret }}</code>
+    </p>
+    <p class="muted" style="font-size: 0.8rem;">
+      Typ: zeitbasiert (TOTP), 6 Stellen, 30s Intervall, SHA-1
+    </p>
+  </details>
+
+  <form method="post" class="stack" style="margin-top: 18px;">
+    <label class="field">
+      Code aus der App
+      <input name="code" inputmode="numeric" pattern="\s*\d(?:\s*\d){5}\s*"
+             autocomplete="one-time-code" maxlength="9" required autofocus
+             placeholder="123 456">
+    </label>
+    <button class="btn" type="submit">Bestätigen und einloggen</button>
+    <a class="btn secondary" href="{{ url_for('login') }}">Abbrechen</a>
+  </form>
+
+  <p class="muted" style="margin-top: 12px; font-size: 0.85rem;">
+    Beim nächsten Login wirst du nur nach dem 6-stelligen Code gefragt —
+    den QR siehst du dann nicht wieder.
+  </p>
+</div>
+{% endblock %}

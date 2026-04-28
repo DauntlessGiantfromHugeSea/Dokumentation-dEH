@@ -18,13 +18,15 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    username      TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    full_name     TEXT,
-    is_admin      INTEGER NOT NULL DEFAULT 0,
-    role          TEXT NOT NULL DEFAULT 'full',
-    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    username        TEXT UNIQUE NOT NULL,
+    password_hash   TEXT NOT NULL,
+    full_name       TEXT,
+    is_admin        INTEGER NOT NULL DEFAULT 0,
+    role            TEXT NOT NULL DEFAULT 'full',
+    totp_secret     TEXT,
+    totp_confirmed  INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS patients (
@@ -120,6 +122,13 @@ def init_db(db_path: Path) -> None:
             conn.execute(
                 "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'full'"
             )
+        if "totp_secret" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT")
+        if "totp_confirmed" not in cols:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN totp_confirmed "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
         # Promote oldest user to admin if there isn't one yet — keeps the
         # initial bootstrap simple ("first user = admin").
         has_admin = conn.execute(
@@ -211,6 +220,29 @@ def count_admins(conn: sqlite3.Connection) -> int:
     return conn.execute(
         "SELECT COUNT(*) AS n FROM users WHERE is_admin = 1"
     ).fetchone()["n"]
+
+
+def set_totp_secret(conn: sqlite3.Connection, user_id: int,
+                    secret: Optional[str], confirmed: bool = False) -> None:
+    conn.execute(
+        "UPDATE users SET totp_secret = ?, totp_confirmed = ? WHERE id = ?",
+        (secret, 1 if confirmed else 0, user_id),
+    )
+
+
+def set_totp_confirmed(conn: sqlite3.Connection, user_id: int,
+                       confirmed: bool) -> None:
+    conn.execute(
+        "UPDATE users SET totp_confirmed = ? WHERE id = ?",
+        (1 if confirmed else 0, user_id),
+    )
+
+
+def reset_totp(conn: sqlite3.Connection, user_id: int) -> None:
+    conn.execute(
+        "UPDATE users SET totp_secret = NULL, totp_confirmed = 0 WHERE id = ?",
+        (user_id,),
+    )
 
 
 # ---------- Patients ----------

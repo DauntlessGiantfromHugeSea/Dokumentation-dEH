@@ -48,6 +48,7 @@
         <th>Voller Name</th>
         <th>Rolle</th>
         <th>Berechtigung</th>
+        <th>2FA</th>
         <th>Angelegt</th>
         <th class="right">Aktionen</th>
       </tr>
@@ -68,6 +69,13 @@
             <span class="badge">Nur Zentral schreiben</span>
           {% else %}
             <span class="muted">Voll (Lesen + Schreiben)</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.totp_confirmed %}
+            <span class="badge">aktiv</span>
+          {% else %}
+            <span class="muted">offen</span>
           {% endif %}
         </td>
         <td>{{ format_dt(u.created_at) }}</td>
@@ -97,6 +105,12 @@
               <button class="btn small secondary" type="submit">
                 {% if u.is_admin %}Admin entziehen{% else %}Admin geben{% endif %}
               </button>
+            </form>
+            <form method="post"
+                  action="{{ url_for('admin_user_reset_totp', user_id=u.id) }}"
+                  class="inline-form"
+                  onsubmit="return confirm('2FA für „{{ u.username }}“ zurücksetzen? Beim nächsten Login muss neu eingerichtet werden.');">
+              <button class="btn small secondary" type="submit">2FA zurücksetzen</button>
             </form>
             <form method="post"
                   action="{{ url_for('admin_user_delete', user_id=u.id) }}"
