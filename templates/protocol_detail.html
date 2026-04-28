@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Einsatzbericht #{{ protocol.id }}{% endblock %}
+{% block content %}
+<div class="btn-row" style="justify-content: space-between;">
+  <h1 style="margin-bottom: 0;">Einsatzbericht #{{ protocol.id }}</h1>
+  <div class="btn-row">
+    <a class="btn secondary small" href="{{ url_for('protocol_edit', protocol_id=protocol.id) }}">Bearbeiten</a>
+    <a class="btn small" href="{{ url_for('protocol_pdf', protocol_id=protocol.id) }}">PDF herunterladen</a>
+  </div>
+</div>
+<p class="tagline">Dokumentation gem. DGUV Information 1.</p>
+
+<div class="card">
+  <div class="card-header">Person</div>
+  <div class="protocol-meta">
+    <div class="kv"><div class="label">Name</div>
+      <div class="value"><a href="{{ url_for('patient_detail', patient_id=protocol.patient_id) }}">{{ protocol.patient_name }}</a></div>
+    </div>
+    <div class="kv"><div class="label">Geburtsdatum</div>
+      <div class="value">{{ format_dt(protocol.patient_geburtsdatum) }}</div></div>
+    <div class="kv"><div class="label">Stammnummer</div>
+      <div class="value">{{ protocol.patient_stammnummer or '—' }}</div></div>
+    <div class="kv"><div class="label">Laufende Nr.</div>
+      <div class="value">{{ protocol.laufende_nr or '—' }}</div></div>
+    <div class="kv"><div class="label">dEH</div>
+      <div class="value">{{ protocol.deh or '—' }}</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Hergang</div>
+  <div class="protocol-meta">
+    <div class="kv"><div class="label">Datum und Uhrzeit</div>
+      <div class="value">{{ format_dt(protocol.unfall_datum_uhrzeit) or '—' }}</div></div>
+    <div class="kv"><div class="label">Unfallort</div>
+      <div class="value">{{ protocol.unfallort or '—' }}</div></div>
+  </div>
+  <div class="kv"><div class="label">Unfallhergang</div>
+    <div class="value">{{ protocol.unfallhergang or '—' }}</div></div>
+  <div class="protocol-meta">
+    <div class="kv"><div class="label">Art und Umfang der Verletzung</div>
+      <div class="value">{{ protocol.art_umfang_verletzung or '—' }}</div></div>
+    <div class="kv"><div class="label">Zeugen</div>
+      <div class="value">{{ protocol.name_zeugen or '—' }}</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Erste-Hilfe-Leistung</div>
+  <div class="protocol-meta">
+    <div class="kv"><div class="label">Datum und Uhrzeit</div>
+      <div class="value">{{ format_dt(protocol.eh_datum_uhrzeit) or '—' }}</div></div>
+    <div class="kv"><div class="label">Ersthelfer/in</div>
+      <div class="value">{{ protocol.name_ersthelfer or '—' }}</div></div>
+  </div>
+  <div class="kv"><div class="label">Art und Weise der Maßnahmen</div>
+    <div class="value">{{ protocol.art_weise_massnahmen or '—' }}</div></div>
+  <div class="kv" style="margin-top: 8px;">
+    <div class="label">Verbrauchtes Material</div>
+    <div class="value">{{ protocol.verbrauchtes_material or '—' }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Kommentare</div>
+  {% if comments %}
+    {% for c in comments %}
+      <div class="comment">
+        <div class="meta">
+          {{ c.author_full_name or c.author_username or '—' }}
+          · {{ format_dt(c.created_at) }}
+        </div>
+        <div class="text">{{ c.text }}</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">Noch keine Kommentare.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('protocol_add_comment', protocol_id=protocol.id) }}"
+        class="stack" style="margin-top: 12px;">
+    <label class="field">
+      Kommentar hinzufügen
+      <textarea name="text" rows="3" required></textarea>
+    </label>
+    <div><button class="btn" type="submit">Kommentar speichern</button></div>
+  </form>
+</div>
+
+{% if siblings|length > 1 %}
+<div class="card">
+  <div class="card-header">Weitere Einträge dieser Person</div>
+  <table class="data">
+    <thead><tr><th>#</th><th>EH Datum</th><th>Ersthelfer</th><th></th></tr></thead>
+    <tbody>
+      {% for s in siblings if s.id != protocol.id %}
+        <tr>
+          <td class="id">#{{ s.id }}</td>
+          <td>{{ format_dt(s.eh_datum_uhrzeit) or format_dt(s.created_at) }}</td>
+          <td>{{ s.name_ersthelfer or '—' }}</td>
+          <td class="right">
+            <a class="btn small secondary" href="{{ url_for('protocol_detail', protocol_id=s.id) }}">Öffnen</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<p class="muted" style="margin-top: 16px; font-size: 0.85rem;">
+  Eingetragen von {{ protocol.author_full_name or protocol.author_username or '—' }}
+  am {{ format_dt(protocol.created_at) }}
+</p>
+{% endblock %}

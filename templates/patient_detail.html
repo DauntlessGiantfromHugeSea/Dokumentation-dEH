@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ patient.name }}{% endblock %}
+{% block content %}
+<div class="btn-row" style="justify-content: space-between;">
+  <h1 style="margin-bottom: 0;">{{ patient.name }}</h1>
+  <a class="btn small"
+     href="{{ url_for('protocol_new',
+                       name=patient.name,
+                       geburtsdatum=patient.geburtsdatum,
+                       stammnummer=patient.stammnummer or '') }}">
+     Folgebehandlung anlegen
+  </a>
+</div>
+<p class="tagline">
+  Geburtsdatum: {{ format_dt(patient.geburtsdatum) }}
+  · Stammnummer: {{ patient.stammnummer or '—' }}
+</p>
+
+{% if protocols %}
+<table class="data">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>EH Datum</th>
+      <th>Ersthelfer</th>
+      <th>Laufende Nr.</th>
+      <th class="right"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in protocols %}
+    <tr>
+      <td class="id">#{{ p.id }}</td>
+      <td>{{ format_dt(p.eh_datum_uhrzeit) or format_dt(p.created_at) }}</td>
+      <td>{{ p.name_ersthelfer or '—' }}</td>
+      <td>{{ p.laufende_nr or '—' }}</td>
+      <td class="right">
+        <a class="btn small secondary" href="{{ url_for('protocol_detail', protocol_id=p.id) }}">Öffnen</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty card">Keine Einträge.</div>
+{% endif %}
+{% endblock %}

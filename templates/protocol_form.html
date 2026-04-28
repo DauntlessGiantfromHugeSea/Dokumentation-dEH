@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}
+  {% if mode == 'edit' %}Bericht #{{ protocol.id }} bearbeiten{% else %}Neuer Einsatzbericht{% endif %}
+{% endblock %}
+{% block content %}
+<h1>
+  {% if mode == 'edit' %}Einsatzbericht #{{ protocol.id }} bearbeiten
+  {% else %}Neuer Einsatzbericht{% endif %}
+</h1>
+<p class="tagline">Dokumentation gem. DGUV Information 1.</p>
+
+<form method="post" class="stack" id="protocolForm">
+  <div class="card">
+    <div class="card-header">Name der verletzten bzw. erkrankten Person</div>
+
+    <div id="lookupHint" class="lookup-hint"></div>
+
+    <div class="row cols-2-1">
+      <label class="field">
+        Name <span class="req">*</span>
+        <input name="patient_name" id="patientName" required
+               value="{{ protocol.patient_name or '' }}">
+      </label>
+      <label class="field">
+        Geburtsdatum <span class="req">*</span>
+        <input name="patient_geburtsdatum" id="patientGeburtsdatum" type="date" required
+               value="{{ protocol.patient_geburtsdatum or '' }}">
+      </label>
+    </div>
+    <div class="row three">
+      <label class="field">
+        Stammnummer
+        <input name="patient_stammnummer" id="patientStammnummer"
+               value="{{ protocol.patient_stammnummer or '' }}">
+      </label>
+      <label class="field">
+        Laufende Nr.
+        <input name="laufende_nr" value="{{ protocol.laufende_nr or '' }}">
+      </label>
+      <label class="field">
+        dEH
+        <input name="deh" value="{{ protocol.deh or '' }}">
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Angaben zum Hergang des Unfalls bzw. des Gesundheitsschadens</div>
+    <div class="row cols-2-1">
+      <label class="field">
+        Unfallort
+        <input name="unfallort" value="{{ protocol.unfallort or '' }}">
+      </label>
+      <label class="field">
+        Datum und Uhrzeit
+        <input name="unfall_datum_uhrzeit" type="datetime-local"
+               value="{{ protocol.unfall_datum_uhrzeit or '' }}">
+      </label>
+    </div>
+    <label class="field">
+      Unfallhergang
+      <textarea name="unfallhergang" rows="3">{{ protocol.unfallhergang or '' }}</textarea>
+    </label>
+    <div class="row cols-2-1">
+      <label class="field">
+        Art und Umfang der Verletzung bzw. der Erkrankung
+        <textarea name="art_umfang_verletzung" rows="2">{{ protocol.art_umfang_verletzung or '' }}</textarea>
+      </label>
+      <label class="field">
+        Name der Zeugen
+        <textarea name="name_zeugen" rows="2">{{ protocol.name_zeugen or '' }}</textarea>
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Erste Hilfe Leistung</div>
+    <div class="row">
+      <label class="field">
+        Datum und Uhrzeit
+        <input name="eh_datum_uhrzeit" type="datetime-local"
+               value="{{ protocol.eh_datum_uhrzeit or '' }}">
+      </label>
+      <label class="field">
+        Name des Ersthelfers / der Ersthelferin
+        <input name="name_ersthelfer" value="{{ protocol.name_ersthelfer or '' }}">
+      </label>
+    </div>
+    <label class="field">
+      Art und Weise der Erste-Hilfe-Maßnahmen
+      <textarea name="art_weise_massnahmen" rows="3">{{ protocol.art_weise_massnahmen or '' }}</textarea>
+    </label>
+    <label class="field">
+      Verbrauchtes Material
+      <textarea name="verbrauchtes_material" rows="2">{{ protocol.verbrauchtes_material or '' }}</textarea>
+    </label>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn" type="submit">Speichern</button>
+    {% if mode == 'edit' %}
+      <a class="btn secondary" href="{{ url_for('protocol_detail', protocol_id=protocol.id) }}">Abbrechen</a>
+    {% else %}
+      <a class="btn secondary" href="{{ url_for('index') }}">Abbrechen</a>
+    {% endif %}
+  </div>
+</form>
+
+<script>
+(function() {
+  const nameEl = document.getElementById('patientName');
+  const dobEl = document.getElementById('patientGeburtsdatum');
+  const stammEl = document.getElementById('patientStammnummer');
+  const hint = document.getElementById('lookupHint');
+
+  async function check() {
+    const name = nameEl.value.trim();
+    const dob = dobEl.value.trim();
+    if (!name || !dob) { hint.classList.remove('visible'); return; }
+    try {
+      const url = new URL("{{ url_for('patient_lookup') }}", window.location.origin);
+      url.searchParams.set('name', name);
+      url.searchParams.set('geburtsdatum', dob);
+      const res = await fetch(url.toString(), { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.found) {
+        hint.textContent =
+          'Folgebehandlung erkannt — Patient hat bereits ' +
+          data.previous_count +
+          ' Eintrag/Einträge. Stammnummer wird übernommen, falls leer.';
+        hint.classList.add('visible');
+        if (!stammEl.value && data.stammnummer) stammEl.value = data.stammnummer;
+      } else {
+        hint.classList.remove('visible');
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  let timer = null;
+  function debouncedCheck() {
+    clearTimeout(timer);
+    timer = setTimeout(check, 250);
+  }
+  nameEl.addEventListener('input', debouncedCheck);
+  dobEl.addEventListener('change', check);
+  check();
+})();
+</script>
+{% endblock %}

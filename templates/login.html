@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Anmelden{% endblock %}
+{% block content %}
+<div class="login-wrap card">
+  <h1>Erste Hilfe</h1>
+  <p class="subtitle" style="text-align:center;">Camp-Dokumentation</p>
+  <form method="post" class="stack">
+    <label class="field">
+      Benutzername
+      <input name="username" autocomplete="username" autofocus required>
+    </label>
+    <label class="field">
+      Passwort
+      <input name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button class="btn" type="submit">Anmelden</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Export{% endblock %}
+{% block content %}
+<h1>Daten-Export</h1>
+<p class="tagline">Gefilterte Einsatzberichte als CSV exportieren (Excel-kompatibel).</p>
+
+<form method="get" action="{{ url_for('export_csv') }}" class="card stack">
+  <div class="card-header">Filter</div>
+  <div class="row">
+    <label class="field">
+      Name (enthält)
+      <input name="name" placeholder="z. B. Müller">
+    </label>
+    <label class="field">
+      Stammnummer (enthält)
+      <input name="stammnummer">
+    </label>
+  </div>
+  <div class="row">
+    <label class="field">
+      EH-Datum von
+      <input name="date_from" type="date">
+    </label>
+    <label class="field">
+      EH-Datum bis
+      <input name="date_to" type="date">
+    </label>
+  </div>
+  <div class="btn-row">
+    <button class="btn" type="submit">CSV herunterladen</button>
+    <a class="btn secondary" href="{{ url_for('index') }}">Zurück</a>
+  </div>
+  <p class="muted" style="font-size: 0.85rem; margin: 0;">
+    Hinweis: Leere Felder = kein Filter. Einzelne Einsatzberichte können
+    direkt aus der Detailansicht als PDF heruntergeladen werden.
+  </p>
+</form>
+{% endblock %}
