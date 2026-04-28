@@ -84,6 +84,16 @@ CREATE TABLE IF NOT EXISTS central_protocols (
 CREATE INDEX IF NOT EXISTS idx_central_patient ON central_protocols(patient_id);
 CREATE INDEX IF NOT EXISTS idx_central_datum ON central_protocols(datum);
 
+CREATE TABLE IF NOT EXISTS central_comments (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    central_protocol_id INTEGER NOT NULL REFERENCES central_protocols(id) ON DELETE CASCADE,
+    author_id           INTEGER REFERENCES users(id),
+    text                TEXT NOT NULL,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_central_comments_protocol ON central_comments(central_protocol_id);
+
 -- Globaler, fortlaufender Zähler für ALLE Berichte (dezentral + zentral).
 -- Jeder neue Bericht bekommt eine neue Zeile hier; das per id automatisch
 -- vergebene auto-increment ist die "Bericht-Nr." über beide Systeme hinweg.
@@ -754,3 +764,29 @@ def patient_protocol_counts(conn: sqlite3.Connection, patient_id: int) -> dict:
         (patient_id,),
     ).fetchone()["n"]
     return {"decentral": decentral, "central": central}
+
+
+# ---------- Central comments (zentral, separates Tabellen-Pendant zu comments) ----------
+
+def add_central_comment(conn: sqlite3.Connection, central_protocol_id: int,
+                        text: str, author_id: Optional[int]) -> int:
+    cur = conn.execute(
+        "INSERT INTO central_comments "
+        "(central_protocol_id, author_id, text) VALUES (?, ?, ?)",
+        (central_protocol_id, author_id, text.strip()),
+    )
+    return cur.lastrowid
+
+
+def list_central_comments(conn: sqlite3.Connection,
+                          central_protocol_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT c.*, u.username AS author_username, u.full_name AS author_full_name
+        FROM central_comments c
+        LEFT JOIN users u ON u.id = c.author_id
+        WHERE c.central_protocol_id = ?
+        ORDER BY c.created_at ASC, c.id ASC
+        """,
+        (central_protocol_id,),
+    ).fetchall()

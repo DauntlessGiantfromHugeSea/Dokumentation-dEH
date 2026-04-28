@@ -80,7 +80,7 @@
           <td>{{ format_dt(c.updated_at) }}</td>
           <td class="right">
             <a class="btn small secondary"
-               href="{{ url_for('central_index') }}#{{ c.id }}">Öffnen</a>
+               href="{{ url_for('central_detail', pid=c.id) }}">Öffnen</a>
           </td>
         </tr>
         {% endfor %}

@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% block title %}Bericht {{ protocol.laufende_nr or '#zEH' ~ protocol.id }}{% endblock %}
+
+{# ---------- Hilfs-Macros ---------- #}
+{% macro v(value) -%}
+  {%- if value is iterable and value is not string and value is not mapping -%}
+    {{ value | join(', ') if value else '—' }}
+  {%- else -%}
+    {{ value if (value is not none and value != '') else '—' }}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro kv(label, value) %}
+<div class="kv">
+  <div class="label">{{ label }}</div>
+  <div class="value">{{ v(value) }}</div>
+</div>
+{% endmacro %}
+
+{% macro long_kv(label, value) %}
+<div class="kv">
+  <div class="label">{{ label }}</div>
+  <div class="value">{{ v(value) }}</div>
+</div>
+{% endmacro %}
+
+{% set d = protocol.data %}
+{% set laufende = protocol.laufende_nr or '#zEH' ~ protocol.id %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Bericht <span class="muted">{{ laufende }}</span> <span class="badge type-z">zEH</span></h1>
+    <p class="tagline">Zentrale Erste Hilfe — Notfallprotokoll</p>
+  </div>
+  <div class="btn-row">
+    <a class="btn secondary small"
+       href="{{ url_for('central_index') }}#{{ protocol.id }}">Bearbeiten</a>
+    <a class="btn small"
+       href="{{ url_for('api_central_pdf', pid=protocol.id) }}"
+       target="_blank">PDF</a>
+    <details class="inline-action">
+      <summary class="btn small danger">Löschen</summary>
+      <form method="post"
+            action="{{ url_for('central_delete', pid=protocol.id) }}"
+            class="inline-form"
+            onsubmit="return confirm('Bericht {{ laufende }} wirklich löschen?');">
+        <input name="password" type="password" required
+               placeholder="Dein Passwort zur Bestätigung"
+               autocomplete="current-password">
+        <button class="btn small danger" type="submit">Endgültig löschen</button>
+      </form>
+    </details>
+  </div>
+</div>
+
+{# ---------- Person ---------- #}
+<div class="card">
+  <div class="card-header">Person</div>
+  <div class="protocol-meta">
+    {{ kv("Vorname", d.get("vorname")) }}
+    {{ kv("Nachname", d.get("nachname")) }}
+    {{ kv("Geburtsdatum", format_dt(d.get("geburtsdatum"))) }}
+    {{ kv("Geschlecht", d.get("geschlecht")) }}
+    {% if protocol.patient_stammnummer %}
+      {{ kv("Stammnummer", protocol.patient_stammnummer) }}
+    {% endif %}
+  </div>
+  {% if d.get("strasse") or d.get("plz") or d.get("stadt") or d.get("telefon") or d.get("krankenkasse") %}
+  <div class="protocol-meta">
+    {{ kv("Straße", d.get("strasse")) }}
+    {{ kv("PLZ", d.get("plz")) }}
+    {{ kv("Ort", d.get("stadt")) }}
+    {{ kv("Telefon", d.get("telefon")) }}
+    {{ kv("Krankenkasse", d.get("krankenkasse")) }}
+  </div>
+  {% endif %}
+  {% if protocol.patient_id %}
+    <p class="muted" style="margin: 8px 0 0; font-size: 0.85rem;">
+      <a href="{{ url_for('patient_detail', patient_id=protocol.patient_id) }}">
+        → Vollständige Patientenakte (alle Berichte zu dieser Person)
+      </a>
+    </p>
+  {% endif %}
+</div>
+
+{# ---------- Einsatz ---------- #}
+<div class="card">
+  <div class="card-header">Rettungstechnische Daten</div>
+  <div class="protocol-meta">
+    {{ kv("Einsatznummer", d.get("einsatznummer")) }}
+    {{ kv("Datum", format_dt(d.get("datum"))) }}
+    {{ kv("Beginn", d.get("einsatzbeginn")) }}
+    {{ kv("Ende", d.get("einsatzende")) }}
+    {{ kv("Einsatzort", d.get("einsatzort")) }}
+    {{ kv("Stichwort", d.get("einsatzstichwort")) }}
+    {{ kv("Alarmierung", d.get("alarm_durch")) }}
+    {{ kv("Einsatzkraft 1", d.get("einsatzkraft1")) }}
+    {{ kv("Einsatzkraft 2", d.get("einsatzkraft2")) }}
+  </div>
+</div>
+
+{# ---------- Notfall ---------- #}
+<div class="card">
+  <div class="card-header">Notfall</div>
+  <div class="kv">
+    <div class="label">Notfallsituation</div>
+    <div class="value">{{ v(d.get("notfallsituation")) }}</div>
+  </div>
+  <div class="protocol-meta">
+    {{ kv("Notfallart", d.get("notfallart")) }}
+    {{ kv("Sonstige Notfallart", d.get("notfallart_sonstige")) }}
+  </div>
+  <div class="kv">
+    <div class="label">Verletzung</div>
+    <div class="value">{{ v(d.get("verletzung")) }}</div>
+  </div>
+</div>
+
+{# ---------- Erstbefund ---------- #}
+<div class="card">
+  <div class="card-header">Erstbefund</div>
+  <div class="protocol-meta">
+    {{ kv("Bewusstsein", d.get("bewusstsein_1")) }}
+    {{ kv("Atmung", d.get("atmung_1")) }}
+    {{ kv("Kreislauf", d.get("kreislauf_1")) }}
+    {{ kv("EKG", d.get("ekg_1")) }}
+    {{ kv("Schmerzen", d.get("schmerzen_grad_1")) }}
+    {{ kv("NRS", d.get("nrs_1")) }}
+    {{ kv("Pupille links", d.get("pupille_l")) }}
+    {{ kv("Pupille rechts", d.get("pupille_r")) }}
+    {{ kv("Haut", d.get("haut")) }}
+    {{ kv("Psyche", d.get("psyche")) }}
+  </div>
+  {% if d.get("erstbefund_sonstiges") or d.get("haut_sonstiges") or d.get("psyche_sonstiges") %}
+  <div class="kv">
+    <div class="label">Sonstige Befunde</div>
+    <div class="value">
+      {% set extras = [] %}
+      {% if d.get("haut_sonstiges") %}{% set _ = extras.append("Haut: " ~ d.get("haut_sonstiges")) %}{% endif %}
+      {% if d.get("psyche_sonstiges") %}{% set _ = extras.append("Psyche: " ~ d.get("psyche_sonstiges")) %}{% endif %}
+      {% if d.get("erstbefund_sonstiges") %}{% set _ = extras.append(d.get("erstbefund_sonstiges")) %}{% endif %}
+      {{ extras | join('; ') }}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# ---------- Messwerte ---------- #}
+<div class="card">
+  <div class="card-header">Messwerte</div>
+  <table class="data measurements">
+    <thead>
+      <tr>
+        <th>Zeitpunkt</th>
+        <th>Zeit</th>
+        <th>RR</th>
+        <th>Puls</th>
+        <th>AF</th>
+        <th>HF</th>
+        <th>SpO₂</th>
+        <th>etCO₂</th>
+        <th>BZ</th>
+        <th>Temp</th>
+        <th>GCS</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Erstbefund</strong></td>
+        <td>{{ v(d.get("zeit_1")) }}</td>
+        <td>{% if d.get("rr_sys_1") or d.get("rr_dia_1") %}{{ d.get("rr_sys_1") or '?' }}/{{ d.get("rr_dia_1") or '?' }}{% else %}—{% endif %}</td>
+        <td>{{ v(d.get("puls_1")) }}</td>
+        <td>{{ v(d.get("af_1")) }}</td>
+        <td>{{ v(d.get("hf_1")) }}</td>
+        <td>{{ v(d.get("spo2_1")) }}</td>
+        <td>{{ v(d.get("etco2_1")) }}</td>
+        <td>{{ v(d.get("bz_1")) }}</td>
+        <td>{{ v(d.get("temp_1")) }}</td>
+        <td>{{ v(d.get("gcs_1")) }}</td>
+      </tr>
+      <tr>
+        <td><strong>Übergabe</strong></td>
+        <td>{{ v(d.get("zeit_2")) }}</td>
+        <td>{% if d.get("rr_sys_2") or d.get("rr_dia_2") %}{{ d.get("rr_sys_2") or '?' }}/{{ d.get("rr_dia_2") or '?' }}{% else %}—{% endif %}</td>
+        <td>{{ v(d.get("puls_2")) }}</td>
+        <td>{{ v(d.get("af_2")) }}</td>
+        <td>{{ v(d.get("hf_2")) }}</td>
+        <td>{{ v(d.get("spo2_2")) }}</td>
+        <td>{{ v(d.get("etco2_2")) }}</td>
+        <td>{{ v(d.get("bz_2")) }}</td>
+        <td>{{ v(d.get("temp_2")) }}</td>
+        <td>{{ v(d.get("gcs_2")) }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{# ---------- Diagnose / Maßnahmen ---------- #}
+<div class="card">
+  <div class="card-header">Diagnose &amp; Maßnahmen</div>
+  <div class="kv">
+    <div class="label">Erstdiagnose</div>
+    <div class="value">{{ v(d.get("erstdiagnose")) }}</div>
+  </div>
+  <div class="kv">
+    <div class="label">Maßnahmen</div>
+    <div class="value">{{ v(d.get("massnahme")) }}</div>
+  </div>
+  {% if d.get("massnahmen_sonstiges") %}
+    <div class="kv">
+      <div class="label">Sonstige Maßnahmen</div>
+      <div class="value">{{ d.get("massnahmen_sonstiges") }}</div>
+    </div>
+  {% endif %}
+</div>
+
+{# ---------- Verlauf ---------- #}
+<div class="card">
+  <div class="card-header">Verlauf</div>
+  <div class="kv">
+    <div class="label">Verlauf</div>
+    <div class="value" style="white-space: pre-wrap;">{{ v(d.get("verlauf")) }}</div>
+  </div>
+</div>
+
+{# ---------- Übergabe ---------- #}
+<div class="card">
+  <div class="card-header">Übergabe</div>
+  <div class="protocol-meta">
+    {{ kv("Übergabe an", d.get("uebergabe_an")) }}
+    {{ kv("Ergebnis", d.get("ergebnis")) }}
+    {{ kv("Infektion", d.get("infektion")) }}
+    {{ kv("Begleitung", d.get("begleitung")) }}
+    {{ kv("Übergabezeit", d.get("uebergabezeit")) }}
+  </div>
+  <div class="protocol-meta">
+    {{ kv("Bewusstsein (Übergabe)", d.get("bewusstsein_2")) }}
+    {{ kv("Atmung (Übergabe)", d.get("atmung_2")) }}
+    {{ kv("Kreislauf (Übergabe)", d.get("kreislauf_2")) }}
+    {{ kv("EKG (Übergabe)", d.get("ekg_2")) }}
+    {{ kv("NRS (Übergabe)", d.get("nrs_2")) }}
+  </div>
+</div>
+
+{# ---------- Abschluss ---------- #}
+{% if d.get("einsatzbeschreibung") or d.get("material") %}
+<div class="card">
+  <div class="card-header">Abschluss</div>
+  <div class="kv">
+    <div class="label">Einsatzbeschreibung</div>
+    <div class="value" style="white-space: pre-wrap;">{{ v(d.get("einsatzbeschreibung")) }}</div>
+  </div>
+  <div class="kv">
+    <div class="label">Verbrauchtes Material</div>
+    <div class="value">{{ v(d.get("material")) }}</div>
+  </div>
+</div>
+{% endif %}
+
+{# ---------- Kommentare ---------- #}
+<div class="card">
+  <div class="card-header">Kommentare</div>
+  {% if comments %}
+    {% for c in comments %}
+      <div class="comment">
+        <div class="meta">
+          {{ c.author_full_name or c.author_username or '—' }}
+          · {{ format_dt(c.created_at) }}
+        </div>
+        <div class="text">{{ c.text }}</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">Noch keine Kommentare.</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('central_add_comment', pid=protocol.id) }}"
+        class="stack" style="margin-top: 12px;">
+    <label class="field">
+      Kommentar hinzufügen
+      <textarea name="text" rows="3" required></textarea>
+    </label>
+    <div><button class="btn" type="submit">Kommentar speichern</button></div>
+  </form>
+</div>
+
+{# ---------- Geschwister-Berichte ---------- #}
+{% if decentral_siblings or central_siblings %}
+<div class="card">
+  <div class="card-header">Weitere Berichte dieser Person</div>
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Bericht</th>
+        <th>Typ</th>
+        <th>Datum</th>
+        <th class="right"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in decentral_siblings %}
+        <tr>
+          <td class="id">{{ s.laufende_nr or '#dEH' ~ s.id }}</td>
+          <td><span class="badge type-d">dEH</span></td>
+          <td>{{ format_dt(s.eh_datum_uhrzeit) or format_dt(s.created_at) }}</td>
+          <td class="right">
+            <a class="btn small secondary" href="{{ url_for('protocol_detail', protocol_id=s.id) }}">Öffnen</a>
+          </td>
+        </tr>
+      {% endfor %}
+      {% for s in central_siblings %}
+        <tr>
+          <td class="id">{{ s.laufende_nr or '#zEH' ~ s.id }}</td>
+          <td><span class="badge type-z">zEH</span></td>
+          <td>{{ format_dt(s.datum) or format_dt(s.created_at) }}</td>
+          <td class="right">
+            <a class="btn small secondary" href="{{ url_for('central_detail', pid=s.id) }}">Öffnen</a>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<p class="muted" style="margin-top: 16px; font-size: 0.85rem;">
+  Erstellt am {{ format_dt(protocol.created_at) }}
+  {% if protocol.updated_at and protocol.updated_at != protocol.created_at %}
+    · Zuletzt aktualisiert {{ format_dt(protocol.updated_at) }}
+  {% endif %}
+</p>
+{% endblock %}

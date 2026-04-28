@@ -290,18 +290,38 @@
     body { background: white; }
   }
 
-  /* Top app-bar — Integration mit Haupt-App */
+  /* Top app-bar — visuell identisch zu base.html/.topbar */
   .app-bar {
-    display: flex; align-items: center; gap: 16px;
-    padding: 8px 16px;
+    display: flex; align-items: center; gap: 24px;
+    padding: 12px 24px;
     background: #7a1f2b; color: #fff;
     font-size: 14px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   }
-  .app-bar-link { color: rgba(255,255,255,0.92); text-decoration: none; font-weight: 500; }
-  .app-bar-link:hover { text-decoration: underline; color: #fff; }
-  .app-bar-title { flex: 1; font-style: italic; font-weight: 600; }
-  .app-bar-user { opacity: 0.9; margin-right: 4px; }
+  .app-bar .brand {
+    font-weight: 700; font-size: 1.15rem;
+    letter-spacing: 0.3px; font-style: italic;
+  }
+  .app-bar nav { display: flex; gap: 18px; flex: 1; }
+  .app-bar nav a {
+    color: rgba(255,255,255,0.92);
+    font-size: 0.95rem;
+    padding: 4px 0;
+    border-bottom: 2px solid transparent;
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .app-bar nav a:hover {
+    color: #fff;
+    border-bottom-color: rgba(255,255,255,0.5);
+  }
+  .app-bar nav a.active {
+    border-bottom-color: rgba(255,255,255,0.95);
+    font-weight: 600;
+  }
+  .app-bar-user { font-size: 0.9rem; opacity: 0.9; }
+  .app-bar-user a { color: rgba(255,255,255,0.85); margin-left: 12px; text-decoration: none; }
+  .app-bar-user a:hover { text-decoration: underline; color: #fff; }
   .app-bar-banner {
     padding: 10px 16px;
     background: #fff3cd; color: #7a5d00;
@@ -313,12 +333,27 @@
 </style>
 </head>
 <body>
-<div class="app-bar">
-  <a class="app-bar-link" href="/">← Zurück zur Übersicht</a>
-  <span class="app-bar-title">Zentrale Erste Hilfe — Notfallprotokoll</span>
-  <span class="app-bar-user">{{ current_user_label }}</span>
-  <a class="app-bar-link" href="/logout">Abmelden</a>
-</div>
+<header class="app-bar">
+  <span class="brand">Erste Hilfe</span>
+  <nav>
+    {% if current_user.can_view_decentral %}
+      <a href="/">Dezentral</a>
+    {% endif %}
+    <a href="/central" class="active">Zentral</a>
+    {% if current_user.can_view_decentral %}
+      <a href="/protocols/new">Neuer Bericht</a>
+      <a href="/patients">Personen</a>
+      <a href="/export">Export</a>
+    {% endif %}
+    {% if current_user.is_admin %}
+      <a href="/admin/users">Benutzer</a>
+    {% endif %}
+  </nav>
+  <span class="app-bar-user">
+    <a href="/account/password">{{ current_user_label }}</a>
+    <a href="/logout">Abmelden</a>
+  </span>
+</header>
 <div id="central-prior-hint" class="app-bar-banner" style="display:none;"></div>
 <div class="layout">
 

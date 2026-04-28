@@ -87,7 +87,7 @@
         {% if p.source == 'decentral' %}
           <a class="btn small secondary" href="{{ url_for('protocol_detail', protocol_id=p.source_id) }}">Öffnen</a>
         {% else %}
-          <a class="btn small secondary" href="{{ url_for('central_index') }}#{{ p.source_id }}">Öffnen</a>
+          <a class="btn small secondary" href="{{ url_for('central_detail', pid=p.source_id) }}">Öffnen</a>
         {% endif %}
       </td>
     </tr>

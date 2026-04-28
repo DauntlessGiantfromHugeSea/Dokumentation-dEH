@@ -509,6 +509,81 @@ def create_app(test_config: dict | None = None) -> Flask:
             current_user_label=current_user.full_name or current_user.username,
         )
 
+    @app.route("/central/<int:pid>")
+    @login_required
+    def central_detail(pid: int):
+        """Server-gerenderte Detailansicht eines zentralen Berichts —
+        analog zu /protocols/<id> für dezentrale Berichte."""
+        db = models.get_db()
+        rec = models.get_central_protocol(db, pid)
+        if not rec:
+            abort(404)
+        if (current_user.is_zentral_only
+                and rec.get("created_by") != current_user.id):
+            abort(403)
+        comments = models.list_central_comments(db, pid)
+        # Geschwister-Berichte (beide Typen) für diesen Patienten anzeigen,
+        # sofern wir eine Patienten-Verknüpfung haben.
+        decentral_siblings = []
+        central_siblings = []
+        if rec.get("patient_id") and not current_user.is_zentral_only:
+            decentral_siblings = models.list_patient_protocols(
+                db, rec["patient_id"]
+            )
+            central_siblings = [
+                r for r in models.list_central_protocols(
+                    db, patient_id=rec["patient_id"]
+                ) if r["id"] != pid
+            ]
+        return render_template(
+            "central_detail.html",
+            protocol=rec,
+            comments=comments,
+            decentral_siblings=decentral_siblings,
+            central_siblings=central_siblings,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/central/<int:pid>/comments", methods=["POST"])
+    @login_required
+    def central_add_comment(pid: int):
+        db = models.get_db()
+        rec = models.get_central_protocol(db, pid)
+        if not rec:
+            abort(404)
+        if (current_user.is_zentral_only
+                and rec.get("created_by") != current_user.id):
+            abort(403)
+        text = request.form.get("text", "").strip()
+        if text:
+            models.add_central_comment(db, pid, text, current_user.id)
+            db.commit()
+            flash("Kommentar hinzugefügt.", "success")
+        return redirect(url_for("central_detail", pid=pid))
+
+    @app.route("/central/<int:pid>/delete", methods=["POST"])
+    @login_required
+    def central_delete(pid: int):
+        db = models.get_db()
+        rec = models.get_central_protocol(db, pid)
+        if not rec:
+            abort(404)
+        if (current_user.is_zentral_only
+                and rec.get("created_by") != current_user.id):
+            abort(403)
+        password = request.form.get("password", "")
+        user_row = models.get_user_by_id(db, current_user.id)
+        if not user_row or not models.verify_password(user_row, password):
+            flash("Passwort falsch — Bericht wurde nicht gelöscht.", "error")
+            return redirect(url_for("central_detail", pid=pid))
+        label = rec["laufende_nr"] or f"#zEH{pid}"
+        models.delete_central_protocol(db, pid)
+        db.commit()
+        flash(f"Bericht {label} gelöscht.", "success")
+        return redirect(url_for("central_index")
+                        if current_user.is_zentral_only
+                        else url_for("index"))
+
     @app.route("/api/central/protokolle", methods=["GET", "POST"])
     @login_required
     def api_central_list_or_create():
