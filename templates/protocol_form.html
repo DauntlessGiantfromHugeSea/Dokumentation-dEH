@@ -11,7 +11,16 @@
 
 <form method="post" class="stack" id="protocolForm">
   <div class="card">
-    <div class="card-header">Name der verletzten bzw. erkrankten Person</div>
+    <div class="card-header">
+      Name der verletzten bzw. erkrankten Person
+      {% if mode == 'edit' and protocol.laufende_nr %}
+        <span class="card-header-badge">{{ protocol.laufende_nr }}</span>
+      {% elif mode == 'new' %}
+        <span class="card-header-badge muted-badge">
+          Laufende Nr. wird beim Speichern automatisch vergeben
+        </span>
+      {% endif %}
+    </div>
 
     <div id="lookupHint" class="lookup-hint"></div>
 
@@ -27,21 +36,11 @@
                value="{{ protocol.patient_geburtsdatum or '' }}">
       </label>
     </div>
-    <div class="row three">
-      <label class="field">
-        Stammnummer
-        <input name="patient_stammnummer" id="patientStammnummer"
-               value="{{ protocol.patient_stammnummer or '' }}">
-      </label>
-      <label class="field">
-        Laufende Nr.
-        <input name="laufende_nr" value="{{ protocol.laufende_nr or '' }}">
-      </label>
-      <label class="field">
-        dEH
-        <input name="deh" value="{{ protocol.deh or '' }}">
-      </label>
-    </div>
+    <label class="field">
+      Stammnummer
+      <input name="patient_stammnummer" id="patientStammnummer"
+             value="{{ protocol.patient_stammnummer or '' }}">
+    </label>
   </div>
 
   <div class="card">

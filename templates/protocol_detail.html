@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Einsatzbericht #{{ protocol.id }}{% endblock %}
 {% block content %}
-<div class="btn-row" style="justify-content: space-between;">
-  <h1 style="margin-bottom: 0;">Einsatzbericht #{{ protocol.id }}</h1>
+<div class="page-header">
+  <div>
+    <h1>Einsatzbericht <span class="muted">{{ protocol.laufende_nr or '#dEH' ~ protocol.id }}</span></h1>
+    <p class="tagline">Dokumentation gem. DGUV Information 1.</p>
+  </div>
   <div class="btn-row">
     <a class="btn secondary small" href="{{ url_for('protocol_edit', protocol_id=protocol.id) }}">Bearbeiten</a>
-    <a class="btn small" href="{{ url_for('protocol_pdf', protocol_id=protocol.id) }}">PDF herunterladen</a>
+    <a class="btn small" href="{{ url_for('protocol_pdf', protocol_id=protocol.id) }}">PDF</a>
   </div>
 </div>
-<p class="tagline">Dokumentation gem. DGUV Information 1.</p>
 
 <div class="card">
   <div class="card-header">Person</div>
@@ -20,10 +22,6 @@
       <div class="value">{{ format_dt(protocol.patient_geburtsdatum) }}</div></div>
     <div class="kv"><div class="label">Stammnummer</div>
       <div class="value">{{ protocol.patient_stammnummer or '—' }}</div></div>
-    <div class="kv"><div class="label">Laufende Nr.</div>
-      <div class="value">{{ protocol.laufende_nr or '—' }}</div></div>
-    <div class="kv"><div class="label">dEH</div>
-      <div class="value">{{ protocol.deh or '—' }}</div></div>
   </div>
 </div>
 
@@ -91,11 +89,11 @@
 <div class="card">
   <div class="card-header">Weitere Einträge dieser Person</div>
   <table class="data">
-    <thead><tr><th>#</th><th>EH Datum</th><th>Ersthelfer</th><th></th></tr></thead>
+    <thead><tr><th>Bericht</th><th>EH Datum</th><th>Ersthelfer</th><th></th></tr></thead>
     <tbody>
       {% for s in siblings if s.id != protocol.id %}
         <tr>
-          <td class="id">#{{ s.id }}</td>
+          <td class="id">{{ s.laufende_nr or '#dEH' ~ s.id }}</td>
           <td>{{ format_dt(s.eh_datum_uhrzeit) or format_dt(s.created_at) }}</td>
           <td>{{ s.name_ersthelfer or '—' }}</td>
           <td class="right">

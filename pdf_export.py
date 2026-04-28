@@ -122,7 +122,8 @@ def render_protocol_pdf(protocol: Mapping, comments: Iterable[Mapping]) -> bytes
     styles = _styles()
     story: list = []
 
-    story.append(Paragraph(f"Einsatzbericht #{protocol['id']}", styles["title"]))
+    laufende_nr = protocol["laufende_nr"] or f"#dEH{protocol['id']}"
+    story.append(Paragraph(f"Einsatzbericht {laufende_nr}", styles["title"]))
     story.append(Paragraph(
         "Dokumentation von Erste-Hilfe-Leistungen (gem. DGUV Information 1)",
         styles["subtitle"],
@@ -134,9 +135,7 @@ def render_protocol_pdf(protocol: Mapping, comments: Iterable[Mapping]) -> bytes
         ("Name", protocol["patient_name"]),
         ("Geburtsdatum", format_dt(protocol["patient_geburtsdatum"])),
         ("Stammnummer", protocol["patient_stammnummer"] or ""),
-        ("Laufende Nr.", protocol["laufende_nr"] or ""),
-        ("dEH", protocol["deh"] or ""),
-    ], styles, col_widths=[40 * mm, 35 * mm, 35 * mm, 30 * mm, 30 * mm]))
+    ], styles, col_widths=[80 * mm, 50 * mm, 40 * mm]))
     story.append(Spacer(1, 6))
 
     # Hergang

@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+from functools import wraps
 from pathlib import Path
 
 import click
@@ -32,6 +33,17 @@ import models
 from pdf_export import render_protocol_pdf
 
 
+def admin_required(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for("login", next=request.url))
+        if not getattr(current_user, "is_admin", False):
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapper
+
+
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__)
     app.config.update(
@@ -57,6 +69,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             self.id = row["id"]
             self.username = row["username"]
             self.full_name = row["full_name"]
+            self.is_admin = bool(row["is_admin"])
 
     @login_manager.user_loader
     def load_user(user_id: str):
@@ -224,8 +237,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         buf = io.StringIO()
         writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
         writer.writerow([
-            "Einsatzbericht-Nr", "Patient Name", "Geburtsdatum", "Stammnummer",
-            "Laufende Nr.", "dEH",
+            "Laufende Nr.", "ID", "Patient Name", "Geburtsdatum", "Stammnummer",
             "Unfall Datum/Uhrzeit", "Unfallort", "Unfallhergang",
             "Art/Umfang Verletzung", "Zeugen",
             "EH Datum/Uhrzeit", "Ersthelfer",
@@ -237,9 +249,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         for r in rows:
             full = models.get_protocol(db, r["id"])
             writer.writerow([
+                full["laufende_nr"] or models.laufende_nr_for(full["id"]),
                 full["id"], full["patient_name"], full["patient_geburtsdatum"],
                 full["patient_stammnummer"] or "",
-                full["laufende_nr"] or "", full["deh"] or "",
                 full["unfall_datum_uhrzeit"] or "", full["unfallort"] or "",
                 full["unfallhergang"] or "",
                 full["art_umfang_verletzung"] or "", full["name_zeugen"] or "",
@@ -259,6 +271,118 @@ def create_app(test_config: dict | None = None) -> Flask:
             },
         )
 
+    # ----- Account (any logged-in user) -----
+
+    @app.route("/account/password", methods=["GET", "POST"])
+    @login_required
+    def account_password():
+        if request.method == "POST":
+            db = models.get_db()
+            current = request.form.get("current_password", "")
+            new = request.form.get("new_password", "")
+            confirm = request.form.get("confirm_password", "")
+            row = models.get_user_by_id(db, current_user.id)
+            if not models.verify_password(row, current):
+                flash("Aktuelles Passwort stimmt nicht.", "error")
+            elif len(new) < 6:
+                flash("Neues Passwort muss mindestens 6 Zeichen haben.", "error")
+            elif new != confirm:
+                flash("Die beiden neuen Passwörter stimmen nicht überein.", "error")
+            else:
+                models.set_user_password(db, current_user.id, new)
+                db.commit()
+                flash("Passwort geändert.", "success")
+                return redirect(url_for("index"))
+        return render_template("account_password.html")
+
+    # ----- Admin user management -----
+
+    @app.route("/admin/users")
+    @admin_required
+    def admin_users():
+        users = models.list_users(models.get_db())
+        return render_template("admin_users.html", users=users,
+                               format_dt=models.format_dt)
+
+    @app.route("/admin/users/create", methods=["POST"])
+    @admin_required
+    def admin_user_create():
+        db = models.get_db()
+        username = (request.form.get("username") or "").strip()
+        full_name = (request.form.get("full_name") or "").strip() or None
+        password = request.form.get("password") or ""
+        is_admin = bool(request.form.get("is_admin"))
+        if not username or not password:
+            flash("Benutzername und Passwort sind Pflicht.", "error")
+        elif len(password) < 6:
+            flash("Passwort muss mindestens 6 Zeichen haben.", "error")
+        elif models.get_user_by_username(db, username):
+            flash(f"Benutzername '{username}' existiert bereits.", "error")
+        else:
+            models.create_user(db, username, password, full_name, is_admin)
+            db.commit()
+            flash(f"Benutzer '{username}' angelegt.", "success")
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
+    @admin_required
+    def admin_user_reset_password(user_id: int):
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        new_password = request.form.get("new_password") or ""
+        if len(new_password) < 6:
+            flash("Passwort muss mindestens 6 Zeichen haben.", "error")
+        else:
+            models.set_user_password(db, user_id, new_password)
+            db.commit()
+            flash(f"Passwort für '{row['username']}' zurückgesetzt.", "success")
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/users/<int:user_id>/toggle-admin", methods=["POST"])
+    @admin_required
+    def admin_user_toggle_admin(user_id: int):
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        new_state = not bool(row["is_admin"])
+        # Don't let the last admin demote themselves into a lockout.
+        if not new_state and models.count_admins(db) <= 1:
+            flash("Mindestens ein Admin muss bleiben.", "error")
+            return redirect(url_for("admin_users"))
+        models.set_user_admin(db, user_id, new_state)
+        db.commit()
+        flash(
+            f"'{row['username']}' ist jetzt "
+            f"{'Admin' if new_state else 'normaler Benutzer'}.",
+            "success",
+        )
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+    @admin_required
+    def admin_user_delete(user_id: int):
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        if user_id == current_user.id:
+            flash("Du kannst dich nicht selbst löschen.", "error")
+            return redirect(url_for("admin_users"))
+        if row["is_admin"] and models.count_admins(db) <= 1:
+            flash("Letzten Admin kann man nicht löschen.", "error")
+            return redirect(url_for("admin_users"))
+        models.delete_user(db, user_id)
+        db.commit()
+        flash(f"Benutzer '{row['username']}' gelöscht.", "success")
+        return redirect(url_for("admin_users"))
+
+    @app.errorhandler(403)
+    def forbidden(_e):
+        return render_template("403.html"), 403
+
     # ----- CLI -----
 
     @app.cli.command("create-user")
@@ -266,14 +390,21 @@ def create_app(test_config: dict | None = None) -> Flask:
     @click.option("--password", prompt=True, hide_input=True,
                   confirmation_prompt=True)
     @click.option("--full-name", default=None)
-    def cli_create_user(username, password, full_name):
+    @click.option("--admin/--no-admin", default=False,
+                  help="Mark this user as administrator.")
+    def cli_create_user(username, password, full_name, admin):
         """Create a new user account."""
         db = models.get_db()
         if models.get_user_by_username(db, username):
             click.echo(f"User '{username}' exists already.", err=True)
             raise SystemExit(1)
-        models.create_user(db, username, password, full_name)
+        # If no admin exists yet, the first user is auto-promoted by init_db,
+        # but allow explicit --admin too.
+        models.create_user(db, username, password, full_name, is_admin=admin)
         db.commit()
+        # Re-run admin migration so the very first user gets is_admin=1
+        # without needing the flag.
+        models.init_db(Path(app.config["DB_PATH"]))
         click.echo(f"User '{username}' created.")
 
     return app

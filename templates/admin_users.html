@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Benutzer-Verwaltung{% endblock %}
+{% block content %}
+<h1>Benutzer-Verwaltung</h1>
+<p class="tagline">Konten anlegen, Passwörter zurücksetzen, Admin-Rechte vergeben.</p>
+
+<div class="card">
+  <div class="card-header">Neuen Benutzer anlegen</div>
+  <form method="post" action="{{ url_for('admin_user_create') }}" class="stack">
+    <div class="row three">
+      <label class="field">
+        Benutzername <span class="req">*</span>
+        <input name="username" required autocomplete="off"
+               placeholder="z. B. lisa">
+      </label>
+      <label class="field">
+        Voller Name
+        <input name="full_name" autocomplete="off"
+               placeholder="z. B. Lisa Musterfrau">
+      </label>
+      <label class="field">
+        Passwort <span class="req">*</span>
+        <input name="password" type="text" required minlength="6"
+               autocomplete="new-password" placeholder="min. 6 Zeichen">
+      </label>
+    </div>
+    <label class="checkbox-row">
+      <input type="checkbox" name="is_admin" value="1">
+      Als Administrator anlegen (kann andere Benutzer verwalten)
+    </label>
+    <div><button class="btn" type="submit">Benutzer anlegen</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header">Bestehende Benutzer</div>
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Benutzername</th>
+        <th>Voller Name</th>
+        <th>Rolle</th>
+        <th>Angelegt</th>
+        <th class="right">Aktionen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td><strong>{{ u.username }}</strong>
+          {% if u.id == current_user.id %}<span class="badge">du</span>{% endif %}
+        </td>
+        <td>{{ u.full_name or '—' }}</td>
+        <td>
+          {% if u.is_admin %}<span class="badge admin">Admin</span>
+          {% else %}<span class="muted">Benutzer</span>{% endif %}
+        </td>
+        <td>{{ format_dt(u.created_at) }}</td>
+        <td class="right action-cell">
+          <details class="inline-action">
+            <summary class="btn small secondary">Passwort</summary>
+            <form method="post"
+                  action="{{ url_for('admin_user_reset_password', user_id=u.id) }}"
+                  class="inline-form">
+              <input name="new_password" type="text" required minlength="6"
+                     placeholder="Neues Passwort">
+              <button class="btn small" type="submit">Setzen</button>
+            </form>
+          </details>
+          {% if u.id != current_user.id %}
+            <form method="post"
+                  action="{{ url_for('admin_user_toggle_admin', user_id=u.id) }}"
+                  class="inline-form">
+              <button class="btn small secondary" type="submit">
+                {% if u.is_admin %}Admin entziehen{% else %}Admin geben{% endif %}
+              </button>
+            </form>
+            <form method="post"
+                  action="{{ url_for('admin_user_delete', user_id=u.id) }}"
+                  class="inline-form"
+                  onsubmit="return confirm('Benutzer „{{ u.username }}“ wirklich löschen?');">
+              <button class="btn small danger" type="submit">Löschen</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

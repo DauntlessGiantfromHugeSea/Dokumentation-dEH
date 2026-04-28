@@ -35,7 +35,7 @@
 <table class="data">
   <thead>
     <tr>
-      <th>#</th>
+      <th>Bericht</th>
       <th>EH Datum</th>
       <th>Name</th>
       <th>Geburtsdatum</th>
@@ -47,7 +47,7 @@
   <tbody>
     {% for p in protocols %}
     <tr>
-      <td class="id">#{{ p.id }}</td>
+      <td class="id">{{ p.laufende_nr or '#dEH' ~ p.id }}</td>
       <td>{{ format_dt(p.eh_datum_uhrzeit) or format_dt(p.unfall_datum_uhrzeit) or format_dt(p.created_at) }}</td>
       <td><a href="{{ url_for('patient_detail', patient_id=p.patient_id) }}">{{ p.patient_name }}</a></td>
       <td>{{ format_dt(p.patient_geburtsdatum) }}</td>

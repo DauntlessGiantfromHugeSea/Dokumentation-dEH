@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
     username      TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     full_name     TEXT,
+    is_admin      INTEGER NOT NULL DEFAULT 0,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -85,11 +86,30 @@ def close_db(_exc=None) -> None:
 
 
 def init_db(db_path: Path) -> None:
-    """Create the schema. Safe to call repeatedly."""
+    """Create the schema and apply lightweight migrations.
+
+    Safe to call repeatedly (each migration is idempotent).
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA)
+        # Migration: add is_admin to existing users tables.
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+        if "is_admin" not in cols:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"
+            )
+        # Promote oldest user to admin if there isn't one yet — keeps the
+        # initial bootstrap simple ("first user = admin").
+        has_admin = conn.execute(
+            "SELECT 1 FROM users WHERE is_admin = 1 LIMIT 1"
+        ).fetchone()
+        if not has_admin:
+            conn.execute(
+                "UPDATE users SET is_admin = 1 "
+                "WHERE id = (SELECT MIN(id) FROM users)"
+            )
         conn.commit()
     finally:
         conn.close()
@@ -111,10 +131,13 @@ def standalone_connection(db_path: Path) -> Iterator[sqlite3.Connection]:
 # ---------- Users ----------
 
 def create_user(conn: sqlite3.Connection, username: str, password: str,
-                full_name: Optional[str] = None) -> int:
+                full_name: Optional[str] = None,
+                is_admin: bool = False) -> int:
     cur = conn.execute(
-        "INSERT INTO users (username, password_hash, full_name) VALUES (?, ?, ?)",
-        (username, generate_password_hash(password), full_name),
+        "INSERT INTO users (username, password_hash, full_name, is_admin) "
+        "VALUES (?, ?, ?, ?)",
+        (username, generate_password_hash(password), full_name,
+         1 if is_admin else 0),
     )
     return cur.lastrowid
 
@@ -129,6 +152,33 @@ def get_user_by_username(conn: sqlite3.Connection, username: str) -> Optional[sq
 
 def verify_password(user_row: sqlite3.Row, password: str) -> bool:
     return check_password_hash(user_row["password_hash"], password)
+
+
+def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT id, username, full_name, is_admin, created_at "
+        "FROM users ORDER BY username COLLATE NOCASE"
+    ).fetchall()
+
+
+def set_user_password(conn: sqlite3.Connection, user_id: int, password: str) -> None:
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                 (generate_password_hash(password), user_id))
+
+
+def set_user_admin(conn: sqlite3.Connection, user_id: int, is_admin: bool) -> None:
+    conn.execute("UPDATE users SET is_admin = ? WHERE id = ?",
+                 (1 if is_admin else 0, user_id))
+
+
+def delete_user(conn: sqlite3.Connection, user_id: int) -> None:
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+def count_admins(conn: sqlite3.Connection) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) AS n FROM users WHERE is_admin = 1"
+    ).fetchone()["n"]
 
 
 # ---------- Patients ----------
@@ -177,9 +227,9 @@ def list_patients(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 # ---------- Protocols ----------
 
+# Fields editable through the form. `laufende_nr` and `deh` are auto-managed
+# (laufende_nr = "#dEH<id>") and never accepted from form input.
 PROTOCOL_FIELDS = (
-    "laufende_nr",
-    "deh",
     "unfall_datum_uhrzeit",
     "unfallort",
     "unfallhergang",
@@ -192,6 +242,10 @@ PROTOCOL_FIELDS = (
 )
 
 
+def laufende_nr_for(protocol_id: int) -> str:
+    return f"#dEH{protocol_id}"
+
+
 def create_protocol(conn: sqlite3.Connection, patient_id: int,
                     data: dict, created_by: Optional[int]) -> int:
     cols = ["patient_id"] + list(PROTOCOL_FIELDS) + ["created_by"]
@@ -201,13 +255,22 @@ def create_protocol(conn: sqlite3.Connection, patient_id: int,
         f"INSERT INTO protocols ({','.join(cols)}) VALUES ({placeholders})",
         values,
     )
-    return cur.lastrowid
+    new_id = cur.lastrowid
+    conn.execute("UPDATE protocols SET laufende_nr = ? WHERE id = ?",
+                 (laufende_nr_for(new_id), new_id))
+    return new_id
 
 
 def update_protocol(conn: sqlite3.Connection, protocol_id: int, data: dict) -> None:
     set_clause = ", ".join(f"{f} = ?" for f in PROTOCOL_FIELDS)
     values = [data.get(f) or None for f in PROTOCOL_FIELDS] + [protocol_id]
     conn.execute(f"UPDATE protocols SET {set_clause} WHERE id = ?", values)
+    # Backfill laufende_nr in case an older record was missing it.
+    conn.execute(
+        "UPDATE protocols SET laufende_nr = ? WHERE id = ? AND "
+        "(laufende_nr IS NULL OR laufende_nr = '')",
+        (laufende_nr_for(protocol_id), protocol_id),
+    )
 
 
 def get_protocol(conn: sqlite3.Connection, protocol_id: int) -> Optional[sqlite3.Row]:

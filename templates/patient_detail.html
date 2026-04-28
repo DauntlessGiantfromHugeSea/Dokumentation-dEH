@@ -20,20 +20,18 @@
 <table class="data">
   <thead>
     <tr>
-      <th>#</th>
+      <th>Bericht</th>
       <th>EH Datum</th>
       <th>Ersthelfer</th>
-      <th>Laufende Nr.</th>
       <th class="right"></th>
     </tr>
   </thead>
   <tbody>
     {% for p in protocols %}
     <tr>
-      <td class="id">#{{ p.id }}</td>
+      <td class="id">{{ p.laufende_nr or '#dEH' ~ p.id }}</td>
       <td>{{ format_dt(p.eh_datum_uhrzeit) or format_dt(p.created_at) }}</td>
       <td>{{ p.name_ersthelfer or '—' }}</td>
-      <td>{{ p.laufende_nr or '—' }}</td>
       <td class="right">
         <a class="btn small secondary" href="{{ url_for('protocol_detail', protocol_id=p.id) }}">Öffnen</a>
       </td>

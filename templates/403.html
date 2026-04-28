@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Kein Zugriff{% endblock %}
+{% block content %}
+<div class="empty card">
+  <h2 style="color: var(--accent); margin-top: 0;">Kein Zugriff</h2>
+  <p class="muted">
+    Diese Seite ist nur für Administratoren. Wenn du Admin-Rechte brauchst,
+    frag eine Person mit Admin-Konto.
+  </p>
+  <p><a class="btn secondary" href="{{ url_for('index') }}">Zurück zur Übersicht</a></p>
+</div>
+{% endblock %}
