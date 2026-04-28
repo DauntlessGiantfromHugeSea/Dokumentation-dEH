@@ -33,55 +33,115 @@
   body { min-height: 100vh; }
 
   /* ============ Layout ============ */
-  .layout { display: grid; grid-template-columns: 1fr; min-height: 100vh; }
-  .main.full-width { max-width: 1080px; margin: 0 auto; width: 100%; }
-  /* Modal */
-  .vh-modal-backdrop {
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.5);
-    display: none;
-    align-items: center; justify-content: center;
-    z-index: 1000;
-    padding: 20px;
+  .layout { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 50px); }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .vh-sidebar { max-height: none !important; position: relative !important; }
   }
-  .vh-modal-backdrop.open { display: flex; }
-  .vh-modal {
-    background: #fff;
-    border-radius: 8px;
-    max-width: 720px;
-    width: 100%;
-    max-height: 80vh;
-    overflow-y: auto;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-  }
-  .vh-modal-header {
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--border);
+  /* Vorbehandlungs-Sidebar — ersetzt die alte Protokoll-Liste */
+  .vh-sidebar {
+    background: #fafbfc;
+    border-right: 1px solid var(--border);
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    max-height: calc(100vh - 50px);
+    position: sticky;
+    top: 0;
+    overflow-y: auto;
   }
-  .vh-modal-header h3 { margin: 0; color: var(--primary, #d32f2f); }
-  .vh-modal-close {
-    background: none; border: none; font-size: 1.4rem;
-    cursor: pointer; color: var(--muted); padding: 0 4px;
+  .vh-sidebar-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
-  .vh-modal-body { padding: 16px 18px; }
-  .vh-modal-body table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  .vh-modal-body th, .vh-modal-body td {
-    padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left;
+  .vh-sidebar-header h2 {
+    margin: 0;
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--primary, #d32f2f);
   }
-  .vh-modal-body th {
-    background: #fafbfc; font-size: 0.8rem; text-transform: uppercase;
-    letter-spacing: 0.4px; color: var(--muted);
+  .vh-sidebar-header .vh-sub { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+  .vh-sidebar-body { padding: 12px 14px; flex: 1; }
+  .vh-empty {
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    padding: 24px 4px;
+    text-align: center;
   }
-  /* Lookup-Banner Erweiterung — Multi-Match-Liste */
-  .app-bar-banner ul { margin: 6px 0 0; padding-left: 18px; }
-  .app-bar-banner ul li { margin-bottom: 2px; }
-  .app-bar-banner button.linklike {
-    background: none; border: none; color: var(--primary, #d32f2f);
-    cursor: pointer; padding: 0 0 0 4px; font: inherit; text-decoration: underline;
+  .vh-state-pill {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-bottom: 8px;
   }
+  .vh-state-pill.found { background: #e8f4ec; color: #1f6b3a; }
+  .vh-state-pill.new { background: #fff3cd; color: #7a5d00; }
+  .vh-state-pill.multi { background: #fce8e6; color: #b3261e; }
+  .vh-patient-card {
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 12px;
+  }
+  .vh-patient-card .vh-name { font-weight: 600; font-size: 0.95rem; }
+  .vh-patient-card .vh-meta { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
+  .vh-patient-card .vh-actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .vh-history-item {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+  }
+  .vh-history-item:last-child { border-bottom: 0; }
+  .vh-history-id { font-weight: 600; min-width: 60px; }
+  .vh-history-date { color: var(--muted); font-size: 0.78rem; }
+  .vh-history-link { margin-left: auto; }
+  .vh-history-link a {
+    font-size: 0.78rem;
+    text-decoration: none;
+    color: var(--primary, #d32f2f);
+  }
+  .vh-history-link a:hover { text-decoration: underline; }
+  .vh-multi-item {
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .vh-multi-item button {
+    margin-top: 6px;
+    background: var(--primary, #d32f2f);
+    color: #fff;
+    border: 0;
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+  }
+  .vh-multi-item button:hover { background: var(--primary-dark, #9a0007); }
+  .vh-badge-row { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .vh-badge {
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+  .vh-badge.d { background: #e6effa; color: #2c5b8a; }
+  .vh-badge.z { background: #fce8e6; color: #b3261e; }
   @media (max-width: 900px) {
     .layout { grid-template-columns: 1fr; }
     .sidebar {
@@ -403,31 +463,26 @@
     <a href="/logout">Abmelden</a>
   </span>
 </header>
-<div id="central-prior-hint" class="app-bar-banner" style="display:none;"></div>
-
-<div class="vh-modal-backdrop" id="vh-modal" role="dialog" aria-modal="true">
-  <div class="vh-modal">
-    <div class="vh-modal-header">
-      <h3 id="vh-modal-title">Vorbehandlungen</h3>
-      <button class="vh-modal-close" type="button"
-              onclick="document.getElementById('vh-modal').classList.remove('open')">×</button>
-    </div>
-    <div class="vh-modal-body" id="vh-modal-body">
-      <p class="muted">Lade …</p>
-    </div>
-  </div>
-</div>
-
 <div class="layout">
 
-  {# Sidebar entfernt — Listen-Übersicht läuft jetzt über die unified Liste auf "/".
-     Versteckte Stubs bleiben erhalten, damit das bestehende JS nicht
-     auf null-Referenzen läuft. #}
-  <div id="sidebar" style="display:none;"><div id="protocol-list"></div></div>
-  <button id="btn-sidebar" style="display:none;"></button>
-  <button id="btn-new" style="display:none;"></button>
+  <aside class="vh-sidebar" id="vh-sidebar">
+    <div class="vh-sidebar-header">
+      <h2>Vorbehandlungen</h2>
+      <div class="vh-sub" id="vh-sub">— Patient identifizieren</div>
+    </div>
+    <div class="vh-sidebar-body" id="vh-sidebar-body">
+      <div class="vh-empty">
+        Sobald oben Vorname, Nachname oder Geburtsdatum eingegeben sind,
+        erscheinen hier passende Patienten und ihre Vorbehandlungen.
+      </div>
+    </div>
+    {# Hidden stubs for legacy JS compatibility (alter Sidebar-Code) #}
+    <div id="sidebar" style="display:none;"><div id="protocol-list"></div></div>
+    <button id="btn-sidebar" style="display:none;"></button>
+    <button id="btn-new" style="display:none;"></button>
+  </aside>
 
-  <main class="main full-width">
+  <main class="main">
     <div class="app">
       <header class="top">
         <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
@@ -720,7 +775,7 @@
           <div class="section">
             <div class="label">Person</div>
             <div class="grid cols-2">
-              <div class="field"><label for="vorname">Vorname</label><input type="text" id="vorname" name="vorname" /></div>
+              <div class="field"><label for="vorname">Vorname</label><input type="text" id="vorname" name="vorname" autofocus /></div>
               <div class="field"><label for="nachname">Nachname</label><input type="text" id="nachname" name="nachname" /></div>
               <div class="field"><label for="geburtsdatum">Geburtsdatum</label><input type="date" id="geburtsdatum" name="geburtsdatum" /></div>
               <div class="field"><label for="geschlecht">Geschlecht</label>
@@ -1208,18 +1263,17 @@
 </script>
 
 <script>
-// Live-Lookup: schon beim Tippen von Vorname, Nachname ODER Geburtsdatum
-// nach Patienten suchen. Banner zeigt:
-//  - 0 Treffer + alle Felder gefüllt → "neue Person"
-//  - 1 Treffer → "Bekannter Patient — X Vorbehandlungen [Anzeigen]"
-//  - mehrere Treffer → Liste mit Stammnummer, Geburtsdatum + Pickern
-// "Anzeigen" öffnet das Vorbehandlungs-Popup mit der vollen History.
+// Live-Lookup: schon beim Tippen von Vorname/Nachname/Geburtsdatum
+// nach Patienten suchen und das Ergebnis IM LINKEN SEITENPANEL rendern.
+// Zustände:
+//  - hidden:   Eingabefelder leer → leerer Hinweis
+//  - new:      0 Treffer + alle Felder voll → "Neue Person"
+//  - single:   1 Treffer → Patientenkarte + komplette Behandlungs-Historie
+//  - multi:    N Treffer → Liste mit "diese auswählen"-Buttons
 (function () {
-  const banner = document.getElementById('central-prior-hint');
-  const modal = document.getElementById('vh-modal');
-  const modalBody = document.getElementById('vh-modal-body');
-  const modalTitle = document.getElementById('vh-modal-title');
-  if (!banner) return;
+  const sidebarBody = document.getElementById('vh-sidebar-body');
+  const sidebarSub = document.getElementById('vh-sub');
+  if (!sidebarBody) return;
   const form = document.getElementById('protocol-form');
   if (!form) return;
 
@@ -1243,92 +1297,180 @@
     return d.length === 3 ? `${d[2]}.${d[1]}.${d[0]}` : iso;
   }
 
-  function setBannerState(state) {
-    banner.dataset.state = state;
-    banner.style.display = state === 'hidden' ? 'none' : 'block';
+  function setSub(text) { if (sidebarSub) sidebarSub.textContent = text; }
+  function setBody(html) { sidebarBody.innerHTML = html; }
+
+  function emptyState() {
+    setSub('— Patient identifizieren');
+    setBody('<div class="vh-empty">Sobald oben Vorname, Nachname oder Geburtsdatum eingegeben sind, erscheinen hier passende Patienten und ihre Vorbehandlungen.</div>');
   }
 
-  async function openHistoryModal(patientId, patientName) {
-    if (!patientId) return;
-    modalTitle.textContent = 'Vorbehandlungen — ' + (patientName || '');
-    modalBody.innerHTML = '<p class="muted">Lade …</p>';
-    modal.classList.add('open');
-    try {
-      const res = await fetch(`/api/central/patient-history?patient_id=${patientId}`,
-                              { credentials: 'same-origin' });
-      if (res.status === 403) {
-        modalBody.innerHTML = '<p class="muted">Keine Berechtigung, Vorbehandlungen einzusehen.</p>';
-        return;
-      }
-      if (!res.ok) {
-        modalBody.innerHTML = '<p class="muted">Fehler beim Laden.</p>';
-        return;
-      }
-      const data = await res.json();
-      const p = data.patient || {};
-      const history = data.history || [];
-      let html = `<p style="margin-top: 0;"><strong>${escapeHtml(p.name)}</strong>
-                     · geb. ${escapeHtml(fmtDate(p.geburtsdatum))}
-                     ${p.stammnummer ? '· Stamm-Nr. ' + escapeHtml(p.stammnummer) : ''}</p>`;
-      if (!history.length) {
-        html += '<p class="muted">Keine Berichte.</p>';
-      } else {
-        html += '<table><thead><tr><th>Bericht</th><th>Typ</th><th>Datum</th><th></th></tr></thead><tbody>';
-        for (const h of history) {
-          const target = h.source === 'decentral'
-            ? `/protocols/${h.id}` : `/central/${h.id}`;
-          const badge = h.source === 'decentral'
-            ? '<span class="badge type-d">dEH</span>'
-            : '<span class="badge type-z">zEH</span>';
-          html += `<tr>
-            <td><strong>${escapeHtml(h.laufende_nr || '')}</strong></td>
-            <td>${badge}</td>
-            <td>${escapeHtml(fmtDate(h.event_date))}</td>
-            <td style="text-align:right;"><a href="${target}" target="_blank" class="btn small secondary">Öffnen</a></td>
-          </tr>`;
-        }
-        html += '</tbody></table>';
-      }
-      modalBody.innerHTML = html;
-    } catch (_) {
-      modalBody.innerHTML = '<p class="muted">Fehler beim Laden.</p>';
-    }
+  function pickPatient(name, dob) {
+    const parts = (name || '').split(' ');
+    const vorname = parts[0] || '';
+    const nachname = parts.length > 1 ? parts.slice(1).join(' ') : '';
+    const setVal = (n, v) => {
+      const el = form.querySelector(`[name="${n}"]`);
+      if (el) { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }
+    };
+    setVal('vorname', vorname);
+    setVal('nachname', nachname);
+    setVal('geburtsdatum', dob || '');
+    check();
   }
 
-  // Click handler for "Anzeigen" links in the banner
-  banner.addEventListener('click', (e) => {
+  // Delegated click handler for action buttons rendered into the sidebar
+  sidebarBody.addEventListener('click', (e) => {
     const tgt = e.target.closest('[data-vh-action]');
     if (!tgt) return;
     e.preventDefault();
-    const action = tgt.dataset.vhAction;
-    if (action === 'history') {
-      openHistoryModal(Number(tgt.dataset.patientId),
-                       tgt.dataset.patientName || '');
-    } else if (action === 'pick') {
-      // Felder mit dem ausgewählten Patienten füllen
-      const name = tgt.dataset.patientName || '';
-      const parts = name.split(' ');
-      const vorname = parts[0] || '';
-      const nachname = parts.length > 1 ? parts.slice(1).join(' ') : '';
-      const setVal = (n, v) => {
-        const el = form.querySelector(`[name="${n}"]`);
-        if (el) { el.value = v; }
-      };
-      setVal('vorname', vorname);
-      setVal('nachname', nachname);
-      setVal('geburtsdatum', tgt.dataset.geburtsdatum || '');
-      // Re-run lookup, will switch to single-match state
-      check();
+    if (tgt.dataset.vhAction === 'pick') {
+      pickPatient(tgt.dataset.patientName || '',
+                  tgt.dataset.geburtsdatum || '');
     }
   });
 
-  // ESC + click on backdrop close modal
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.classList.remove('open');
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') modal.classList.remove('open');
-  });
+  function renderHistoryRows(history) {
+    if (!history || !history.length) {
+      return '<p class="muted" style="font-size:0.85rem;margin:8px 0 0;">Noch keine Berichte.</p>';
+    }
+    let html = '<div style="margin-top:10px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);">Behandlungs-Historie</div>';
+    for (const h of history) {
+      const target = h.source === 'decentral'
+        ? `/protocols/${h.id}` : `/central/${h.id}`;
+      const badgeClass = h.source === 'decentral' ? 'd' : 'z';
+      const badgeText = h.source === 'decentral' ? 'dEH' : 'zEH';
+      html += `<div class="vh-history-item">
+        <div>
+          <div class="vh-history-id">${escapeHtml(h.laufende_nr || '')}
+            <span class="vh-badge ${badgeClass}">${badgeText}</span>
+          </div>
+          <div class="vh-history-date">${escapeHtml(fmtDate(h.event_date))}</div>
+        </div>
+        <div class="vh-history-link">
+          <a href="${target}" target="_blank">öffnen</a>
+        </div>
+      </div>`;
+    }
+    return html;
+  }
+
+  let lastHistoryPatientId = null;
+  let lastHistoryCache = null;
+
+  async function fetchHistory(patientId) {
+    if (!patientId) return null;
+    if (patientId === lastHistoryPatientId) return lastHistoryCache;
+    try {
+      const res = await fetch(`/api/central/patient-history?patient_id=${patientId}`,
+                              { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      lastHistoryPatientId = patientId;
+      lastHistoryCache = data.history || [];
+      return lastHistoryCache;
+    } catch (_) { return null; }
+  }
+
+  async function renderSingle(m, fullName, dob) {
+    setSub('1 Treffer');
+    const fullData = fullName && dob;
+    const akteLink = m.patient_id
+      ? `<a href="/patients/${m.patient_id}" target="_blank" style="font-size:0.78rem;text-decoration:none;color:var(--primary,#d32f2f);">vollständige Akte →</a>`
+      : '';
+    const pickBtn = !fullData
+      ? `<button type="button" class="btn primary sm"
+                 data-vh-action="pick"
+                 data-patient-name="${escapeHtml(m.name)}"
+                 data-geburtsdatum="${escapeHtml(m.geburtsdatum)}">
+           Patient übernehmen
+         </button>`
+      : '';
+    let html = `
+      <span class="vh-state-pill found">Bekannte Person</span>
+      <div class="vh-patient-card">
+        <div class="vh-name">${escapeHtml(m.name)}</div>
+        <div class="vh-meta">
+          geb. ${escapeHtml(fmtDate(m.geburtsdatum))}
+          ${m.stammnummer ? '<br>Stamm-Nr. <strong>' + escapeHtml(m.stammnummer) + '</strong>' : ''}
+        </div>
+        <div class="vh-badge-row">
+          <span class="vh-badge d">${m.previous_decentral} dEH</span>
+          <span class="vh-badge z">${m.previous_central} zEH</span>
+          ${m.last_treatment ? '<span class="vh-badge" style="background:#eee;color:#555;">zuletzt ' + escapeHtml(fmtDate(m.last_treatment)) + '</span>' : ''}
+        </div>
+        <div class="vh-actions">${pickBtn}${akteLink}</div>
+      </div>
+      <div id="vh-history-pane"><p class="muted" style="font-size:0.85rem;">Lade Vorbehandlungen …</p></div>
+    `;
+    setBody(html);
+    if (m.patient_id) {
+      const history = await fetchHistory(m.patient_id);
+      const pane = document.getElementById('vh-history-pane');
+      if (pane) pane.innerHTML = renderHistoryRows(history);
+    } else {
+      // zentral_writer: kein patient_id → keine Detail-Liste
+      const pane = document.getElementById('vh-history-pane');
+      if (pane) pane.innerHTML = '<p class="muted" style="font-size:0.85rem;margin:6px 0 0;">Detailansicht eingeschränkt — nur Anzahlen verfügbar.</p>';
+    }
+  }
+
+  function renderMulti(matches) {
+    setSub(`${matches.length} mögliche Personen`);
+    let html = `<span class="vh-state-pill multi">${matches.length} Treffer</span>
+      <p class="muted" style="font-size:0.85rem;margin:0 0 10px;">
+        Bitte richtige Person wählen oder oben präzisieren:
+      </p>`;
+    for (const m of matches) {
+      html += `<div class="vh-multi-item">
+        <div style="font-weight:600;">${escapeHtml(m.name)}</div>
+        <div style="font-size:0.82rem;color:var(--muted);">
+          geb. ${escapeHtml(fmtDate(m.geburtsdatum))}
+          ${m.stammnummer ? '· Stamm-Nr. ' + escapeHtml(m.stammnummer) : ''}
+        </div>
+        <div class="vh-badge-row">
+          <span class="vh-badge d">${m.previous_decentral} dEH</span>
+          <span class="vh-badge z">${m.previous_central} zEH</span>
+        </div>
+        <button type="button"
+                data-vh-action="pick"
+                data-patient-name="${escapeHtml(m.name)}"
+                data-geburtsdatum="${escapeHtml(m.geburtsdatum)}">
+          Diese Person übernehmen
+        </button>
+      </div>`;
+    }
+    setBody(html);
+  }
+
+  function renderNew(fullName, dob) {
+    setSub('Neue Person');
+    setBody(`
+      <span class="vh-state-pill new">Neuer Patient</span>
+      <div class="vh-patient-card">
+        <div class="vh-name">${escapeHtml(fullName)}</div>
+        <div class="vh-meta">geb. ${escapeHtml(fmtDate(dob))}</div>
+      </div>
+      <p class="muted" style="font-size:0.85rem;">
+        Keine Akte gefunden — beim Speichern des Berichts wird eine neue
+        Patientenakte angelegt.
+      </p>
+      <p class="muted" style="font-size:0.78rem;">
+        Tippfehler? Eine andere Schreibweise könnte zu einem bestehenden
+        Eintrag passen.
+      </p>
+    `);
+  }
+
+  function renderHint(fullName, dob) {
+    setSub('Suche läuft');
+    const txt = !fullName && dob
+      ? 'Bisher nur Geburtsdatum — Name eingeben für eindeutige Suche.'
+      : !dob && fullName
+      ? 'Bisher nur Name — Geburtsdatum eingeben für eindeutige Suche.'
+      : 'Eingabe ist unvollständig.';
+    setBody(`<div class="vh-empty">${txt}</div>`);
+  }
 
   let timer = null;
   async function check() {
@@ -1336,7 +1478,9 @@
     const fullName = [f.vorname, f.nachname].filter(Boolean).join(' ').trim();
 
     if (!fullName && !f.geburtsdatum) {
-      setBannerState('hidden');
+      lastHistoryPatientId = null;
+      lastHistoryCache = null;
+      emptyState();
       return;
     }
 
@@ -1350,70 +1494,18 @@
       const matches = data.matches || [];
 
       if (matches.length === 0) {
-        // Nur "neue Person" anzeigen, wenn beide Felder gefüllt sind —
-        // sonst ist der User wahrscheinlich noch am Tippen.
         if (fullName && f.geburtsdatum) {
-          banner.innerHTML = `Keine bekannte Person mit
-            <strong>${escapeHtml(fullName)}</strong> ·
-            geb. <strong>${escapeHtml(fmtDate(f.geburtsdatum))}</strong> —
-            beim Speichern wird ein neuer Patientendatensatz angelegt.`;
-          setBannerState('new');
+          renderNew(fullName, f.geburtsdatum);
         } else {
-          setBannerState('hidden');
+          renderHint(fullName, f.geburtsdatum);
         }
         return;
       }
-
       if (matches.length === 1) {
-        const m = matches[0];
-        const total = (m.previous_decentral + m.previous_central);
-        const nameParts = (m.name || '').split(' ');
-        let html = `Bekannter Patient: <strong>${escapeHtml(m.name)}</strong>
-          · geb. ${escapeHtml(fmtDate(m.geburtsdatum))}
-          ${m.stammnummer ? '· Stamm-Nr. ' + escapeHtml(m.stammnummer) : ''}
-          · <strong>${m.previous_decentral}</strong> dezentrale,
-            <strong>${m.previous_central}</strong> zentrale Behandlung(en).`;
-        if (total > 0 && m.patient_id) {
-          html += ` <button type="button" class="linklike"
-                       data-vh-action="history"
-                       data-patient-id="${m.patient_id}"
-                       data-patient-name="${escapeHtml(m.name)}">
-                       Vorbehandlungen anzeigen
-                    </button>`;
-        }
-        // Falls Felder noch nicht alle gefüllt sind: Pick-Button anbieten
-        if (!fullName || !f.geburtsdatum) {
-          html += ` <button type="button" class="linklike"
-                       data-vh-action="pick"
-                       data-patient-name="${escapeHtml(m.name)}"
-                       data-geburtsdatum="${escapeHtml(m.geburtsdatum)}">
-                       Felder übernehmen
-                    </button>`;
-        }
-        banner.innerHTML = html;
-        setBannerState('single');
+        await renderSingle(matches[0], fullName, f.geburtsdatum);
         return;
       }
-
-      // Mehrere Treffer → Disambiguierung
-      let html = `<strong>${matches.length}</strong> Personen passen zur Eingabe — bitte präzisieren:<ul>`;
-      for (const m of matches.slice(0, 10)) {
-        html += `<li>
-          <strong>${escapeHtml(m.name)}</strong>
-          · geb. ${escapeHtml(fmtDate(m.geburtsdatum))}
-          ${m.stammnummer ? '· Stamm-Nr. ' + escapeHtml(m.stammnummer) : ''}
-          · ${m.previous_decentral} dEH / ${m.previous_central} zEH
-          <button type="button" class="linklike"
-                  data-vh-action="pick"
-                  data-patient-name="${escapeHtml(m.name)}"
-                  data-geburtsdatum="${escapeHtml(m.geburtsdatum)}">
-                  diese auswählen
-          </button>
-        </li>`;
-      }
-      html += '</ul>';
-      banner.innerHTML = html;
-      setBannerState('multi');
+      renderMulti(matches);
     } catch (_) { /* network — silently ignore */ }
   }
 
@@ -1422,7 +1514,7 @@
     clearTimeout(timer);
     timer = setTimeout(check, 250);
   });
-  setTimeout(check, 500);
+  setTimeout(check, 400);
 })();
 </script>
 </body>
