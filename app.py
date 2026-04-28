@@ -227,9 +227,21 @@ def create_app(test_config: dict | None = None) -> Flask:
     @decentral_view_required
     def index():
         filters = _read_filters(request.args)
-        protocols = models.list_protocols(models.get_db(), **filters)
-        return render_template("index.html", protocols=protocols, filters=filters,
-                               format_dt=models.format_dt)
+        source_filter = (request.args.get("type") or "").strip() or None
+        if source_filter not in ("decentral", "central"):
+            source_filter = None
+        unified = models.list_unified_protocols(
+            models.get_db(),
+            **filters,
+            source_filter=source_filter,
+        )
+        return render_template(
+            "index.html",
+            protocols=unified,
+            filters=filters,
+            source_filter=source_filter,
+            format_dt=models.format_dt,
+        )
 
     @app.route("/protocols/new")
     @decentral_view_required
@@ -407,7 +419,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         for r in rows:
             full = models.get_protocol(db, r["id"])
             writer.writerow([
-                full["laufende_nr"] or models.laufende_nr_for(full["id"]),
+                full["laufende_nr"] or "",
                 full["id"], full["patient_name"], full["patient_geburtsdatum"],
                 full["patient_stammnummer"] or "",
                 full["unfall_datum_uhrzeit"] or "", full["unfallort"] or "",
@@ -430,6 +442,50 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
 
     # ----- Central first-aid (Notfallprotokoll) -----
+
+    @app.route("/central/new", methods=["GET", "POST"])
+    @login_required
+    def central_new():
+        """Interstitial step: validate patient identity before opening the SPA.
+
+        On GET: show identity form (vorname/nachname/geburtsdatum).
+        On POST: lookup the patient and render the page with a Vorbehandlungs
+        panel; the user clicks "Behandlung beginnen" to enter the SPA.
+        """
+        prefill = {
+            "vorname": (request.values.get("vorname") or "").strip(),
+            "nachname": (request.values.get("nachname") or "").strip(),
+            "geburtsdatum": (request.values.get("geburtsdatum") or "").strip(),
+        }
+        lookup = None
+        if request.method == "POST" and prefill["geburtsdatum"] and (
+                prefill["vorname"] or prefill["nachname"]):
+            db = models.get_db()
+            full_name = " ".join(
+                p for p in (prefill["vorname"], prefill["nachname"]) if p
+            )
+            row = db.execute(
+                "SELECT id, stammnummer FROM patients "
+                "WHERE name = ? AND geburtsdatum = ?",
+                (full_name, prefill["geburtsdatum"]),
+            ).fetchone()
+            if row:
+                counts = models.patient_protocol_counts(db, row["id"])
+                lookup = {
+                    "found": True,
+                    "patient_id": row["id"]
+                                   if not current_user.is_zentral_only
+                                   else None,
+                    "patient_name": full_name,
+                    "stammnummer": row["stammnummer"] or "",
+                    "decentral_count": counts["decentral"],
+                    "central_count": counts["central"],
+                }
+            else:
+                lookup = {"found": False, "patient_name": full_name}
+        return render_template("central_new.html", prefill=prefill,
+                               lookup=lookup,
+                               format_dt=models.format_dt)
 
     @app.route("/central")
     @login_required
@@ -466,6 +522,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                                  else "",
                     "einsatznummer": r["einsatznummer"],
                     "datum": r["datum"],
+                    "laufende_nr": r["laufende_nr"],
+                    "global_id": r["global_id"],
                     "created_at": r["created_at"],
                     "updated_at": r["updated_at"],
                     "patient_id": r["patient_id"],

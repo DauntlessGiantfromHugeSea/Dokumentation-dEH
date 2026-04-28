@@ -20,12 +20,15 @@
   </a>
 
   <a class="chooser-card central"
-     href="{{ url_for('central_index') }}">
+     href="{{ url_for('central_new',
+                      vorname=prefill.name.split(' ')[0] if prefill.name else '',
+                      nachname=prefill.name.rsplit(' ', 1)[-1] if prefill.name and ' ' in prefill.name else '',
+                      geburtsdatum=prefill.geburtsdatum) }}">
     <div class="chooser-title">Zentrale Erste Hilfe</div>
     <div class="chooser-subtitle">Großes Notfallprotokoll · Behandlung</div>
     <ul class="chooser-list">
-      <li>Patientendaten + Anamnese</li>
-      <li>Erstbefund + Messwerte (RR, Puls, SpO₂, …)</li>
+      <li>Schritt 1: Person identifizieren (Vorbehandlungen?)</li>
+      <li>Schritt 2: Anamnese, Erstbefund, Messwerte</li>
       <li>Diagnose · Maßnahmen · Verlauf · Übergabe</li>
     </ul>
     <div class="chooser-cta">Wählen →</div>

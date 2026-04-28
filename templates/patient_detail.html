@@ -17,7 +17,13 @@
                          stammnummer=patient.stammnummer or '') }}">
        + Dezentral
     </a>
-    <a class="btn small" href="{{ url_for('central_index') }}">+ Zentral</a>
+    <a class="btn small"
+       href="{{ url_for('central_index',
+                        vorname=patient.name.split(' ')[0] if patient.name else '',
+                        nachname=patient.name.rsplit(' ', 1)[-1] if patient.name and ' ' in patient.name else '',
+                        geburtsdatum=patient.geburtsdatum) }}">
+       + Zentral
+    </a>
   </div>
 </div>
 
@@ -58,6 +64,7 @@
     <table class="data">
       <thead>
         <tr>
+          <th>Bericht</th>
           <th>Einsatznummer</th>
           <th>Datum</th>
           <th>Aktualisiert</th>
@@ -67,7 +74,8 @@
       <tbody>
         {% for c in central_protocols %}
         <tr>
-          <td class="id">{{ c.einsatznummer or ('#zEH' ~ c.id) }}</td>
+          <td class="id">{{ c.laufende_nr or ('#zEH' ~ c.id) }}</td>
+          <td>{{ c.einsatznummer or '—' }}</td>
           <td>{{ format_dt(c.datum) }}</td>
           <td>{{ format_dt(c.updated_at) }}</td>
           <td class="right">

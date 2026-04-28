@@ -1,8 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Einsatzberichte{% endblock %}
+{% block title %}Berichte{% endblock %}
 {% block content %}
-<h1>Einsatzberichte</h1>
-<p class="tagline">Übersicht aller dokumentierten Erste-Hilfe-Leistungen.</p>
+<div class="page-header">
+  <div>
+    <h1>Berichte</h1>
+    <p class="tagline">
+      Übersicht aller dezentralen und zentralen Erste-Hilfe-Berichte —
+      laufend nummeriert über beide Bereiche hinweg.
+    </p>
+  </div>
+  <div class="btn-row">
+    <a class="btn small" href="{{ url_for('protocol_new_chooser') }}">+ Neuer Bericht</a>
+  </div>
+</div>
 
 <form method="get" class="toolbar">
   <label class="field">
@@ -14,19 +24,27 @@
     <input name="stammnummer" value="{{ filters.stammnummer or '' }}">
   </label>
   <label class="field">
-    EH von
+    Datum von
     <input name="date_from" type="date" value="{{ filters.date_from or '' }}">
   </label>
   <label class="field">
-    EH bis
+    Datum bis
     <input name="date_to" type="date" value="{{ filters.date_to or '' }}">
+  </label>
+  <label class="field">
+    Typ
+    <select name="type">
+      <option value="">Alle</option>
+      <option value="decentral" {% if source_filter == 'decentral' %}selected{% endif %}>Nur dEH</option>
+      <option value="central" {% if source_filter == 'central' %}selected{% endif %}>Nur zEH</option>
+    </select>
   </label>
   <div class="btn-row">
     <button class="btn" type="submit">Filtern</button>
     <a class="btn secondary" href="{{ url_for('index') }}">Zurücksetzen</a>
     <a class="btn secondary"
        href="{{ url_for('export_csv', name=filters.name_query or '', stammnummer=filters.stammnummer or '', date_from=filters.date_from or '', date_to=filters.date_to or '') }}">
-       CSV-Export
+       CSV-Export (dEH)
     </a>
   </div>
 </form>
@@ -36,25 +54,41 @@
   <thead>
     <tr>
       <th>Bericht</th>
-      <th>EH Datum</th>
+      <th>Typ</th>
+      <th>Datum</th>
       <th>Name</th>
       <th>Geburtsdatum</th>
       <th>Stammnummer</th>
-      <th>Ersthelfer</th>
       <th class="right"></th>
     </tr>
   </thead>
   <tbody>
     {% for p in protocols %}
     <tr>
-      <td class="id">{{ p.laufende_nr or '#dEH' ~ p.id }}</td>
-      <td>{{ format_dt(p.eh_datum_uhrzeit) or format_dt(p.unfall_datum_uhrzeit) or format_dt(p.created_at) }}</td>
-      <td><a href="{{ url_for('patient_detail', patient_id=p.patient_id) }}">{{ p.patient_name }}</a></td>
+      <td class="id">{{ p.laufende_nr }}</td>
+      <td>
+        {% if p.source == 'decentral' %}
+          <span class="badge type-d">dEH</span>
+        {% else %}
+          <span class="badge type-z">zEH</span>
+        {% endif %}
+      </td>
+      <td>{{ format_dt(p.event_date) or format_dt(p.created_at) }}</td>
+      <td>
+        {% if p.patient_id %}
+          <a href="{{ url_for('patient_detail', patient_id=p.patient_id) }}">{{ p.patient_name or '—' }}</a>
+        {% else %}
+          {{ p.patient_name or '—' }}
+        {% endif %}
+      </td>
       <td>{{ format_dt(p.patient_geburtsdatum) }}</td>
       <td>{{ p.patient_stammnummer or '—' }}</td>
-      <td>{{ p.name_ersthelfer or '—' }}</td>
       <td class="right">
-        <a class="btn small secondary" href="{{ url_for('protocol_detail', protocol_id=p.id) }}">Öffnen</a>
+        {% if p.source == 'decentral' %}
+          <a class="btn small secondary" href="{{ url_for('protocol_detail', protocol_id=p.source_id) }}">Öffnen</a>
+        {% else %}
+          <a class="btn small secondary" href="{{ url_for('central_index') }}#{{ p.source_id }}">Öffnen</a>
+        {% endif %}
       </td>
     </tr>
     {% endfor %}
@@ -62,7 +96,7 @@
 </table>
 {% else %}
 <div class="empty card">
-  Noch keine Einträge — <a href="{{ url_for('protocol_new') }}">jetzt ersten Einsatzbericht anlegen</a>.
+  Noch keine Einträge — <a href="{{ url_for('protocol_new_chooser') }}">jetzt ersten Bericht anlegen</a>.
 </div>
 {% endif %}
 {% endblock %}

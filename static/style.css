@@ -252,6 +252,14 @@ label.field .req { color: var(--accent); }
   background: #fff3cd;
   color: #7a5d00;
 }
+.badge.type-d {
+  background: #e6effa;
+  color: #2c5b8a;
+}
+.badge.type-z {
+  background: #fce8e6;
+  color: #b3261e;
+}
 
 .page-header {
   display: flex;

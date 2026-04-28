@@ -945,7 +945,11 @@
     if (!list.length) { el.innerHTML = '<div class="sidebar-empty">Noch keine Protokolle.</div>'; return; }
     el.innerHTML = list.map(p => {
       const name = [p.vorname, p.nachname].filter(Boolean).join(' ').trim() || `Protokoll #${p.id}`;
-      const sub = [p.einsatznummer, p.datum].filter(Boolean).join(' · ') || formatDate(p.updated_at);
+      const subParts = [];
+      if (p.laufende_nr) subParts.push(p.laufende_nr);
+      if (p.einsatznummer) subParts.push(p.einsatznummer);
+      if (p.datum) subParts.push(p.datum);
+      const sub = subParts.join(' · ') || formatDate(p.updated_at);
       const active = p.id === currentId ? ' active' : '';
       return `<div class="protocol-item${active}" data-id="${p.id}">
         <div class="name">${escapeHtml(name)}</div><div class="meta">${escapeHtml(sub)}</div>
@@ -974,6 +978,16 @@
     setIfEmpty('einsatzbeginn', nowHM());
     setIfEmpty('zeit_1', nowHM());
     ['nrs_1', 'nrs_2'].forEach(id => document.getElementById(id + '_val').textContent = '0');
+
+    // Prefill identity fields from URL params (set by /central/new flow).
+    const params = new URLSearchParams(window.location.search);
+    const presetVorname = params.get('vorname');
+    const presetNachname = params.get('nachname');
+    const presetGeburtsdatum = params.get('geburtsdatum');
+    if (presetVorname) setIfEmpty('vorname', presetVorname);
+    if (presetNachname) setIfEmpty('nachname', presetNachname);
+    if (presetGeburtsdatum) setIfEmpty('geburtsdatum', presetGeburtsdatum);
+
     updateMeta(collectData());
     setStatus('', 'Bereit');
     goToPage(1); updateCompletion();

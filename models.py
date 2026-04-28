@@ -82,6 +82,17 @@ CREATE TABLE IF NOT EXISTS central_protocols (
 
 CREATE INDEX IF NOT EXISTS idx_central_patient ON central_protocols(patient_id);
 CREATE INDEX IF NOT EXISTS idx_central_datum ON central_protocols(datum);
+
+-- Globaler, fortlaufender Zähler für ALLE Berichte (dezentral + zentral).
+-- Jeder neue Bericht bekommt eine neue Zeile hier; das per id automatisch
+-- vergebene auto-increment ist die "Bericht-Nr." über beide Systeme hinweg.
+CREATE TABLE IF NOT EXISTS protocol_sequence (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type TEXT NOT NULL,           -- 'decentral' | 'central'
+    source_id   INTEGER NOT NULL,        -- protocols.id oder central_protocols.id
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(source_type, source_id)
+);
 """
 
 
@@ -110,6 +121,7 @@ def init_db(db_path: Path) -> None:
     """
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
     try:
         conn.executescript(SCHEMA)
         # Migration: add columns introduced after the initial release.
@@ -129,6 +141,20 @@ def init_db(db_path: Path) -> None:
                 "ALTER TABLE users ADD COLUMN totp_confirmed "
                 "INTEGER NOT NULL DEFAULT 0"
             )
+
+        # Migration: global_id columns for both protocol tables.
+        proto_cols = {row[1] for row in conn.execute("PRAGMA table_info(protocols)")}
+        if "global_id" not in proto_cols:
+            conn.execute("ALTER TABLE protocols ADD COLUMN global_id INTEGER")
+        cent_cols = {row[1] for row in conn.execute("PRAGMA table_info(central_protocols)")}
+        if "global_id" not in cent_cols:
+            conn.execute("ALTER TABLE central_protocols ADD COLUMN global_id INTEGER")
+        if "laufende_nr" not in cent_cols:
+            conn.execute("ALTER TABLE central_protocols ADD COLUMN laufende_nr TEXT")
+
+        # Backfill global_id (and matching laufende_nr) for any rows that
+        # don't have one yet — chronologically, oldest first.
+        _backfill_global_ids(conn)
         # Promote oldest user to admin if there isn't one yet — keeps the
         # initial bootstrap simple ("first user = admin").
         has_admin = conn.execute(
@@ -142,6 +168,45 @@ def init_db(db_path: Path) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def _backfill_global_ids(conn: sqlite3.Connection) -> None:
+    """Assign global_id (+ laufende_nr) to any rows still missing one.
+
+    Runs inside init_db so it's idempotent and triggers automatically
+    after the schema migration adds the columns.
+    """
+    rows = conn.execute(
+        """
+        SELECT * FROM (
+          SELECT 'decentral' AS source, id AS source_id, created_at
+          FROM protocols WHERE global_id IS NULL
+          UNION ALL
+          SELECT 'central'   AS source, id AS source_id, created_at
+          FROM central_protocols WHERE global_id IS NULL
+        )
+        ORDER BY datetime(created_at), source, source_id
+        """
+    ).fetchall()
+    for r in rows:
+        # Each backfill insert assigns the next sequence id.
+        cur = conn.execute(
+            "INSERT INTO protocol_sequence (source_type, source_id) VALUES (?, ?)",
+            (r["source"], r["source_id"]),
+        )
+        gid = cur.lastrowid
+        prefix = "dEH" if r["source"] == "decentral" else "zEH"
+        nr = f"#{prefix}{gid}"
+        if r["source"] == "decentral":
+            conn.execute(
+                "UPDATE protocols SET global_id = ?, laufende_nr = ? WHERE id = ?",
+                (gid, nr, r["source_id"]),
+            )
+        else:
+            conn.execute(
+                "UPDATE central_protocols SET global_id = ?, laufende_nr = ? WHERE id = ?",
+                (gid, nr, r["source_id"]),
+            )
 
 
 @contextmanager
@@ -318,8 +383,16 @@ PROTOCOL_FIELDS = (
 )
 
 
-def laufende_nr_for(protocol_id: int) -> str:
-    return f"#dEH{protocol_id}"
+def _assign_global_id(conn: sqlite3.Connection, source_type: str,
+                      source_id: int) -> tuple[int, str]:
+    """Insert into protocol_sequence and return (global_id, laufende_nr)."""
+    cur = conn.execute(
+        "INSERT INTO protocol_sequence (source_type, source_id) VALUES (?, ?)",
+        (source_type, source_id),
+    )
+    gid = cur.lastrowid
+    prefix = "dEH" if source_type == "decentral" else "zEH"
+    return gid, f"#{prefix}{gid}"
 
 
 def create_protocol(conn: sqlite3.Connection, patient_id: int,
@@ -332,8 +405,11 @@ def create_protocol(conn: sqlite3.Connection, patient_id: int,
         values,
     )
     new_id = cur.lastrowid
-    conn.execute("UPDATE protocols SET laufende_nr = ? WHERE id = ?",
-                 (laufende_nr_for(new_id), new_id))
+    gid, nr = _assign_global_id(conn, "decentral", new_id)
+    conn.execute(
+        "UPDATE protocols SET global_id = ?, laufende_nr = ? WHERE id = ?",
+        (gid, nr, new_id),
+    )
     return new_id
 
 
@@ -341,12 +417,6 @@ def update_protocol(conn: sqlite3.Connection, protocol_id: int, data: dict) -> N
     set_clause = ", ".join(f"{f} = ?" for f in PROTOCOL_FIELDS)
     values = [data.get(f) or None for f in PROTOCOL_FIELDS] + [protocol_id]
     conn.execute(f"UPDATE protocols SET {set_clause} WHERE id = ?", values)
-    # Backfill laufende_nr in case an older record was missing it.
-    conn.execute(
-        "UPDATE protocols SET laufende_nr = ? WHERE id = ? AND "
-        "(laufende_nr IS NULL OR laufende_nr = '')",
-        (laufende_nr_for(protocol_id), protocol_id),
-    )
 
 
 def delete_protocol(conn: sqlite3.Connection, protocol_id: int) -> bool:
@@ -490,7 +560,8 @@ def list_central_protocols(conn: sqlite3.Connection, *,
     sql = [
         """
         SELECT cp.id, cp.patient_id, cp.einsatznummer, cp.datum,
-               cp.name_summary, cp.created_by, cp.created_at, cp.updated_at,
+               cp.name_summary, cp.global_id, cp.laufende_nr,
+               cp.created_by, cp.created_at, cp.updated_at,
                p.name AS patient_name, p.geburtsdatum AS patient_geburtsdatum,
                p.stammnummer AS patient_stammnummer
         FROM central_protocols cp
@@ -507,6 +578,83 @@ def list_central_protocols(conn: sqlite3.Connection, *,
         params.append(created_by)
     sql.append("ORDER BY datetime(cp.updated_at) DESC")
     return conn.execute("\n".join(sql), params).fetchall()
+
+
+def list_unified_protocols(conn: sqlite3.Connection, *,
+                           date_from: Optional[str] = None,
+                           date_to: Optional[str] = None,
+                           stammnummer: Optional[str] = None,
+                           name_query: Optional[str] = None,
+                           source_filter: Optional[str] = None
+                           ) -> list[sqlite3.Row]:
+    """Unified Bericht list across both protocol types, sorted by global_id."""
+    decentral_filter = " AND 1=1"
+    central_filter = " AND 1=1"
+    decentral_params: list = []
+    central_params: list = []
+
+    if date_from:
+        decentral_filter += " AND date(p.eh_datum_uhrzeit) >= date(?)"
+        decentral_params.append(date_from)
+        central_filter += " AND date(c.datum) >= date(?)"
+        central_params.append(date_from)
+    if date_to:
+        decentral_filter += " AND date(p.eh_datum_uhrzeit) <= date(?)"
+        decentral_params.append(date_to)
+        central_filter += " AND date(c.datum) <= date(?)"
+        central_params.append(date_to)
+    if stammnummer:
+        decentral_filter += " AND pat.stammnummer LIKE ?"
+        decentral_params.append(f"%{stammnummer}%")
+        central_filter += " AND pat.stammnummer LIKE ?"
+        central_params.append(f"%{stammnummer}%")
+    if name_query:
+        decentral_filter += " AND pat.name LIKE ?"
+        decentral_params.append(f"%{name_query}%")
+        central_filter += (
+            " AND (pat.name LIKE ? OR c.name_summary LIKE ?)"
+        )
+        central_params.extend([f"%{name_query}%", f"%{name_query}%"])
+
+    parts = []
+    params: list = []
+    if source_filter != "central":
+        parts.append(f"""
+            SELECT 'decentral' AS source, p.id AS source_id,
+                   p.global_id, p.laufende_nr,
+                   p.eh_datum_uhrzeit AS event_date,
+                   p.name_ersthelfer AS responder,
+                   p.created_at,
+                   p.patient_id,
+                   pat.name AS patient_name,
+                   pat.geburtsdatum AS patient_geburtsdatum,
+                   pat.stammnummer AS patient_stammnummer
+            FROM protocols p
+            LEFT JOIN patients pat ON pat.id = p.patient_id
+            WHERE p.global_id IS NOT NULL{decentral_filter}
+        """)
+        params.extend(decentral_params)
+    if source_filter != "decentral":
+        parts.append(f"""
+            SELECT 'central' AS source, c.id AS source_id,
+                   c.global_id, c.laufende_nr,
+                   c.datum AS event_date,
+                   c.name_summary AS responder,
+                   c.created_at,
+                   c.patient_id,
+                   COALESCE(pat.name, c.name_summary) AS patient_name,
+                   pat.geburtsdatum AS patient_geburtsdatum,
+                   pat.stammnummer AS patient_stammnummer
+            FROM central_protocols c
+            LEFT JOIN patients pat ON pat.id = c.patient_id
+            WHERE c.global_id IS NOT NULL{central_filter}
+        """)
+        params.extend(central_params)
+
+    if not parts:
+        return []
+    sql = " UNION ALL ".join(parts) + " ORDER BY global_id DESC"
+    return conn.execute(sql, params).fetchall()
 
 
 def get_central_protocol(conn: sqlite3.Connection, pid: int) -> Optional[dict]:
@@ -544,7 +692,13 @@ def create_central_protocol(conn: sqlite3.Connection, data: dict,
             created_by,
         ),
     )
-    return cur.lastrowid
+    new_id = cur.lastrowid
+    gid, nr = _assign_global_id(conn, "central", new_id)
+    conn.execute(
+        "UPDATE central_protocols SET global_id = ?, laufende_nr = ? WHERE id = ?",
+        (gid, nr, new_id),
+    )
+    return new_id
 
 
 def update_central_protocol(conn: sqlite3.Connection, pid: int,

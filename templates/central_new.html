@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Zentrale Erste Hilfe — Patient prüfen{% endblock %}
+{% block content %}
+<h1>Zentrale Erste Hilfe</h1>
+<p class="tagline">
+  Schritt 1 von 2 — zuerst Person identifizieren, damit Vorbehandlungen
+  sichtbar werden, falls vorhanden.
+</p>
+
+<form method="post" class="card stack">
+  <div class="card-header">Wer wird behandelt?</div>
+  <div class="row three">
+    <label class="field">
+      Vorname
+      <input name="vorname" value="{{ prefill.vorname }}" autofocus
+             autocomplete="off">
+    </label>
+    <label class="field">
+      Nachname
+      <input name="nachname" value="{{ prefill.nachname }}"
+             autocomplete="off">
+    </label>
+    <label class="field">
+      Geburtsdatum <span class="req">*</span>
+      <input name="geburtsdatum" type="date" required
+             value="{{ prefill.geburtsdatum }}">
+    </label>
+  </div>
+  <div><button class="btn" type="submit">Weiter</button></div>
+  <p class="muted" style="font-size: 0.85rem; margin: 0;">
+    Geburtsdatum + Name werden gegen die Patientenakten geprüft.
+  </p>
+</form>
+
+{% if lookup is not none %}
+  {% if lookup.found %}
+    <div class="card vorbehandlung-found">
+      <div class="card-header">Bekannte Person — Vorbehandlungen</div>
+      <p style="margin: 0 0 12px;">
+        <strong>{{ lookup.patient_name }}</strong> wurde bereits behandelt:
+      </p>
+      <div class="protocol-meta">
+        <div class="kv">
+          <div class="label">Dezentrale Behandlungen</div>
+          <div class="value"><strong>{{ lookup.decentral_count }}</strong></div>
+        </div>
+        <div class="kv">
+          <div class="label">Zentrale Behandlungen</div>
+          <div class="value"><strong>{{ lookup.central_count }}</strong></div>
+        </div>
+        {% if lookup.stammnummer %}
+        <div class="kv">
+          <div class="label">Stammnummer</div>
+          <div class="value">{{ lookup.stammnummer }}</div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="btn-row" style="margin-top: 12px;">
+        <a class="btn"
+           href="{{ url_for('central_index',
+                            vorname=prefill.vorname,
+                            nachname=prefill.nachname,
+                            geburtsdatum=prefill.geburtsdatum) }}">
+          Behandlung beginnen
+        </a>
+        {% if lookup.patient_id %}
+          <a class="btn secondary" target="_blank"
+             href="{{ url_for('patient_detail', patient_id=lookup.patient_id) }}">
+            Vollständige Akte öffnen
+          </a>
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="card vorbehandlung-empty">
+      <div class="card-header">Neue Person</div>
+      <p style="margin: 0 0 12px;">
+        Für <strong>{{ lookup.patient_name }}</strong>
+        (geb. {{ format_dt(prefill.geburtsdatum) if format_dt is defined else prefill.geburtsdatum }})
+        gibt es noch keine Behandlung.
+      </p>
+      <a class="btn"
+         href="{{ url_for('central_index',
+                          vorname=prefill.vorname,
+                          nachname=prefill.nachname,
+                          geburtsdatum=prefill.geburtsdatum) }}">
+        Behandlung beginnen
+      </a>
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}
