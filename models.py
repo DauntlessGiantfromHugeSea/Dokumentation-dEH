@@ -300,6 +300,11 @@ def update_protocol(conn: sqlite3.Connection, protocol_id: int, data: dict) -> N
     )
 
 
+def delete_protocol(conn: sqlite3.Connection, protocol_id: int) -> bool:
+    cur = conn.execute("DELETE FROM protocols WHERE id = ?", (protocol_id,))
+    return cur.rowcount > 0
+
+
 def get_protocol(conn: sqlite3.Connection, protocol_id: int) -> Optional[sqlite3.Row]:
     return conn.execute(
         """

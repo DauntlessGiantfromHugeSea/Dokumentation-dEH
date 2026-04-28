@@ -812,7 +812,13 @@
       body: JSON.stringify(d),
     })).json();
   }
-  async function apiDelete(id)     { return (await fetch('/api/central/protokolle/' + id, { method: 'DELETE' })).json(); }
+  async function apiDelete(id, password) {
+    return (await fetch('/api/central/protokolle/' + id, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: password || '' }),
+    })).json();
+  }
 
   // ============ Form ============
   const form = document.getElementById('protocol-form');
@@ -1009,7 +1015,14 @@
       return;
     }
     if (!confirm('Dieses Protokoll wirklich löschen?')) return;
-    await apiDelete(currentId); toast('Gelöscht');
+    const password = prompt('Zur Bestätigung dein Passwort eingeben:');
+    if (!password) { toast('Abgebrochen'); return; }
+    const result = await apiDelete(currentId, password);
+    if (result && result.error) {
+      toast('Passwort falsch — nicht gelöscht');
+      return;
+    }
+    toast('Gelöscht');
     await newProtocol();
   });
 

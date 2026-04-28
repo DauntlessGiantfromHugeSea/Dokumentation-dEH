@@ -305,6 +305,15 @@ label.field .req { color: var(--accent); }
   width: 140px;
 }
 
+details.inline-action .inline-form input {
+  font: inherit;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  width: 220px;
+}
+
 details.inline-action {
   display: inline-block;
   position: relative;

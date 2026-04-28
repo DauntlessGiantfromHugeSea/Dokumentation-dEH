@@ -161,6 +161,24 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template("protocol_form.html", protocol=protocol,
                                existing_patient=None, mode="edit")
 
+    @app.route("/protocols/<int:protocol_id>/delete", methods=["POST"])
+    @login_required
+    def protocol_delete(protocol_id: int):
+        db = models.get_db()
+        protocol = models.get_protocol(db, protocol_id)
+        if not protocol:
+            abort(404)
+        password = request.form.get("password", "")
+        user_row = models.get_user_by_id(db, current_user.id)
+        if not user_row or not models.verify_password(user_row, password):
+            flash("Passwort falsch — Bericht wurde nicht gelöscht.", "error")
+            return redirect(url_for("protocol_detail", protocol_id=protocol_id))
+        label = protocol["laufende_nr"] or f"#dEH{protocol_id}"
+        models.delete_protocol(db, protocol_id)
+        db.commit()
+        flash(f"Bericht {label} gelöscht.", "success")
+        return redirect(url_for("index"))
+
     @app.route("/protocols/<int:protocol_id>/comments", methods=["POST"])
     @login_required
     def protocol_add_comment(protocol_id: int):
@@ -352,7 +370,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             if not ok:
                 return {"error": "not found"}, 404
             return {"id": pid}
-        # DELETE
+        # DELETE — requires password verification.
+        body = request.get_json(silent=True) or {}
+        password = body.get("password") or request.args.get("password", "")
+        user_row = models.get_user_by_id(db, current_user.id)
+        if not user_row or not models.verify_password(user_row, password):
+            return {"error": "password incorrect"}, 401
         ok = models.delete_central_protocol(db, pid)
         db.commit()
         if not ok:

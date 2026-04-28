@@ -9,6 +9,18 @@
   <div class="btn-row">
     <a class="btn secondary small" href="{{ url_for('protocol_edit', protocol_id=protocol.id) }}">Bearbeiten</a>
     <a class="btn small" href="{{ url_for('protocol_pdf', protocol_id=protocol.id) }}">PDF</a>
+    <details class="inline-action">
+      <summary class="btn small danger">Löschen</summary>
+      <form method="post"
+            action="{{ url_for('protocol_delete', protocol_id=protocol.id) }}"
+            class="inline-form"
+            onsubmit="return confirm('Bericht {{ protocol.laufende_nr or '#dEH' ~ protocol.id }} wirklich löschen?');">
+        <input name="password" type="password" required
+               placeholder="Dein Passwort zur Bestätigung"
+               autocomplete="current-password">
+        <button class="btn small danger" type="submit">Endgültig löschen</button>
+      </form>
+    </details>
   </div>
 </div>
 
