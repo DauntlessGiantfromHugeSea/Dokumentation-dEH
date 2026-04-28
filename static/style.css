@@ -277,6 +277,10 @@ table.data.measurements th, table.data.measurements td {
 table.data.measurements td:first-child,
 table.data.measurements th:first-child { text-align: left; }
 
+.confirm-card { border-left: 4px solid var(--accent); }
+.confirm-card.confirm-new { border-left-color: #1f6b3a; }
+.confirm-card.confirm-found { border-left-color: var(--accent); }
+
 .page-header {
   display: flex;
   align-items: flex-start;

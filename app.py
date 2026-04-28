@@ -457,13 +457,16 @@ def create_app(test_config: dict | None = None) -> Flask:
         """Interstitial step: validate patient identity before opening the SPA.
 
         On GET: show identity form (vorname/nachname/geburtsdatum).
-        On POST: lookup the patient and render the page with a Vorbehandlungs
-        panel; the user clicks "Behandlung beginnen" to enter the SPA.
+        On POST: lookup the patient and render the page with a confirmation
+        card (Bestätigen/Nein).
         """
+        # Keep form values and lookup parameters strictly separate from the
+        # query string so the chooser's empty params can't shadow form data.
+        src = request.form if request.method == "POST" else request.args
         prefill = {
-            "vorname": (request.values.get("vorname") or "").strip(),
-            "nachname": (request.values.get("nachname") or "").strip(),
-            "geburtsdatum": (request.values.get("geburtsdatum") or "").strip(),
+            "vorname": (src.get("vorname") or "").strip(),
+            "nachname": (src.get("nachname") or "").strip(),
+            "geburtsdatum": (src.get("geburtsdatum") or "").strip(),
         }
         lookup = None
         if request.method == "POST" and prefill["geburtsdatum"] and (
@@ -479,6 +482,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             ).fetchone()
             if row:
                 counts = models.patient_protocol_counts(db, row["id"])
+                last = models.patient_last_treatment(db, row["id"])
                 lookup = {
                     "found": True,
                     "patient_id": row["id"]
@@ -488,6 +492,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "stammnummer": row["stammnummer"] or "",
                     "decentral_count": counts["decentral"],
                     "central_count": counts["central"],
+                    "last_treatment": last,
                 }
             else:
                 lookup = {"found": False, "patient_name": full_name}

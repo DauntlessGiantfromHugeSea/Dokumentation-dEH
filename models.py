@@ -766,6 +766,22 @@ def patient_protocol_counts(conn: sqlite3.Connection, patient_id: int) -> dict:
     return {"decentral": decentral, "central": central}
 
 
+def patient_last_treatment(conn: sqlite3.Connection,
+                           patient_id: int) -> Optional[str]:
+    """Most recent treatment date across both protocol types, or None."""
+    row = conn.execute(
+        """
+        SELECT MAX(d) AS last FROM (
+            SELECT eh_datum_uhrzeit AS d FROM protocols WHERE patient_id = ?
+            UNION ALL
+            SELECT datum AS d FROM central_protocols WHERE patient_id = ?
+        )
+        """,
+        (patient_id, patient_id),
+    ).fetchone()
+    return row["last"] if row and row["last"] else None
+
+
 # ---------- Central comments (zentral, separates Tabellen-Pendant zu comments) ----------
 
 def add_central_comment(conn: sqlite3.Connection, central_protocol_id: int,
