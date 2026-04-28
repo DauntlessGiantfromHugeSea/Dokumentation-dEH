@@ -11,6 +11,8 @@
   </div>
   <div class="btn-row">
     <a class="btn small secondary"
+       href="{{ url_for('patient_edit', patient_id=patient.id) }}">Bearbeiten</a>
+    <a class="btn small secondary"
        href="{{ url_for('protocol_new',
                          name=patient.name,
                          geburtsdatum=patient.geburtsdatum,
@@ -25,6 +27,77 @@
        + Zentral
     </a>
   </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    Notfallkontakt &amp; medizinische Hinweise
+    {% if not sensitive_full %}<span class="card-header-badge muted-badge">vertraulich · nur Indikatoren</span>
+    {% else %}<span class="card-header-badge">Admin-Sicht</span>{% endif %}
+  </div>
+  <div class="protocol-meta">
+    <div class="kv">
+      <div class="label">Notfallkontakt vorhanden</div>
+      <div class="value">
+        {% if sensitive.has_emergency_contact %}<span class="badge totp-on">ja</span>
+        {% else %}<span class="muted">— (nicht hinterlegt)</span>{% endif %}
+      </div>
+    </div>
+    <div class="kv">
+      <div class="label">Allergien</div>
+      <div class="value">
+        {% if sensitive.has_allergies is none %}<span class="muted">unbekannt</span>
+        {% elif sensitive.has_allergies %}<span class="badge type-z">ja</span>
+        {% else %}<span class="badge totp-on">nein</span>{% endif %}
+      </div>
+    </div>
+    <div class="kv">
+      <div class="label">Medikamente</div>
+      <div class="value">
+        {% if sensitive.has_medications is none %}<span class="muted">unbekannt</span>
+        {% elif sensitive.has_medications %}<span class="badge type-z">ja</span>
+        {% else %}<span class="badge totp-on">nein</span>{% endif %}
+      </div>
+    </div>
+  </div>
+  {% if sensitive_full %}
+    <div class="protocol-meta" style="margin-top: 8px;">
+      {% if sensitive.emergency_contact_name or sensitive.emergency_contact_phone or sensitive.emergency_contact_relation %}
+      <div class="kv">
+        <div class="label">Notfallkontakt</div>
+        <div class="value">
+          {{ sensitive.emergency_contact_name or '—' }}
+          {% if sensitive.emergency_contact_relation %}({{ sensitive.emergency_contact_relation }}){% endif %}
+          {% if sensitive.emergency_contact_phone %}<br><strong>{{ sensitive.emergency_contact_phone }}</strong>{% endif %}
+        </div>
+      </div>
+      {% endif %}
+      {% if sensitive.allergies_text %}
+      <div class="kv">
+        <div class="label">Allergien</div>
+        <div class="value">{{ sensitive.allergies_text }}</div>
+      </div>
+      {% endif %}
+      {% if sensitive.medications_text %}
+      <div class="kv">
+        <div class="label">Medikamente</div>
+        <div class="value">{{ sensitive.medications_text }}</div>
+      </div>
+      {% endif %}
+      {% if sensitive.extras_notes %}
+      <div class="kv">
+        <div class="label">Sonstige Hinweise</div>
+        <div class="value">{{ sensitive.extras_notes }}</div>
+      </div>
+      {% endif %}
+    </div>
+  {% else %}
+    <p class="muted" style="font-size: 0.85rem; margin: 8px 0 0;">
+      Details (Notfallkontakt, Allergie- und Medikationsliste) sind nur
+      für Administratoren sichtbar. In der zentralen Erste Hilfe kann ein
+      Admin per PIN die Daten kurzzeitig freigeben.
+    </p>
+  {% endif %}
 </div>
 
 <div class="card">
@@ -90,4 +163,38 @@
     <p class="muted">Keine zentralen Berichte.</p>
   {% endif %}
 </div>
+
+{% if change_log %}
+<details class="card">
+  <summary class="card-header" style="cursor: pointer; list-style: none;">
+    Änderungs-Historie ({{ change_log|length }})
+  </summary>
+  <table class="data" style="margin-top: 8px;">
+    <thead>
+      <tr>
+        <th>Wann</th>
+        <th>Wer</th>
+        <th>Feld</th>
+        <th>Alter Wert</th>
+        <th>Neuer Wert</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in change_log %}
+        <tr>
+          <td>{{ format_dt(c.changed_at) }}</td>
+          <td>{{ c.author_full_name or c.author_username or '—' }}</td>
+          <td>{{ field_label.get(c.field_name, c.field_name) }}</td>
+          {% if c.field_name in sensitive_fields and not sensitive_full %}
+            <td colspan="2"><span class="muted">— vertraulich · nur Admin —</span></td>
+          {% else %}
+            <td><span class="muted">{{ c.old_value or '—' }}</span></td>
+            <td>{{ c.new_value or '—' }}</td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
 {% endblock %}

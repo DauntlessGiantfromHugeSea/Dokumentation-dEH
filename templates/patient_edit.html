@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}{{ patient.name }} bearbeiten{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Person bearbeiten</h1>
+    <p class="tagline">Änderungen werden mit Datum, Uhrzeit und Bearbeiter dokumentiert.</p>
+  </div>
+  <div class="btn-row">
+    <a class="btn secondary small"
+       href="{{ url_for('patient_detail', patient_id=patient.id) }}">Abbrechen</a>
+  </div>
+</div>
+
+<form method="post" class="stack">
+  <div class="card">
+    <div class="card-header">Stammdaten</div>
+    <div class="row three">
+      <label class="field">
+        Name <span class="req">*</span>
+        <input name="name" required value="{{ patient.name }}">
+      </label>
+      <label class="field">
+        Geburtsdatum <span class="req">*</span>
+        <input name="geburtsdatum" type="date" required
+               value="{{ patient.geburtsdatum }}">
+      </label>
+      <label class="field">
+        Stammnummer
+        <input name="stammnummer" value="{{ patient.stammnummer or '' }}">
+      </label>
+    </div>
+  </div>
+
+  {% if can_edit_sensitive %}
+  <div class="card">
+    <div class="card-header">Notfallkontakt
+      <span class="card-header-badge">vertraulich · nur Admin</span>
+    </div>
+    <div class="row three">
+      <label class="field">
+        Name
+        <input name="emergency_contact_name"
+               value="{{ patient.emergency_contact_name or '' }}">
+      </label>
+      <label class="field">
+        Telefonnummer
+        <input name="emergency_contact_phone"
+               value="{{ patient.emergency_contact_phone or '' }}">
+      </label>
+      <label class="field">
+        Beziehung
+        <input name="emergency_contact_relation"
+               placeholder="z. B. Mutter, Vater, …"
+               value="{{ patient.emergency_contact_relation or '' }}">
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Medizinische Hinweise
+      <span class="card-header-badge">vertraulich · nur Admin</span>
+    </div>
+    <div class="row">
+      <label class="field">
+        Allergien bekannt?
+        <select name="has_allergies">
+          <option value="" {% if patient.has_allergies is none %}selected{% endif %}>— unbekannt</option>
+          <option value="0" {% if patient.has_allergies == 0 %}selected{% endif %}>Nein</option>
+          <option value="1" {% if patient.has_allergies == 1 %}selected{% endif %}>Ja</option>
+        </select>
+      </label>
+      <label class="field">
+        Medikamente bekannt?
+        <select name="has_medications">
+          <option value="" {% if patient.has_medications is none %}selected{% endif %}>— unbekannt</option>
+          <option value="0" {% if patient.has_medications == 0 %}selected{% endif %}>Nein</option>
+          <option value="1" {% if patient.has_medications == 1 %}selected{% endif %}>Ja</option>
+        </select>
+      </label>
+    </div>
+    <label class="field">
+      Allergien — Details
+      <textarea name="allergies_text" rows="2">{{ patient.allergies_text or '' }}</textarea>
+    </label>
+    <label class="field">
+      Medikamente — Details
+      <textarea name="medications_text" rows="2">{{ patient.medications_text or '' }}</textarea>
+    </label>
+    <label class="field">
+      Sonstige Hinweise
+      <textarea name="extras_notes" rows="2">{{ patient.extras_notes or '' }}</textarea>
+    </label>
+  </div>
+  {% else %}
+  <div class="card">
+    <p class="muted" style="margin: 0;">
+      Notfallkontakt und medizinische Hinweise können nur von einem
+      Administrator gepflegt werden.
+    </p>
+  </div>
+  {% endif %}
+
+  <div class="btn-row">
+    <button class="btn" type="submit">Speichern</button>
+    <a class="btn secondary"
+       href="{{ url_for('patient_detail', patient_id=patient.id) }}">Abbrechen</a>
+  </div>
+</form>
+{% endblock %}

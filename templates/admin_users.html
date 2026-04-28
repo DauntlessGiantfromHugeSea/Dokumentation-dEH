@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Benutzer-Verwaltung{% endblock %}
 {% block content %}
-<h1>Benutzer-Verwaltung</h1>
-<p class="tagline">Konten anlegen, Passwörter zurücksetzen, Admin-Rechte vergeben.</p>
+<div class="page-header">
+  <div>
+    <h1>Benutzer-Verwaltung</h1>
+    <p class="tagline">Konten anlegen, Passwörter zurücksetzen, Admin-Rechte vergeben.</p>
+  </div>
+  <div class="btn-row">
+    <a class="btn small secondary" href="{{ url_for('account_pin') }}">Mein Admin-PIN</a>
+  </div>
+</div>
 
 <div class="card">
   <div class="card-header">Neuen Benutzer anlegen</div>
@@ -134,5 +141,35 @@
       {% endfor %}
     </tbody>
   </table>
+</div>
+
+<div class="card" style="border-left: 4px solid #b3261e;">
+  <div class="card-header">Datenbank zurücksetzen</div>
+  <p style="margin: 0 0 12px;">
+    Löscht <strong>alle dezentralen und zentralen Berichte</strong> samt
+    Kommentaren und setzt den laufenden Counter zurück (nächste Bericht-Nr.
+    wieder #1). Patienten und Benutzerkonten bleiben unverändert.
+  </p>
+  <p class="muted" style="margin: 0 0 14px; font-size: 0.85rem;">
+    Diese Aktion ist <strong>nicht</strong> rückgängig zu machen. Nutze
+    sie nach Test-Phasen, bevor das Camp beginnt.
+  </p>
+  <form method="post" action="{{ url_for('admin_reset_protocols') }}"
+        class="stack"
+        onsubmit="return confirm('Wirklich alle Berichte unwiderruflich löschen und Counter zurücksetzen?');">
+    <div class="row">
+      <label class="field">
+        Bestätigung — tippe <code>RESET</code>
+        <input name="confirm" required pattern="RESET"
+               placeholder="RESET" autocomplete="off">
+      </label>
+      <label class="field">
+        Dein Admin-Passwort
+        <input name="password" type="password" required
+               autocomplete="current-password">
+      </label>
+    </div>
+    <div><button class="btn danger" type="submit">Alle Berichte löschen + Counter zurücksetzen</button></div>
+  </form>
 </div>
 {% endblock %}

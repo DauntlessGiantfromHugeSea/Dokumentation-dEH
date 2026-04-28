@@ -104,6 +104,12 @@
 
   <div class="btn-row">
     <button class="btn" type="submit">Speichern</button>
+    {% if mode == 'new' %}
+      <button class="btn secondary" type="submit" name="next" value="new"
+              title="Speichert und öffnet sofort ein neues, leeres Formular — ideal beim Abtippen vom Papier">
+        Speichern + nächsten anlegen
+      </button>
+    {% endif %}
     {% if mode == 'edit' %}
       <a class="btn secondary" href="{{ url_for('protocol_detail', protocol_id=protocol.id) }}">Abbrechen</a>
     {% else %}
@@ -111,6 +117,32 @@
     {% endif %}
   </div>
 </form>
+
+{% if mode == 'new' %}
+<script>
+// Schnell-Modus: heute & jetzt vorausfüllen, falls leer
+(function() {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const today = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`
+              + `T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  for (const id of ['unfall_datum_uhrzeit', 'eh_datum_uhrzeit']) {
+    const el = document.querySelector(`[name="${id}"]`);
+    if (el && !el.value) el.value = today;
+  }
+  // Ctrl+Enter speichert; Ctrl+Shift+Enter speichert + nächster
+  document.getElementById('protocolForm').addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key === 'Enter') {
+      e.preventDefault();
+      const btn = e.shiftKey
+        ? document.querySelector('button[name="next"]')
+        : document.querySelector('button[type="submit"]:not([name="next"])');
+      if (btn) btn.click();
+    }
+  });
+})();
+</script>
+{% endif %}
 
 <script>
 (function() {

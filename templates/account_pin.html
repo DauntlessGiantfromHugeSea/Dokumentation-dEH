@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Mein Admin-PIN{% endblock %}
+{% block content %}
+<h1>Admin-PIN</h1>
+<p class="tagline">
+  Mit dem PIN kannst du in der zentralen Erste Hilfe einem normalen
+  User die Ansicht von Notfallkontakt + medizinischen Hinweisen
+  freigeben. Der PIN ist <strong>unabhängig</strong> vom Login-Passwort.
+</p>
+
+<form method="post" class="card stack" style="max-width: 480px;">
+  <div class="card-header">
+    PIN setzen oder ändern
+    {% if has_pin %}<span class="card-header-badge">aktuell gesetzt</span>
+    {% else %}<span class="card-header-badge muted-badge">nicht gesetzt</span>{% endif %}
+  </div>
+  <label class="field">
+    Aktuelles Login-Passwort
+    <input name="current_password" type="password" required
+           autocomplete="current-password">
+  </label>
+  <label class="field">
+    Neuer PIN (mind. 4 Ziffern, leer lassen zum Entfernen)
+    <input name="new_pin" inputmode="numeric" pattern="\d*"
+           autocomplete="off" placeholder="z. B. 4711">
+  </label>
+  <label class="field">
+    PIN bestätigen
+    <input name="confirm_pin" inputmode="numeric" pattern="\d*"
+           autocomplete="off">
+  </label>
+  <div class="btn-row">
+    <button class="btn" type="submit">Speichern</button>
+    <a class="btn secondary" href="{{ url_for('admin_users') }}">Abbrechen</a>
+  </div>
+  <p class="muted" style="font-size: 0.85rem; margin: 0;">
+    Der PIN wird gehasht in der Datenbank gespeichert (wie das Passwort).
+    Bei Verlust kann ein anderer Admin keinen PIN-Reset auslösen — du
+    setzt ihn dann selbst über diese Seite neu, wobei du dein normales
+    Login-Passwort eingibst.
+  </p>
+</form>
+{% endblock %}

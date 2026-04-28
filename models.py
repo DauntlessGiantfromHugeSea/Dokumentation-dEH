@@ -35,6 +35,15 @@ CREATE TABLE IF NOT EXISTS patients (
     name         TEXT NOT NULL,
     geburtsdatum TEXT NOT NULL,
     stammnummer  TEXT,
+    -- Notfallkontakt + medizinische Hinweise (Anmeldungs-Daten)
+    emergency_contact_name     TEXT,
+    emergency_contact_phone    TEXT,
+    emergency_contact_relation TEXT,
+    has_allergies              INTEGER,    -- NULL=unbekannt, 0=nein, 1=ja
+    allergies_text             TEXT,
+    has_medications            INTEGER,    -- NULL=unbekannt, 0=nein, 1=ja
+    medications_text           TEXT,
+    extras_notes               TEXT,
     UNIQUE(name, geburtsdatum)
 );
 
@@ -93,6 +102,30 @@ CREATE TABLE IF NOT EXISTS central_comments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_central_comments_protocol ON central_comments(central_protocol_id);
+
+-- Audit-Log für Änderungen an Patientendaten (wer/wann/was)
+CREATE TABLE IF NOT EXISTS patient_changes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id  INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    changed_by  INTEGER REFERENCES users(id),
+    field_name  TEXT NOT NULL,
+    old_value   TEXT,
+    new_value   TEXT,
+    changed_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_patient_changes_patient ON patient_changes(patient_id);
+
+-- Audit-Log für Entschlüsselungs-Zugriffe auf Notfall-/Med-Daten
+CREATE TABLE IF NOT EXISTS emergency_unlocks (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id    INTEGER NOT NULL,
+    requested_by  INTEGER REFERENCES users(id),
+    approved_by   INTEGER REFERENCES users(id),
+    unlocked_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_emergency_unlocks_patient ON emergency_unlocks(patient_id);
 
 -- Globaler, fortlaufender Zähler für ALLE Berichte (dezentral + zentral).
 -- Jeder neue Bericht bekommt eine neue Zeile hier; das per id automatisch
@@ -157,6 +190,23 @@ def init_db(db_path: Path) -> None:
                 "ALTER TABLE users ADD COLUMN totp_required "
                 "INTEGER NOT NULL DEFAULT 1"
             )
+        if "admin_pin_hash" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN admin_pin_hash TEXT")
+
+        # Patient extras (Notfallkontakt / Allergien / Medikamente)
+        pat_cols = {row[1] for row in conn.execute("PRAGMA table_info(patients)")}
+        for col, decl in [
+            ("emergency_contact_name", "TEXT"),
+            ("emergency_contact_phone", "TEXT"),
+            ("emergency_contact_relation", "TEXT"),
+            ("has_allergies", "INTEGER"),
+            ("allergies_text", "TEXT"),
+            ("has_medications", "INTEGER"),
+            ("medications_text", "TEXT"),
+            ("extras_notes", "TEXT"),
+        ]:
+            if col not in pat_cols:
+                conn.execute(f"ALTER TABLE patients ADD COLUMN {col} {decl}")
 
         # Migration: global_id columns for both protocol tables.
         proto_cols = {row[1] for row in conn.execute("PRAGMA table_info(protocols)")}
@@ -961,3 +1011,222 @@ def list_central_comments(conn: sqlite3.Connection,
         """,
         (central_protocol_id,),
     ).fetchall()
+
+
+# ---------- Patient editing + Audit-Log ----------
+
+# Felder, die über das Patienten-Bearbeiten-Formular gepflegt werden.
+# Reihenfolge bestimmt auch die Anzeige.
+PATIENT_EDIT_FIELDS = (
+    "name",
+    "geburtsdatum",
+    "stammnummer",
+    "emergency_contact_name",
+    "emergency_contact_phone",
+    "emergency_contact_relation",
+    "has_allergies",
+    "allergies_text",
+    "has_medications",
+    "medications_text",
+    "extras_notes",
+)
+
+PATIENT_FIELD_LABELS = {
+    "name": "Name",
+    "geburtsdatum": "Geburtsdatum",
+    "stammnummer": "Stammnummer",
+    "emergency_contact_name": "Notfallkontakt — Name",
+    "emergency_contact_phone": "Notfallkontakt — Telefon",
+    "emergency_contact_relation": "Notfallkontakt — Beziehung",
+    "has_allergies": "Allergien (ja/nein)",
+    "allergies_text": "Allergien (Details)",
+    "has_medications": "Medikamente (ja/nein)",
+    "medications_text": "Medikamente (Details)",
+    "extras_notes": "Sonstige Hinweise",
+}
+
+SENSITIVE_PATIENT_FIELDS = (
+    "emergency_contact_name",
+    "emergency_contact_phone",
+    "emergency_contact_relation",
+    "allergies_text",
+    "medications_text",
+    "extras_notes",
+)
+
+
+def _normalize_optional(v):
+    """Empty strings → None; ints stay int; strings get stripped."""
+    if v is None:
+        return None
+    if isinstance(v, str):
+        v = v.strip()
+        return v if v else None
+    return v
+
+
+def update_patient(conn: sqlite3.Connection, patient_id: int,
+                   updates: dict, changed_by: Optional[int]) -> int:
+    """Apply patch to patients table and write a row in patient_changes
+    for every field whose value actually changes. Returns the number
+    of changes recorded.
+    """
+    current = conn.execute(
+        "SELECT * FROM patients WHERE id = ?", (patient_id,)
+    ).fetchone()
+    if not current:
+        raise ValueError(f"patient {patient_id} not found")
+
+    changes = []
+    for field in PATIENT_EDIT_FIELDS:
+        if field not in updates:
+            continue
+        new_val = _normalize_optional(updates[field])
+        old_val = current[field] if field in current.keys() else None
+        # Compare with type coercion: '0' == 0 etc.
+        if old_val is None and new_val is None:
+            continue
+        if str(old_val if old_val is not None else "") == str(new_val if new_val is not None else ""):
+            continue
+        changes.append((field, old_val, new_val))
+
+    if not changes:
+        return 0
+
+    # Apply update
+    set_clause = ", ".join(f"{f} = ?" for f, _, _ in changes)
+    values = [v for _, _, v in changes] + [patient_id]
+    conn.execute(f"UPDATE patients SET {set_clause} WHERE id = ?", values)
+
+    # Audit-log
+    for field, old_val, new_val in changes:
+        # For sensitive fields we still log the change, but redact the value
+        # — only that "etwas wurde geändert" is shown to non-admins.
+        conn.execute(
+            "INSERT INTO patient_changes "
+            "(patient_id, changed_by, field_name, old_value, new_value) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                patient_id, changed_by, field,
+                None if old_val is None else str(old_val),
+                None if new_val is None else str(new_val),
+            ),
+        )
+    return len(changes)
+
+
+def list_patient_changes(conn: sqlite3.Connection,
+                         patient_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT pc.*,
+               u.username   AS author_username,
+               u.full_name  AS author_full_name
+        FROM patient_changes pc
+        LEFT JOIN users u ON u.id = pc.changed_by
+        WHERE pc.patient_id = ?
+        ORDER BY pc.changed_at DESC, pc.id DESC
+        """,
+        (patient_id,),
+    ).fetchall()
+
+
+# ---------- Sensitive Patient-Daten + Admin-PIN ----------
+
+def patient_sensitive_summary(row: sqlite3.Row) -> dict:
+    """Maskierte Sicht für nicht-Admins: nur Existenz-Indikatoren."""
+    return {
+        "has_emergency_contact": bool(row["emergency_contact_name"]
+                                      or row["emergency_contact_phone"]),
+        "has_allergies": (None if row["has_allergies"] is None
+                          else bool(row["has_allergies"])),
+        "has_medications": (None if row["has_medications"] is None
+                            else bool(row["has_medications"])),
+        "has_extras_notes": bool(row["extras_notes"]),
+    }
+
+
+def patient_sensitive_full(row: sqlite3.Row) -> dict:
+    """Volle Sicht für Admins (oder nach erfolgreicher PIN-Freigabe)."""
+    summary = patient_sensitive_summary(row)
+    return {
+        **summary,
+        "emergency_contact_name": row["emergency_contact_name"] or "",
+        "emergency_contact_phone": row["emergency_contact_phone"] or "",
+        "emergency_contact_relation": row["emergency_contact_relation"] or "",
+        "allergies_text": row["allergies_text"] or "",
+        "medications_text": row["medications_text"] or "",
+        "extras_notes": row["extras_notes"] or "",
+    }
+
+
+def set_admin_pin(conn: sqlite3.Connection, user_id: int,
+                  pin: Optional[str]) -> None:
+    """Hasht PIN (Werkzeug). pin=None löscht die PIN."""
+    if pin is None or pin == "":
+        conn.execute("UPDATE users SET admin_pin_hash = NULL WHERE id = ?",
+                     (user_id,))
+    else:
+        conn.execute(
+            "UPDATE users SET admin_pin_hash = ? WHERE id = ?",
+            (generate_password_hash(pin), user_id),
+        )
+
+
+def verify_admin_pin(conn: sqlite3.Connection, username: str,
+                     pin: str) -> Optional[sqlite3.Row]:
+    """Find an admin with that username and matching PIN.
+    Returns the user row (so the caller can log who approved) or None.
+    """
+    row = conn.execute(
+        "SELECT id, username, full_name, is_admin, admin_pin_hash "
+        "FROM users WHERE username = ?",
+        (username,),
+    ).fetchone()
+    if not row or not row["is_admin"] or not row["admin_pin_hash"]:
+        return None
+    if not check_password_hash(row["admin_pin_hash"], pin):
+        return None
+    return row
+
+
+def log_emergency_unlock(conn: sqlite3.Connection, patient_id: int,
+                         requested_by: Optional[int],
+                         approved_by: int) -> None:
+    conn.execute(
+        "INSERT INTO emergency_unlocks (patient_id, requested_by, approved_by) "
+        "VALUES (?, ?, ?)",
+        (patient_id, requested_by, approved_by),
+    )
+
+
+# ---------- Reset / Hard-Wipe ----------
+
+def reset_all_protocols(conn: sqlite3.Connection) -> dict:
+    """Delete every protocol (decentral + central) + comments + sequence
+    counter. Returns counts of what was wiped. Patients & users stay.
+    """
+    # Order matters because of FKs (CASCADE handles comments).
+    n_central_comments = conn.execute("SELECT COUNT(*) AS n FROM central_comments").fetchone()["n"]
+    n_comments = conn.execute("SELECT COUNT(*) AS n FROM comments").fetchone()["n"]
+    n_central = conn.execute("SELECT COUNT(*) AS n FROM central_protocols").fetchone()["n"]
+    n_decentral = conn.execute("SELECT COUNT(*) AS n FROM protocols").fetchone()["n"]
+
+    conn.execute("DELETE FROM central_comments")
+    conn.execute("DELETE FROM comments")
+    conn.execute("DELETE FROM central_protocols")
+    conn.execute("DELETE FROM protocols")
+    conn.execute("DELETE FROM protocol_sequence")
+    # Auto-increment counter zurücksetzen, sonst startet die nächste
+    # laufende Nr. bei #6 statt #1.
+    conn.execute(
+        "DELETE FROM sqlite_sequence WHERE name IN "
+        "('protocols', 'central_protocols', 'protocol_sequence', "
+        "'comments', 'central_comments')"
+    )
+    return {
+        "decentral": n_decentral,
+        "central": n_central,
+        "comments": n_comments,
+        "central_comments": n_central_comments,
+    }

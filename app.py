@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+import sqlite3
 from functools import wraps
 from pathlib import Path
 
@@ -374,9 +375,63 @@ def create_app(test_config: dict | None = None) -> Flask:
             abort(404)
         protocols = models.list_patient_protocols(db, patient_id)
         central_protocols = models.list_central_protocols(db, patient_id=patient_id)
+        change_log = models.list_patient_changes(db, patient_id)
+        sensitive = (
+            models.patient_sensitive_full(patient)
+            if current_user.is_admin
+            else models.patient_sensitive_summary(patient)
+        )
         return render_template("patient_detail.html", patient=patient,
                                protocols=protocols,
                                central_protocols=central_protocols,
+                               change_log=change_log,
+                               sensitive=sensitive,
+                               sensitive_full=current_user.is_admin,
+                               field_label=models.PATIENT_FIELD_LABELS,
+                               sensitive_fields=set(models.SENSITIVE_PATIENT_FIELDS),
+                               format_dt=models.format_dt)
+
+    @app.route("/patients/<int:patient_id>/edit", methods=["GET", "POST"])
+    @decentral_view_required
+    def patient_edit(patient_id: int):
+        db = models.get_db()
+        patient = models.get_patient(db, patient_id)
+        if not patient:
+            abort(404)
+        # Sensible Felder dürfen nur Admins ändern. Normale Voll-User
+        # können nur Name / Geburtsdatum / Stammnummer pflegen.
+        if request.method == "POST":
+            updates = {}
+            for f in models.PATIENT_EDIT_FIELDS:
+                # Sensitive Felder nur bei Admin akzeptieren
+                if f in models.SENSITIVE_PATIENT_FIELDS and not current_user.is_admin:
+                    continue
+                if f in ("has_allergies", "has_medications"):
+                    raw = request.form.get(f, "").strip()
+                    updates[f] = (1 if raw == "1"
+                                  else 0 if raw == "0"
+                                  else None if raw in ("", "unknown")
+                                  else None)
+                else:
+                    updates[f] = request.form.get(f, "")
+            if not updates.get("name") or not updates.get("geburtsdatum"):
+                flash("Name und Geburtsdatum sind Pflichtfelder.", "error")
+                return redirect(url_for("patient_edit", patient_id=patient_id))
+            try:
+                n = models.update_patient(db, patient_id, updates,
+                                          changed_by=current_user.id)
+                db.commit()
+                if n == 0:
+                    flash("Keine Änderungen.", "info")
+                else:
+                    flash(f"Gespeichert ({n} Änderung{'en' if n != 1 else ''}).",
+                          "success")
+            except sqlite3.IntegrityError:
+                flash("Ein anderer Patient mit Name + Geburtsdatum existiert bereits.",
+                      "error")
+            return redirect(url_for("patient_detail", patient_id=patient_id))
+        return render_template("patient_edit.html", patient=patient,
+                               can_edit_sensitive=current_user.is_admin,
                                format_dt=models.format_dt)
 
     # ----- Lookup for the new-protocol form (so the UI can announce
@@ -983,6 +1038,115 @@ def create_app(test_config: dict | None = None) -> Flask:
         flash(f"Benutzer '{row['username']}' gelöscht.", "success")
         return redirect(url_for("admin_users"))
 
+    # ----- Admin: Reset (alle Protokolle löschen + Counter zurück) -----
+
+    @app.route("/admin/reset-protocols", methods=["POST"])
+    @admin_required
+    def admin_reset_protocols():
+        db = models.get_db()
+        # Doppelte Sicherung: Passwort des angemeldeten Admins + Bestätigungstext
+        password = request.form.get("password") or ""
+        confirm = (request.form.get("confirm") or "").strip()
+        user_row = models.get_user_by_id(db, current_user.id)
+        if not user_row or not models.verify_password(user_row, password):
+            flash("Passwort falsch — nichts gelöscht.", "error")
+            return redirect(url_for("admin_users"))
+        if confirm != "RESET":
+            flash("Bitte 'RESET' (Großbuchstaben) als Bestätigung eintippen — nichts gelöscht.",
+                  "error")
+            return redirect(url_for("admin_users"))
+        stats = models.reset_all_protocols(db)
+        db.commit()
+        flash(
+            f"Alle Protokolle gelöscht: {stats['decentral']} dezentral, "
+            f"{stats['central']} zentral, {stats['comments']} Kommentare, "
+            f"{stats['central_comments']} zentrale Kommentare. "
+            f"Patienten bleiben erhalten. Nächste Bericht-Nr. ist wieder #1.",
+            "success",
+        )
+        return redirect(url_for("admin_users"))
+
+    # ----- Admin-PIN (für Entschlüsselungs-Freigaben) -----
+
+    @app.route("/account/pin", methods=["GET", "POST"])
+    @login_required
+    def account_pin():
+        if not current_user.is_admin:
+            abort(403)
+        if request.method == "POST":
+            db = models.get_db()
+            current = request.form.get("current_password", "")
+            new_pin = (request.form.get("new_pin") or "").strip()
+            confirm = (request.form.get("confirm_pin") or "").strip()
+            row = models.get_user_by_id(db, current_user.id)
+            if not models.verify_password(row, current):
+                flash("Aktuelles Passwort stimmt nicht.", "error")
+            elif new_pin and (len(new_pin) < 4 or not new_pin.isdigit()):
+                flash("PIN muss mindestens 4 Ziffern haben (nur Zahlen).", "error")
+            elif new_pin != confirm:
+                flash("Die beiden PIN-Eingaben stimmen nicht überein.", "error")
+            else:
+                models.set_admin_pin(db, current_user.id,
+                                     new_pin if new_pin else None)
+                db.commit()
+                if new_pin:
+                    flash("Admin-PIN gesetzt.", "success")
+                else:
+                    flash("Admin-PIN entfernt.", "success")
+                return redirect(url_for("account_pin"))
+        # Show whether a PIN is currently set
+        db = models.get_db()
+        row = models.get_user_by_id(db, current_user.id)
+        return render_template("account_pin.html",
+                               has_pin=bool(row["admin_pin_hash"]))
+
+    # ----- Sensitive Patient-Daten (Notfallkontakt + Med) -----
+
+    @app.route("/api/patient/<int:pid>/sensitive")
+    @login_required
+    def api_patient_sensitive(pid: int):
+        """Liefert maskierte Sicht (ja/nein) für nicht-Admins, volle Sicht
+        für Admins. Wird vom SPA-Sidebar-Widget aufgerufen."""
+        db = models.get_db()
+        patient = models.get_patient(db, pid)
+        if not patient:
+            return {"error": "not found"}, 404
+        if current_user.is_admin:
+            return {"locked": False,
+                    "data": models.patient_sensitive_full(patient)}
+        return {"locked": True,
+                "data": models.patient_sensitive_summary(patient)}
+
+    @app.route("/api/patient/<int:pid>/unlock-emergency", methods=["POST"])
+    @login_required
+    def api_patient_unlock_emergency(pid: int):
+        """Ein Admin verifiziert sich (Username + PIN). Wenn das passt,
+        bekommt der anfragende User einmalig die volle Sicht zurück.
+        Beide werden in emergency_unlocks geloggt.
+        """
+        db = models.get_db()
+        patient = models.get_patient(db, pid)
+        if not patient:
+            return {"error": "not found"}, 404
+        body = request.get_json(silent=True) or {}
+        admin_username = (body.get("admin_username") or "").strip()
+        admin_pin = (body.get("admin_pin") or "").strip()
+        if not admin_username or not admin_pin:
+            return {"error": "Username und PIN erforderlich."}, 400
+        approver = models.verify_admin_pin(db, admin_username, admin_pin)
+        if not approver:
+            return {"error": "Admin-Username oder PIN falsch — oder PIN nicht gesetzt."}, 401
+        # Log + return full data
+        models.log_emergency_unlock(db, pid,
+                                    requested_by=current_user.id,
+                                    approved_by=approver["id"])
+        db.commit()
+        return {
+            "locked": False,
+            "data": models.patient_sensitive_full(patient),
+            "approved_by": approver["full_name"] or approver["username"],
+        }
+
     @app.errorhandler(403)
     def forbidden(_e):
         return render_template("403.html"), 403
@@ -1064,11 +1228,18 @@ def _save_protocol(protocol_id):
             "SELECT COUNT(*) AS n FROM protocols WHERE patient_id = ? AND id != ?",
             (patient_id, new_id),
         ).fetchone()["n"]
+        # Resolve laufende_nr to show in the flash
+        new_label = db.execute(
+            "SELECT laufende_nr FROM protocols WHERE id = ?", (new_id,)
+        ).fetchone()["laufende_nr"] or f"#dEH{new_id}"
         if previous > 0:
-            flash(f"Folgebehandlung gespeichert — Patient hat bereits "
-                  f"{previous} frühere(n) Eintrag/Einträge.", "info")
+            flash(f"Bericht {new_label} gespeichert (Folgebehandlung — Patient "
+                  f"hat bereits {previous} frühere(n) Eintrag/Einträge).", "info")
         else:
-            flash("Einsatzbericht gespeichert.", "success")
+            flash(f"Bericht {new_label} gespeichert.", "success")
+        # Schnellmodus: "Speichern + nächsten anlegen" → leeres Formular
+        if form.get("next") == "new":
+            return redirect(url_for("protocol_new"))
         return redirect(url_for("protocol_detail", protocol_id=new_id))
 
     # Edit: also reassign patient if name/Geburtsdatum changed.

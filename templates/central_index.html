@@ -142,6 +142,59 @@
   }
   .vh-badge.d { background: #e6effa; color: #2c5b8a; }
   .vh-badge.z { background: #fce8e6; color: #b3261e; }
+
+  /* Notfall + Medizin Widget links unten */
+  .vh-emergency {
+    margin-top: 16px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .vh-emergency-header {
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--primary, #d32f2f);
+    margin-bottom: 8px;
+  }
+  .vh-emergency-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 4px 0;
+    font-size: 0.85rem;
+  }
+  .vh-emergency-row span:first-child { color: var(--muted); }
+  .vh-emergency-block { margin-top: 8px; font-size: 0.85rem; }
+  .vh-emergency-label {
+    color: var(--muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .vh-emergency-value { margin-top: 2px; word-break: break-word; }
+  .vh-unlock-btn {
+    margin-top: 10px;
+    width: 100%;
+    background: #fff3cd;
+    border: 1px solid #f0e0a3;
+    color: #7a5d00;
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .vh-unlock-btn:hover { background: #ffe89c; }
+  .vh-unlocked-meta {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 6px;
+    font-style: italic;
+  }
   @media (max-width: 900px) {
     .layout { grid-template-columns: 1fr; }
     .sidebar {
@@ -1324,9 +1377,12 @@
     const tgt = e.target.closest('[data-vh-action]');
     if (!tgt) return;
     e.preventDefault();
-    if (tgt.dataset.vhAction === 'pick') {
+    const action = tgt.dataset.vhAction;
+    if (action === 'pick') {
       pickPatient(tgt.dataset.patientName || '',
                   tgt.dataset.geburtsdatum || '');
+    } else if (action === 'unlock') {
+      unlockEmergency(Number(tgt.dataset.pid));
     }
   });
 
@@ -1402,16 +1458,121 @@
         <div class="vh-actions">${pickBtn}${akteLink}</div>
       </div>
       <div id="vh-history-pane"><p class="muted" style="font-size:0.85rem;">Lade Vorbehandlungen …</p></div>
+      <div id="vh-emergency-pane"></div>
     `;
     setBody(html);
     if (m.patient_id) {
       const history = await fetchHistory(m.patient_id);
       const pane = document.getElementById('vh-history-pane');
       if (pane) pane.innerHTML = renderHistoryRows(history);
+      // Notfallkontakt + medizinische Hinweise (separat geladen)
+      renderEmergencyPanel(m.patient_id);
     } else {
       // zentral_writer: kein patient_id → keine Detail-Liste
       const pane = document.getElementById('vh-history-pane');
       if (pane) pane.innerHTML = '<p class="muted" style="font-size:0.85rem;margin:6px 0 0;">Detailansicht eingeschränkt — nur Anzahlen verfügbar.</p>';
+    }
+  }
+
+  // ---------- Notfallkontakt + Allergien/Medikamente ----------
+  // Maskierte Darstellung für Voll-User; Volle Darstellung für Admins.
+  // "Entschlüsseln"-Button öffnet einen Mini-Dialog mit Admin-Username + PIN.
+  async function renderEmergencyPanel(patientId) {
+    const pane = document.getElementById('vh-emergency-pane');
+    if (!pane) return;
+    pane.innerHTML = '<p class="muted" style="font-size:0.78rem;margin-top:10px;">Lade Notfalldaten …</p>';
+    try {
+      const res = await fetch(`/api/patient/${patientId}/sensitive`,
+                              { credentials: 'same-origin' });
+      if (!res.ok) {
+        pane.innerHTML = '';
+        return;
+      }
+      const payload = await res.json();
+      pane.innerHTML = renderEmergencyHtml(patientId, payload, false);
+    } catch (_) { pane.innerHTML = ''; }
+  }
+
+  function renderEmergencyHtml(patientId, payload, justUnlocked) {
+    const d = payload.data || {};
+    const triBadge = (val) => {
+      if (val === null || val === undefined) return '<span class="vh-badge" style="background:#eee;color:#555;">unbekannt</span>';
+      return val
+        ? '<span class="vh-badge z">ja</span>'
+        : '<span class="vh-badge" style="background:#e8f4ec;color:#1f6b3a;">nein</span>';
+    };
+    let html = `<div class="vh-emergency">
+      <div class="vh-emergency-header">Notfall &amp; Medizin</div>
+      <div class="vh-emergency-row"><span>Allergien</span>${triBadge(d.has_allergies)}</div>
+      <div class="vh-emergency-row"><span>Medikamente</span>${triBadge(d.has_medications)}</div>
+      <div class="vh-emergency-row"><span>Notfallkontakt</span>${
+        d.has_emergency_contact ? '<span class="vh-badge z">vorhanden</span>'
+                                : '<span class="vh-badge" style="background:#eee;color:#555;">keiner</span>'
+      }</div>`;
+    if (payload.locked) {
+      html += `<button type="button" class="vh-unlock-btn" data-vh-action="unlock" data-pid="${patientId}">
+                 Entschlüsseln (Admin-PIN)
+               </button>`;
+    } else {
+      // Full view (admin or unlocked)
+      if (justUnlocked && payload.approved_by) {
+        html += `<div class="vh-unlocked-meta">freigegeben von ${escapeHtml(payload.approved_by)}</div>`;
+      }
+      if (d.emergency_contact_name || d.emergency_contact_phone) {
+        html += `<div class="vh-emergency-block">
+          <div class="vh-emergency-label">Notfallkontakt</div>
+          <div class="vh-emergency-value">
+            ${escapeHtml(d.emergency_contact_name || '—')}${d.emergency_contact_relation ? ' (' + escapeHtml(d.emergency_contact_relation) + ')' : ''}
+            ${d.emergency_contact_phone ? '<br><strong>' + escapeHtml(d.emergency_contact_phone) + '</strong>' : ''}
+          </div>
+        </div>`;
+      }
+      if (d.allergies_text) {
+        html += `<div class="vh-emergency-block">
+          <div class="vh-emergency-label">Allergien</div>
+          <div class="vh-emergency-value">${escapeHtml(d.allergies_text)}</div>
+        </div>`;
+      }
+      if (d.medications_text) {
+        html += `<div class="vh-emergency-block">
+          <div class="vh-emergency-label">Medikamente</div>
+          <div class="vh-emergency-value">${escapeHtml(d.medications_text)}</div>
+        </div>`;
+      }
+      if (d.extras_notes) {
+        html += `<div class="vh-emergency-block">
+          <div class="vh-emergency-label">Sonstige Hinweise</div>
+          <div class="vh-emergency-value">${escapeHtml(d.extras_notes)}</div>
+        </div>`;
+      }
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // Click handler in sidebarBody catches "unlock" via existing delegate
+  // (added to existing handler below).
+  async function unlockEmergency(patientId) {
+    const adminUsername = prompt('Admin-Username:');
+    if (!adminUsername) return;
+    const adminPin = prompt('Admin-PIN:');
+    if (!adminPin) return;
+    try {
+      const res = await fetch(`/api/patient/${patientId}/unlock-emergency`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ admin_username: adminUsername, admin_pin: adminPin }),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        alert(payload.error || 'Freigabe fehlgeschlagen.');
+        return;
+      }
+      const pane = document.getElementById('vh-emergency-pane');
+      if (pane) pane.innerHTML = renderEmergencyHtml(patientId, payload, true);
+    } catch (_) {
+      alert('Netzwerkfehler — Freigabe fehlgeschlagen.');
     }
   }
 
