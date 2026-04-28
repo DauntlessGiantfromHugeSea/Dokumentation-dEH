@@ -95,11 +95,123 @@
       {% endif %}
     </div>
   {% else %}
-    <p class="muted" style="font-size: 0.85rem; margin: 8px 0 0;">
-      Details (Notfallkontakt, Allergie- und Medikationsliste) sind nur
-      für Administratoren sichtbar. In der zentralen Erste Hilfe kann ein
-      Admin per PIN die Daten kurzzeitig freigeben.
-    </p>
+    <div class="unlock-zone" style="margin-top: 12px;">
+      <p class="muted" style="font-size: 0.85rem; margin: 0 0 8px;">
+        Notfallkontakt + Details zu Allergien / Medikamenten sind
+        vertraulich. Ein Admin kann sie per PIN kurzzeitig freigeben —
+        die Freigabe wird protokolliert.
+      </p>
+      <button class="btn small" type="button" id="unlockBtn">
+        Daten entschlüsseln (Admin-PIN)
+      </button>
+      <form id="unlockForm" class="card stack" style="display:none; margin-top: 10px; padding: 14px;">
+        <div class="row">
+          <label class="field">
+            Admin-Benutzername
+            <input id="unlockUser" autocomplete="off" required>
+          </label>
+          <label class="field">
+            Admin-PIN
+            <input id="unlockPin" type="password" inputmode="numeric"
+                   autocomplete="off" required>
+          </label>
+        </div>
+        <div class="btn-row">
+          <button class="btn" type="submit">Freigeben</button>
+          <button class="btn secondary" type="button" id="unlockCancel">Abbrechen</button>
+        </div>
+        <p id="unlockError" class="flash error" style="display:none; margin: 0;"></p>
+      </form>
+      <div id="unlockResult" style="display:none; margin-top: 12px;"></div>
+    </div>
+
+    <script>
+    (function() {
+      const btn = document.getElementById('unlockBtn');
+      const form = document.getElementById('unlockForm');
+      const cancel = document.getElementById('unlockCancel');
+      const errEl = document.getElementById('unlockError');
+      const resultEl = document.getElementById('unlockResult');
+      const userEl = document.getElementById('unlockUser');
+      const pinEl = document.getElementById('unlockPin');
+
+      function escapeHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g,
+          c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      }
+
+      btn.addEventListener('click', () => {
+        form.style.display = 'block';
+        btn.style.display = 'none';
+        setTimeout(() => userEl.focus(), 50);
+      });
+      cancel.addEventListener('click', () => {
+        form.style.display = 'none';
+        btn.style.display = 'inline-block';
+        errEl.style.display = 'none';
+        userEl.value = ''; pinEl.value = '';
+      });
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errEl.style.display = 'none';
+        try {
+          const res = await fetch("{{ url_for('api_patient_unlock_emergency', pid=patient.id) }}", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              admin_username: userEl.value.trim(),
+              admin_pin: pinEl.value.trim(),
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            errEl.textContent = data.error || 'Freigabe fehlgeschlagen.';
+            errEl.style.display = 'block';
+            pinEl.value = '';
+            return;
+          }
+          // Success: render
+          form.style.display = 'none';
+          const d = data.data || {};
+          let html = '<div class="card-header" style="background:#1f6b3a;">Freigegeben durch ' +
+            escapeHtml(data.approved_by) + ' · ' +
+            new Date().toLocaleString('de-DE') + '</div>';
+          html += '<div class="protocol-meta" style="margin-top: 12px;">';
+          if (d.emergency_contact_name || d.emergency_contact_phone) {
+            html += '<div class="kv"><div class="label">Notfallkontakt</div><div class="value">' +
+              escapeHtml(d.emergency_contact_name || '—') +
+              (d.emergency_contact_relation ? ' (' + escapeHtml(d.emergency_contact_relation) + ')' : '') +
+              (d.emergency_contact_phone ? '<br><strong>' + escapeHtml(d.emergency_contact_phone) + '</strong>' : '') +
+              '</div></div>';
+          }
+          if (d.allergies_text) {
+            html += '<div class="kv"><div class="label">Allergien</div><div class="value">' +
+              escapeHtml(d.allergies_text) + '</div></div>';
+          }
+          if (d.medications_text) {
+            html += '<div class="kv"><div class="label">Medikamente</div><div class="value">' +
+              escapeHtml(d.medications_text) + '</div></div>';
+          }
+          if (d.extras_notes) {
+            html += '<div class="kv"><div class="label">Sonstige Hinweise</div><div class="value">' +
+              escapeHtml(d.extras_notes) + '</div></div>';
+          }
+          html += '</div>';
+          if (!d.emergency_contact_name && !d.emergency_contact_phone &&
+              !d.allergies_text && !d.medications_text && !d.extras_notes) {
+            html += '<p class="muted" style="margin: 8px 0 0;">Keine Details hinterlegt.</p>';
+          }
+          resultEl.innerHTML = '<div class="card" style="border-left: 4px solid #1f6b3a;">' + html + '</div>';
+          resultEl.style.display = 'block';
+        } catch (err) {
+          errEl.textContent = 'Netzwerkfehler.';
+          errEl.style.display = 'block';
+        }
+      });
+    })();
+    </script>
   {% endif %}
 </div>
 
