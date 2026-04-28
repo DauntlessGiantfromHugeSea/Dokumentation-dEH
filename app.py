@@ -134,7 +134,15 @@ def create_app(test_config: dict | None = None) -> Flask:
             password = request.form.get("password", "")
             row = models.get_user_by_username(models.get_db(), username)
             if row and models.verify_password(row, password):
-                # Step 1 done. Don't login_user yet — require TOTP first.
+                # Per-user opt-out: if 2FA is disabled for this user, skip
+                # both setup and challenge — log them in directly.
+                if not row["totp_required"]:
+                    user = User(row)
+                    login_user(user)
+                    return redirect(
+                        request.args.get("next") or _login_landing(user)
+                    )
+                # Otherwise: 2FA mandatory. Don't login_user yet.
                 session.clear()
                 session["pending_user_id"] = row["id"]
                 if request.args.get("next"):
@@ -715,6 +723,32 @@ def create_app(test_config: dict | None = None) -> Flask:
             f"nächster Anmeldung erneut einen Authenticator einrichten.",
             "success",
         )
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/users/<int:user_id>/toggle-totp-required",
+               methods=["POST"])
+    @admin_required
+    def admin_user_toggle_totp_required(user_id: int):
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        new_state = not bool(row["totp_required"])
+        models.set_totp_required(db, user_id, new_state)
+        db.commit()
+        if new_state:
+            flash(
+                f"2FA für '{row['username']}' wieder aktiviert. Beim "
+                f"nächsten Login wird "
+                f"{'der Code abgefragt' if row['totp_confirmed'] else 'das Setup gestartet'}.",
+                "success",
+            )
+        else:
+            flash(
+                f"2FA für '{row['username']}' deaktiviert — meldet sich "
+                f"jetzt nur mit Passwort an.",
+                "success",
+            )
         return redirect(url_for("admin_users"))
 
     @app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])

@@ -260,6 +260,14 @@ label.field .req { color: var(--accent); }
   background: #fce8e6;
   color: #b3261e;
 }
+.badge.totp-on {
+  background: #e8f4ec;
+  color: #1f6b3a;
+}
+.badge.totp-off {
+  background: #eee;
+  color: #6b7280;
+}
 
 .page-header {
   display: flex;

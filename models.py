@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
     role            TEXT NOT NULL DEFAULT 'full',
     totp_secret     TEXT,
     totp_confirmed  INTEGER NOT NULL DEFAULT 0,
+    totp_required   INTEGER NOT NULL DEFAULT 1,
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -140,6 +141,11 @@ def init_db(db_path: Path) -> None:
             conn.execute(
                 "ALTER TABLE users ADD COLUMN totp_confirmed "
                 "INTEGER NOT NULL DEFAULT 0"
+            )
+        if "totp_required" not in cols:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN totp_required "
+                "INTEGER NOT NULL DEFAULT 1"
             )
 
         # Migration: global_id columns for both protocol tables.
@@ -262,7 +268,8 @@ def verify_password(user_row: sqlite3.Row, password: str) -> bool:
 
 def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT id, username, full_name, is_admin, created_at "
+        "SELECT id, username, full_name, is_admin, role, "
+        "       totp_secret, totp_confirmed, totp_required, created_at "
         "FROM users ORDER BY username COLLATE NOCASE"
     ).fetchall()
 
@@ -307,6 +314,14 @@ def reset_totp(conn: sqlite3.Connection, user_id: int) -> None:
     conn.execute(
         "UPDATE users SET totp_secret = NULL, totp_confirmed = 0 WHERE id = ?",
         (user_id,),
+    )
+
+
+def set_totp_required(conn: sqlite3.Connection, user_id: int,
+                      required: bool) -> None:
+    conn.execute(
+        "UPDATE users SET totp_required = ? WHERE id = ?",
+        (1 if required else 0, user_id),
     )
 
 

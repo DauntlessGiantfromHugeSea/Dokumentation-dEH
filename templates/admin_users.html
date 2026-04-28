@@ -72,8 +72,10 @@
           {% endif %}
         </td>
         <td>
-          {% if u.totp_confirmed %}
-            <span class="badge">aktiv</span>
+          {% if not u.totp_required %}
+            <span class="badge totp-off">deaktiviert</span>
+          {% elif u.totp_confirmed %}
+            <span class="badge totp-on">aktiv</span>
           {% else %}
             <span class="muted">offen</span>
           {% endif %}
@@ -104,6 +106,14 @@
                   class="inline-form">
               <button class="btn small secondary" type="submit">
                 {% if u.is_admin %}Admin entziehen{% else %}Admin geben{% endif %}
+              </button>
+            </form>
+            <form method="post"
+                  action="{{ url_for('admin_user_toggle_totp_required', user_id=u.id) }}"
+                  class="inline-form"
+                  onsubmit="return confirm('2FA für „{{ u.username }}“ {% if u.totp_required %}deaktivieren? Sie/er meldet sich dann nur mit Passwort an.{% else %}wieder aktivieren?{% endif %}');">
+              <button class="btn small secondary" type="submit">
+                {% if u.totp_required %}2FA deaktivieren{% else %}2FA aktivieren{% endif %}
               </button>
             </form>
             <form method="post"
