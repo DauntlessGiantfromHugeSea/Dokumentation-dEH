@@ -1322,6 +1322,9 @@
 </script>
 
 <script>
+const IS_ZENTRAL_ONLY = {{ 'true' if current_user.is_zentral_only else 'false' }};
+</script>
+<script>
 // Live-Lookup: schon beim Tippen von Vorname/Nachname/Geburtsdatum
 // nach Patienten suchen und das Ergebnis IM LINKEN SEITENPANEL rendern.
 // Zustände:
@@ -1437,7 +1440,10 @@
   async function renderSingle(m, fullName, dob) {
     setSub('1 Treffer');
     const fullData = fullName && dob;
-    const akteLink = m.patient_id
+    // "Vollständige Akte"-Link gibt es für Voll-User; zentral_writer
+    // sieht im Sidebar dafür Indikatoren + Entschlüsseln-Button.
+    const showAkteLink = m.patient_id && !IS_ZENTRAL_ONLY;
+    const akteLink = showAkteLink
       ? `<a href="/patients/${m.patient_id}" target="_blank" style="font-size:0.78rem;text-decoration:none;color:var(--primary,#d32f2f);">vollständige Akte →</a>`
       : '';
     const pickBtn = !fullData
@@ -1463,20 +1469,26 @@
         </div>
         <div class="vh-actions">${pickBtn}${akteLink}</div>
       </div>
-      <div id="vh-history-pane"><p class="muted" style="font-size:0.85rem;">Lade Vorbehandlungen …</p></div>
       <div id="vh-emergency-pane"></div>
+      <div id="vh-history-pane"></div>
     `;
     setBody(html);
     if (m.patient_id) {
-      const history = await fetchHistory(m.patient_id);
-      const pane = document.getElementById('vh-history-pane');
-      if (pane) pane.innerHTML = renderHistoryRows(history);
-      // Notfallkontakt + medizinische Hinweise (separat geladen)
+      // Notfallkontakt + Indikatoren immer zeigen (auch zentral_writer);
+      // /api/patient/<id>/sensitive maskiert für Nicht-Admins automatisch.
       renderEmergencyPanel(m.patient_id);
-    } else {
-      // zentral_writer: kein patient_id → keine Detail-Liste
-      const pane = document.getElementById('vh-history-pane');
-      if (pane) pane.innerHTML = '<p class="muted" style="font-size:0.85rem;margin:6px 0 0;">Detailansicht eingeschränkt — nur Anzahlen verfügbar.</p>';
+      // Behandlungs-Historie nur für Voll-User (zentral_writer darf
+      // andere Berichte nicht einsehen).
+      const histPane = document.getElementById('vh-history-pane');
+      if (!IS_ZENTRAL_ONLY) {
+        if (histPane) histPane.innerHTML =
+          '<p class="muted" style="font-size:0.85rem;">Lade Vorbehandlungen …</p>';
+        const history = await fetchHistory(m.patient_id);
+        if (histPane) histPane.innerHTML = renderHistoryRows(history);
+      } else if (histPane) {
+        histPane.innerHTML =
+          '<p class="muted" style="font-size:0.78rem;margin-top:10px;">Behandlungs-Historie eingeschränkt — nur Anzahlen oben.</p>';
+      }
     }
   }
 

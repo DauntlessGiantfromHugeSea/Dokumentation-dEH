@@ -921,8 +921,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             counts = models.patient_protocol_counts(db, r["id"])
             last = models.patient_last_treatment(db, r["id"])
             matches.append({
-                "patient_id": (None if current_user.is_zentral_only
-                               else r["id"]),
+                # patient_id wird auch an zentral_writer zurückgegeben, damit
+                # das Notfall-Widget Indikatoren + Entschlüsseln-Button zeigen
+                # kann. Der Akte-Link in der UI ist separat per Rolle gesperrt
+                # und /patients/<id> bleibt durch decentral_view_required
+                # geschützt (HTTP 403 für zentral_writer).
+                "patient_id": r["id"],
                 "name": r["name"],
                 "geburtsdatum": r["geburtsdatum"],
                 "stammnummer": r["stammnummer"] or "",
