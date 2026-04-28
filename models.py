@@ -1161,6 +1161,36 @@ def patient_sensitive_full(row: sqlite3.Row) -> dict:
     }
 
 
+# Adresse + Telefon + Krankenkasse: für Nicht-Admins versteckt.
+# Werden im API-GET gestrippt, in der PUT-Logik für Nicht-Admins aus dem
+# Bestand übernommen und im PDF maskiert.
+CENTRAL_CONTACT_FIELDS = (
+    "strasse", "plz", "stadt", "telefon", "krankenkasse",
+)
+
+
+def strip_central_contact(data: dict) -> dict:
+    """Returnt eine Kopie ohne Adresse/Telefon/Krankenkasse."""
+    out = dict(data or {})
+    for f in CENTRAL_CONTACT_FIELDS:
+        out.pop(f, None)
+    return out
+
+
+def merge_central_contact(incoming: dict, existing: dict) -> dict:
+    """Setzt Adresse/Telefon/Krankenkasse im incoming auf die Werte aus
+    existing — wird in PUT für Nicht-Admins benutzt, damit ihr Save die
+    bestehenden Werte nicht überschreibt (sie sehen die Felder ja gar nicht).
+    """
+    out = dict(incoming or {})
+    for f in CENTRAL_CONTACT_FIELDS:
+        if existing and existing.get(f) is not None:
+            out[f] = existing.get(f)
+        else:
+            out.pop(f, None)
+    return out
+
+
 def list_admin_users_with_pin(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Admin-User, die einen PIN gesetzt haben — für Dropdowns in Unlock-UI."""
     return conn.execute(

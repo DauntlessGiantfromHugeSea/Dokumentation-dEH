@@ -609,6 +609,7 @@
             </div>
           </div>
 
+          {% if current_user.is_admin %}
           <div class="section">
             <div class="label">Anschrift &amp; Kontakt</div>
             <div class="grid cols-2">
@@ -619,6 +620,16 @@
               <div class="field"><label for="telefon">Telefon</label><input type="tel" id="telefon" name="telefon" /></div>
             </div>
           </div>
+          {% else %}
+          <div class="section">
+            <div class="label">Anschrift &amp; Kontakt</div>
+            <p style="margin: 6px 0 0; font-size: 0.88rem; color: var(--muted);">
+              Nur Admins dürfen diese Felder erfassen oder einsehen. Auf der
+              Detailseite des Berichts kann ein Admin die Daten per PIN
+              kurzzeitig freigeben.
+            </p>
+          </div>
+          {% endif %}
         </section>
 
         <!-- 2. Einsatz -->

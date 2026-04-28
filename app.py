@@ -842,9 +842,20 @@ def create_app(test_config: dict | None = None) -> Flask:
                 and rec.get("created_by") != current_user.id):
             return {"error": "forbidden"}, 403
         if request.method == "GET":
+            # Adresse/Telefon/Krankenkasse für Nicht-Admins entfernen — ein
+            # Voll-User oder zentral_writer sieht die Felder im SPA-Formular
+            # also leer. Admin bekommt die Werte unverändert.
+            if not current_user.is_admin:
+                rec = dict(rec)
+                rec["data"] = models.strip_central_contact(rec.get("data") or {})
             return rec
         if request.method == "PUT":
             data = request.get_json(silent=True) or {}
+            # Wenn der Speichernde kein Admin ist, dürfen die geschützten
+            # Kontaktfelder nicht überschrieben werden — sie waren beim
+            # Laden gestrippt und kommen entsprechend leer zurück.
+            if not current_user.is_admin:
+                data = models.merge_central_contact(data, rec.get("data") or {})
             ok = models.update_central_protocol(db, pid, data)
             db.commit()
             if not ok:
@@ -872,8 +883,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         if (current_user.is_zentral_only
                 and rec.get("created_by") != current_user.id):
             abort(403)
+        # Adresse/Telefon/Krankenkasse für Nicht-Admins auch im PDF entfernen
+        pdf_data = rec["data"]
+        if not current_user.is_admin:
+            pdf_data = models.strip_central_contact(pdf_data)
         try:
-            pdf_bytes = render_central_pdf(rec["data"])
+            pdf_bytes = render_central_pdf(pdf_data)
         except FileNotFoundError as e:
             return {"error": str(e)}, 500
         name = rec["name_summary"] or "Protokoll"
