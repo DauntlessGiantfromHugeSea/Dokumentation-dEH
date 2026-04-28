@@ -64,6 +64,21 @@ CREATE TABLE IF NOT EXISTS comments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_comments_protocol ON comments(protocol_id);
+
+CREATE TABLE IF NOT EXISTS central_protocols (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id    INTEGER REFERENCES patients(id) ON DELETE SET NULL,
+    einsatznummer TEXT,
+    datum         TEXT,
+    name_summary  TEXT,
+    data          TEXT NOT NULL,
+    created_by    INTEGER REFERENCES users(id),
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_central_patient ON central_protocols(patient_id);
+CREATE INDEX IF NOT EXISTS idx_central_datum ON central_protocols(datum);
 """
 
 
@@ -215,11 +230,23 @@ def list_patients(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         """
         SELECT p.*,
-               COUNT(pr.id) AS protocol_count,
-               MAX(pr.eh_datum_uhrzeit) AS last_treatment
+               COALESCE(d.n, 0) AS decentral_count,
+               COALESCE(c.n, 0) AS central_count,
+               (COALESCE(d.n, 0) + COALESCE(c.n, 0)) AS protocol_count,
+               COALESCE(d.last_d, c.last_c) AS last_treatment_any,
+               d.last_d AS last_decentral,
+               c.last_c AS last_central
         FROM patients p
-        LEFT JOIN protocols pr ON pr.patient_id = p.id
-        GROUP BY p.id
+        LEFT JOIN (
+          SELECT patient_id, COUNT(*) AS n,
+                 MAX(eh_datum_uhrzeit) AS last_d
+          FROM protocols GROUP BY patient_id
+        ) d ON d.patient_id = p.id
+        LEFT JOIN (
+          SELECT patient_id, COUNT(*) AS n, MAX(datum) AS last_c
+          FROM central_protocols WHERE patient_id IS NOT NULL
+          GROUP BY patient_id
+        ) c ON c.patient_id = p.id
         ORDER BY p.name COLLATE NOCASE ASC
         """
     ).fetchall()
@@ -370,3 +397,132 @@ def format_dt(value: Optional[str]) -> str:
         except ValueError:
             continue
     return value
+
+
+# ---------- Central protocols (Notfallprotokoll, größere Form) ----------
+
+import json as _json
+
+
+def _scalar(v):
+    """Form data values can be lists (multi-checkbox); take first scalar."""
+    if isinstance(v, list):
+        return v[0] if v else ""
+    return "" if v is None else str(v)
+
+
+def _name_summary(data: dict) -> str:
+    vorname = _scalar(data.get("vorname")).strip()
+    nachname = _scalar(data.get("nachname")).strip()
+    return " ".join(p for p in (vorname, nachname) if p)
+
+
+def _link_central_to_patient(conn: sqlite3.Connection, data: dict) -> Optional[int]:
+    """Upsert a patient based on data['vorname'] + data['nachname'] +
+    data['geburtsdatum'] so central and decentral protocols share patients.
+    Returns patient_id or None if name/birthday missing.
+    """
+    name = _name_summary(data)
+    geburtsdatum = _scalar(data.get("geburtsdatum")).strip()
+    if not name or not geburtsdatum:
+        return None
+    return upsert_patient(conn, name, geburtsdatum, None)
+
+
+def list_central_protocols(conn: sqlite3.Connection, *,
+                           patient_id: Optional[int] = None) -> list[sqlite3.Row]:
+    sql = [
+        """
+        SELECT cp.id, cp.patient_id, cp.einsatznummer, cp.datum,
+               cp.name_summary, cp.created_at, cp.updated_at,
+               p.name AS patient_name, p.geburtsdatum AS patient_geburtsdatum,
+               p.stammnummer AS patient_stammnummer
+        FROM central_protocols cp
+        LEFT JOIN patients p ON p.id = cp.patient_id
+        WHERE 1=1
+        """
+    ]
+    params: list = []
+    if patient_id is not None:
+        sql.append("AND cp.patient_id = ?")
+        params.append(patient_id)
+    sql.append("ORDER BY datetime(cp.updated_at) DESC")
+    return conn.execute("\n".join(sql), params).fetchall()
+
+
+def get_central_protocol(conn: sqlite3.Connection, pid: int) -> Optional[dict]:
+    row = conn.execute(
+        """
+        SELECT cp.*, p.name AS patient_name, p.geburtsdatum AS patient_geburtsdatum
+        FROM central_protocols cp
+        LEFT JOIN patients p ON p.id = cp.patient_id
+        WHERE cp.id = ?
+        """,
+        (pid,),
+    ).fetchone()
+    if not row:
+        return None
+    rec = dict(row)
+    rec["data"] = _json.loads(rec["data"] or "{}")
+    return rec
+
+
+def create_central_protocol(conn: sqlite3.Connection, data: dict,
+                            created_by: Optional[int]) -> int:
+    patient_id = _link_central_to_patient(conn, data)
+    cur = conn.execute(
+        """
+        INSERT INTO central_protocols
+          (patient_id, einsatznummer, datum, name_summary, data, created_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            patient_id,
+            _scalar(data.get("einsatznummer")) or None,
+            _scalar(data.get("datum")) or None,
+            _name_summary(data) or None,
+            _json.dumps(data, ensure_ascii=False),
+            created_by,
+        ),
+    )
+    return cur.lastrowid
+
+
+def update_central_protocol(conn: sqlite3.Connection, pid: int,
+                            data: dict) -> bool:
+    patient_id = _link_central_to_patient(conn, data)
+    cur = conn.execute(
+        """
+        UPDATE central_protocols
+           SET patient_id = ?, einsatznummer = ?, datum = ?,
+               name_summary = ?, data = ?, updated_at = datetime('now')
+         WHERE id = ?
+        """,
+        (
+            patient_id,
+            _scalar(data.get("einsatznummer")) or None,
+            _scalar(data.get("datum")) or None,
+            _name_summary(data) or None,
+            _json.dumps(data, ensure_ascii=False),
+            pid,
+        ),
+    )
+    return cur.rowcount > 0
+
+
+def delete_central_protocol(conn: sqlite3.Connection, pid: int) -> bool:
+    cur = conn.execute("DELETE FROM central_protocols WHERE id = ?", (pid,))
+    return cur.rowcount > 0
+
+
+def patient_protocol_counts(conn: sqlite3.Connection, patient_id: int) -> dict:
+    """How many decentral and central protocols exist for this patient."""
+    decentral = conn.execute(
+        "SELECT COUNT(*) AS n FROM protocols WHERE patient_id = ?",
+        (patient_id,),
+    ).fetchone()["n"]
+    central = conn.execute(
+        "SELECT COUNT(*) AS n FROM central_protocols WHERE patient_id = ?",
+        (patient_id,),
+    ).fetchone()["n"]
+    return {"decentral": decentral, "central": central}

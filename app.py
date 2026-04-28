@@ -31,6 +31,7 @@ from flask_login import (
 
 import models
 from pdf_export import render_protocol_pdf
+from pdf_fill import render_pdf as render_central_pdf
 
 
 def admin_required(view):
@@ -108,7 +109,21 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template("index.html", protocols=protocols, filters=filters,
                                format_dt=models.format_dt)
 
-    @app.route("/protocols/new", methods=["GET", "POST"])
+    @app.route("/protocols/new")
+    @login_required
+    def protocol_new_chooser():
+        """Step 1: choose between decentral or central first aid."""
+        # Pass through any prefill so a follow-up still works.
+        return render_template(
+            "protocol_chooser.html",
+            prefill={
+                "name": request.args.get("name", ""),
+                "geburtsdatum": request.args.get("geburtsdatum", ""),
+                "stammnummer": request.args.get("stammnummer", ""),
+            },
+        )
+
+    @app.route("/protocols/new/dezentral", methods=["GET", "POST"])
     @login_required
     def protocol_new():
         if request.method == "POST":
@@ -192,8 +207,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not patient:
             abort(404)
         protocols = models.list_patient_protocols(db, patient_id)
+        central_protocols = models.list_central_protocols(db, patient_id=patient_id)
         return render_template("patient_detail.html", patient=patient,
-                               protocols=protocols, format_dt=models.format_dt)
+                               protocols=protocols,
+                               central_protocols=central_protocols,
+                               format_dt=models.format_dt)
 
     # ----- Lookup for the new-protocol form (so the UI can announce
     # "Folgebehandlung" before submit) -----
@@ -211,14 +229,14 @@ def create_app(test_config: dict | None = None) -> Flask:
         ).fetchone()
         if not row:
             return {"found": False}
-        count = models.get_db().execute(
-            "SELECT COUNT(*) AS n FROM protocols WHERE patient_id = ?", (row["id"],)
-        ).fetchone()["n"]
+        counts = models.patient_protocol_counts(models.get_db(), row["id"])
         return {
             "found": True,
             "patient_id": row["id"],
             "stammnummer": row["stammnummer"] or "",
-            "previous_count": count,
+            "previous_count": counts["decentral"] + counts["central"],
+            "previous_decentral": counts["decentral"],
+            "previous_central": counts["central"],
         }
 
     # ----- Export -----
@@ -270,6 +288,127 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "Content-Disposition": "attachment; filename=einsatzberichte.csv",
             },
         )
+
+    # ----- Central first-aid (Notfallprotokoll) -----
+
+    @app.route("/central")
+    @login_required
+    def central_index():
+        """Serve the SPA for central first-aid protocols.
+
+        The HTML is served as-is from a template file. It uses /api/central/*
+        endpoints. We render it via Flask so the @login_required check kicks
+        in and so we can pass the current user to a small wrapping banner.
+        """
+        return render_template(
+            "central_index.html",
+            current_user_label=current_user.full_name or current_user.username,
+        )
+
+    @app.route("/api/central/protokolle", methods=["GET", "POST"])
+    @login_required
+    def api_central_list_or_create():
+        db = models.get_db()
+        if request.method == "GET":
+            rows = models.list_central_protocols(db)
+            return [
+                {
+                    "id": r["id"],
+                    "vorname": (r["name_summary"] or "").split(" ", 1)[0]
+                                if r["name_summary"] else "",
+                    "nachname": (r["name_summary"] or "").split(" ", 1)[1]
+                                 if r["name_summary"] and " " in r["name_summary"]
+                                 else "",
+                    "einsatznummer": r["einsatznummer"],
+                    "datum": r["datum"],
+                    "created_at": r["created_at"],
+                    "updated_at": r["updated_at"],
+                    "patient_id": r["patient_id"],
+                    "previous_decentral": _decentral_count_for_patient(
+                        db, r["patient_id"]),
+                }
+                for r in rows
+            ]
+        # POST
+        data = request.get_json(silent=True) or {}
+        new_id = models.create_central_protocol(db, data, current_user.id)
+        db.commit()
+        return {"id": new_id}, 201
+
+    @app.route("/api/central/protokolle/<int:pid>", methods=["GET", "PUT", "DELETE"])
+    @login_required
+    def api_central_one(pid: int):
+        db = models.get_db()
+        if request.method == "GET":
+            rec = models.get_central_protocol(db, pid)
+            if not rec:
+                return {"error": "not found"}, 404
+            # Return shape compatible with the SPA's expectations.
+            return rec
+        if request.method == "PUT":
+            data = request.get_json(silent=True) or {}
+            ok = models.update_central_protocol(db, pid, data)
+            db.commit()
+            if not ok:
+                return {"error": "not found"}, 404
+            return {"id": pid}
+        # DELETE
+        ok = models.delete_central_protocol(db, pid)
+        db.commit()
+        if not ok:
+            return {"error": "not found"}, 404
+        return {"deleted": pid}
+
+    @app.route("/api/central/protokolle/<int:pid>/pdf")
+    @login_required
+    def api_central_pdf(pid: int):
+        db = models.get_db()
+        rec = models.get_central_protocol(db, pid)
+        if not rec:
+            abort(404)
+        try:
+            pdf_bytes = render_central_pdf(rec["data"])
+        except FileNotFoundError as e:
+            return {"error": str(e)}, 500
+        name = rec["name_summary"] or "Protokoll"
+        datum = (rec["data"].get("datum") or rec["updated_at"][:10] or "").replace(
+            "/", "-"
+        )
+        if isinstance(datum, list):
+            datum = datum[0] if datum else ""
+        filename = f"Protokoll_{name}_{datum}.pdf".replace(" ", "_")
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=False,  # SPA opens in new tab → inline preview
+            download_name=filename,
+        )
+
+    @app.route("/api/central/lookup")
+    @login_required
+    def api_central_lookup():
+        """Same idea as /api/patient-lookup but used by the central SPA."""
+        db = models.get_db()
+        vorname = (request.args.get("vorname") or "").strip()
+        nachname = (request.args.get("nachname") or "").strip()
+        geburtsdatum = (request.args.get("geburtsdatum") or "").strip()
+        name = " ".join(p for p in (vorname, nachname) if p)
+        if not name or not geburtsdatum:
+            return {"found": False}
+        row = db.execute(
+            "SELECT id, stammnummer FROM patients WHERE name = ? AND geburtsdatum = ?",
+            (name, geburtsdatum),
+        ).fetchone()
+        if not row:
+            return {"found": False}
+        counts = models.patient_protocol_counts(db, row["id"])
+        return {
+            "found": True,
+            "patient_id": row["id"],
+            "stammnummer": row["stammnummer"] or "",
+            "previous_decentral": counts["decentral"],
+            "previous_central": counts["central"],
+        }
 
     # ----- Account (any logged-in user) -----
 
@@ -411,6 +550,15 @@ def create_app(test_config: dict | None = None) -> Flask:
 
 
 # ---------- helpers ----------
+
+def _decentral_count_for_patient(db, patient_id):
+    if patient_id is None:
+        return 0
+    return db.execute(
+        "SELECT COUNT(*) AS n FROM protocols WHERE patient_id = ?",
+        (patient_id,),
+    ).fetchone()["n"]
+
 
 def _read_filters(args) -> dict:
     return {

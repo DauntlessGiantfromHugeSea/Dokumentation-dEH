@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Neuer Bericht{% endblock %}
+{% block content %}
+<h1>Neuen Bericht anlegen</h1>
+<p class="tagline">Wähle die Art der Erste-Hilfe-Leistung.</p>
+
+<div class="chooser-grid">
+  <a class="chooser-card"
+     href="{{ url_for('protocol_new', name=prefill.name,
+                      geburtsdatum=prefill.geburtsdatum,
+                      stammnummer=prefill.stammnummer) }}">
+    <div class="chooser-title">Dezentrale Erste Hilfe</div>
+    <div class="chooser-subtitle">Kleines Protokoll · DGUV Information 1</div>
+    <ul class="chooser-list">
+      <li>Verletzung / Hergang / Maßnahmen</li>
+      <li>Verbrauchtes Material</li>
+      <li>Kommentare nachträglich möglich</li>
+    </ul>
+    <div class="chooser-cta">Wählen →</div>
+  </a>
+
+  <a class="chooser-card central"
+     href="{{ url_for('central_index') }}">
+    <div class="chooser-title">Zentrale Erste Hilfe</div>
+    <div class="chooser-subtitle">Großes Notfallprotokoll · Behandlung</div>
+    <ul class="chooser-list">
+      <li>Patientendaten + Anamnese</li>
+      <li>Erstbefund + Messwerte (RR, Puls, SpO₂, …)</li>
+      <li>Diagnose · Maßnahmen · Verlauf · Übergabe</li>
+    </ul>
+    <div class="chooser-cta">Wählen →</div>
+  </a>
+</div>
+
+<p class="muted" style="margin-top: 18px; font-size: 0.9rem;">
+  <strong>Tipp:</strong> Vorbehandlungen werden in beiden Richtungen erkannt
+  (Name + Geburtsdatum). Wenn jemand schon einmal in der dezentralen Erste
+  Hilfe war und jetzt zentral ankommt — oder umgekehrt — siehst du das
+  beim Anlegen.
+</p>
+{% endblock %}

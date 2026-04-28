@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Patientenprotokoll</title>
+<style>
+  :root {
+    --primary: #d32f2f;
+    --primary-dark: #9a0007;
+    --primary-light: #ffebee;
+    --border: #e3e6eb;
+    --border-strong: #cbd0d6;
+    --bg: #f6f7f9;
+    --bg-alt: #fafbfc;
+    --text: #18202b;
+    --muted: #6b7280;
+    --success: #16a34a;
+    --danger: #7f1d1d;
+    --warning: #b45309;
+    --card: #ffffff;
+    --shadow: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.04);
+    --r: 8px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+    font-size: 14px; line-height: 1.5;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body { min-height: 100vh; }
+
+  /* ============ Layout ============ */
+  .layout { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar {
+      position: fixed; top: 0; left: 0; height: 100vh; width: 280px;
+      transform: translateX(-100%); transition: transform 0.2s;
+      z-index: 50; box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-toggle { display: inline-flex !important; }
+  }
+
+  .sidebar {
+    background: white; border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .sidebar-header {
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .sidebar-header h2 {
+    margin: 0; font-size: 12px; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .sidebar-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .protocol-item {
+    padding: 10px 12px; border-radius: 6px; cursor: pointer;
+    margin-bottom: 2px; border: 1px solid transparent;
+    transition: background 0.1s;
+  }
+  .protocol-item:hover { background: var(--bg); }
+  .protocol-item.active { background: var(--primary-light); border-color: var(--primary); }
+  .protocol-item .name {
+    font-weight: 500; font-size: 13px; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .protocol-item .meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .sidebar-empty { padding: 24px 12px; text-align: center; color: var(--muted); font-size: 12px; }
+
+  .main { overflow-y: auto; max-height: 100vh; }
+  .app { max-width: 980px; margin: 0 auto; padding: 18px 20px 100px; }
+
+  /* ============ Top header ============ */
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px; gap: 12px; flex-wrap: wrap;
+  }
+  header.top h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header.top .meta { font-size: 12px; color: var(--muted); }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 500;
+    background: var(--bg); color: var(--muted); transition: all 0.2s;
+  }
+  .status-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .status-pill.saving { background: #fef3c7; color: #92400e; }
+  .status-pill.saving .dot { background: var(--warning); animation: pulse 1s infinite; }
+  .status-pill.saved { background: #ecfdf5; color: #166534; }
+  .status-pill.saved .dot { background: var(--success); }
+  .status-pill.error { background: #fee2e2; color: #991b1b; }
+  .status-pill.error .dot { background: var(--danger); }
+  @keyframes pulse { 50% { opacity: 0.4; } }
+
+  /* ============ Stepper ============ */
+  .stepper {
+    display: flex; overflow-x: auto; gap: 4px;
+    padding: 8px 0 14px; margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    scrollbar-width: thin;
+  }
+  .stepper button {
+    flex: 0 0 auto; background: transparent;
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 12px; font-size: 12px;
+    color: var(--muted); cursor: pointer; white-space: nowrap;
+    font-weight: 500; transition: all 0.12s;
+  }
+  .stepper button:hover { border-color: var(--primary); color: var(--primary); }
+  .stepper button.active { background: var(--primary); color: white; border-color: var(--primary); }
+  .stepper button.completed:not(.active) {
+    background: #ecfdf5; color: var(--success); border-color: #a7f3d0;
+  }
+  .stepper .step-num { display: inline-block; margin-right: 6px; font-weight: 700; }
+  .progress-bar { height: 3px; background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 18px; }
+  .progress-bar > div { height: 100%; background: var(--primary); transition: width 0.3s; }
+
+  /* ============ Page card ============ */
+  .page {
+    display: none;
+    background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 22px; box-shadow: var(--shadow);
+    animation: fadeIn 0.18s ease;
+  }
+  .page.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+  .page h2 { margin: 0 0 18px; font-size: 17px; font-weight: 600; color: var(--primary-dark); }
+
+  /* ============ Section ============ */
+  .section { margin: 0 0 22px; }
+  .section:last-child { margin-bottom: 0; }
+  .section > .label {
+    display: flex; align-items: baseline; justify-content: space-between;
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    margin: 0 0 8px;
+  }
+  .section > .label .hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); }
+
+  /* ============ Inputs ============ */
+  .grid { display: grid; gap: 10px 12px; }
+  .grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 700px) {
+    .grid.cols-2, .grid.cols-3, .grid.cols-4 { grid-template-columns: 1fr; }
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field > label { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .field.full { grid-column: 1 / -1; }
+  .with-now { position: relative; }
+  .with-now > input { padding-right: 56px; }
+  .with-now > .now-btn {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--muted); padding: 3px 8px; border-radius: 4px;
+    font-size: 11px; cursor: pointer; font-weight: 500;
+  }
+  .with-now > .now-btn:hover { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+
+  input[type=text], input[type=number], input[type=date], input[type=time], input[type=tel],
+  select, textarea {
+    width: 100%; padding: 9px 11px;
+    border: 1px solid var(--border-strong); border-radius: var(--r);
+    background: white; font-size: 14px; font-family: inherit; color: var(--text);
+    transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(211,47,47,0.12);
+  }
+  textarea { resize: vertical; min-height: 78px; }
+
+  /* ============ Chip buttons (replacing checkboxes) ============ */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    position: relative;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 14px; min-height: 38px;
+    border: 1px solid var(--border-strong); border-radius: var(--r);
+    background: white; cursor: pointer;
+    font-size: 13px; color: var(--text); user-select: none;
+    transition: all 0.1s;
+  }
+  .chip:hover { border-color: var(--primary); color: var(--primary); }
+  .chip input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .chip:has(input:checked) {
+    background: var(--primary); color: white;
+    border-color: var(--primary); font-weight: 500;
+  }
+  .chip:has(input:checked):hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+  .chip-input {
+    flex: 1; min-width: 200px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-strong); border-radius: var(--r);
+    background: white; font-size: 13px;
+  }
+
+  .pair-grid {
+    display: grid; gap: 12px;
+    grid-template-columns: 1fr 1fr;
+  }
+  @media (max-width: 700px) { .pair-grid { grid-template-columns: 1fr; } }
+
+  /* ============ Vital signs ============ */
+  .vitals {
+    display: grid; gap: 8px;
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .vitals .field {
+    background: var(--bg-alt); padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: var(--r); gap: 2px;
+  }
+  .vitals .field > label { font-size: 10px; font-weight: 700; color: var(--primary-dark); text-transform: uppercase; letter-spacing: 0.04em; }
+  .vitals input, .vitals select { padding: 6px 8px; font-size: 14px; font-weight: 500; }
+  @media (max-width: 800px) { .vitals { grid-template-columns: repeat(2, 1fr); } }
+
+  .pain-scale { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+  .pain-scale input[type=range] { flex: 1; accent-color: var(--primary); height: 4px; }
+  .pain-scale .value {
+    min-width: 36px; padding: 4px 8px;
+    background: var(--primary); color: white;
+    border-radius: 4px; text-align: center; font-weight: 600;
+  }
+
+  /* ============ Buttons ============ */
+  .btn {
+    padding: 8px 14px; border-radius: var(--r);
+    border: 1px solid var(--border-strong); background: white;
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: all 0.12s; color: var(--text); font-family: inherit;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { background: var(--bg); border-color: var(--text); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
+  .btn.primary:hover:not(:disabled) { background: var(--primary-dark); border-color: var(--primary-dark); }
+  .btn.danger { background: white; color: var(--danger); border-color: var(--danger); }
+  .btn.danger:hover:not(:disabled) { background: var(--danger); color: white; }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+  .btn.ghost:hover:not(:disabled) { color: var(--primary); background: var(--primary-light); }
+  .btn.sm { padding: 6px 10px; font-size: 12px; }
+  .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .sidebar-toggle { display: none; align-items: center; }
+
+  /* ============ Bottom nav ============ */
+  .nav {
+    position: sticky; bottom: 12px;
+    margin-top: 18px; padding: 10px 14px;
+    background: var(--card);
+    border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; flex-wrap: wrap;
+  }
+  .nav-info { font-size: 12px; color: var(--muted); }
+
+  /* ============ Toast ============ */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--text); color: white;
+    padding: 10px 18px; border-radius: 8px;
+    font-size: 13px; opacity: 0; pointer-events: none;
+    transition: all 0.25s; z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ============ Summary ============ */
+  .summary { font-size: 13px; }
+  .summary-row { display: grid; grid-template-columns: 180px 1fr; gap: 4px 12px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+  .summary-row:last-child { border-bottom: none; }
+  .summary-row dt { color: var(--muted); font-weight: 500; }
+  .summary-row dd { margin: 0; word-break: break-word; }
+  .summary-block { margin-bottom: 14px; }
+  .summary-block h3 { font-size: 12px; margin: 0 0 6px; color: var(--primary-dark); text-transform: uppercase; letter-spacing: 0.04em; }
+  .empty-val { color: var(--muted); font-style: italic; }
+
+  /* ============ Print ============ */
+  @media print {
+    .sidebar, .nav, .stepper, .progress-bar, header.top .btn-group, .status-pill, .sidebar-toggle { display: none !important; }
+    .layout { display: block; }
+    .page { display: block !important; page-break-inside: avoid; box-shadow: none; border: none; padding: 0; margin-bottom: 18px; }
+    body { background: white; }
+  }
+
+  /* Top app-bar — Integration mit Haupt-App */
+  .app-bar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 8px 16px;
+    background: #7a1f2b; color: #fff;
+    font-size: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .app-bar-link { color: rgba(255,255,255,0.92); text-decoration: none; font-weight: 500; }
+  .app-bar-link:hover { text-decoration: underline; color: #fff; }
+  .app-bar-title { flex: 1; font-style: italic; font-weight: 600; }
+  .app-bar-user { opacity: 0.9; margin-right: 4px; }
+  .app-bar-banner {
+    padding: 10px 16px;
+    background: #fff3cd; color: #7a5d00;
+    border-bottom: 1px solid #f0e0a3;
+    font-size: 14px;
+  }
+  .app-bar-banner a { color: #7a1f2b; font-weight: 600; }
+  @media print { .app-bar, .app-bar-banner { display: none !important; } }
+</style>
+</head>
+<body>
+<div class="app-bar">
+  <a class="app-bar-link" href="/">← Zurück zur Übersicht</a>
+  <span class="app-bar-title">Zentrale Erste Hilfe — Notfallprotokoll</span>
+  <span class="app-bar-user">{{ current_user_label }}</span>
+  <a class="app-bar-link" href="/logout">Abmelden</a>
+</div>
+<div id="central-prior-hint" class="app-bar-banner" style="display:none;"></div>
+<div class="layout">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h2>Protokolle</h2>
+      <button class="btn primary sm" id="btn-new">+ Neu</button>
+    </div>
+    <div class="sidebar-list" id="protocol-list">
+      <div class="sidebar-empty">Lade …</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="app">
+      <header class="top">
+        <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+          <button class="btn sm sidebar-toggle" id="btn-sidebar" aria-label="Menü">☰</button>
+          <div style="min-width:0">
+            <h1 id="protocol-title">Neues Protokoll</h1>
+            <div class="meta" id="meta-info">Noch nicht gespeichert</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="status-pill" id="status"><span class="dot"></span><span class="label">Bereit</span></span>
+          <div class="btn-group">
+            <button class="btn sm primary" id="btn-pdf">PDF</button>
+            <button class="btn sm" id="btn-print">Drucken</button>
+            <button class="btn sm danger" id="btn-delete">Löschen</button>
+          </div>
+        </div>
+      </header>
+
+      <nav class="stepper" id="stepper"></nav>
+      <div class="progress-bar"><div id="progress"></div></div>
+
+      <form id="protocol-form" autocomplete="off">
+
+        <!-- 1. Einsatz -->
+        <section class="page" data-page="1">
+          <h2>Einsatz</h2>
+
+          <div class="section">
+            <div class="label">Zeit &amp; Ort</div>
+            <div class="grid cols-3">
+              <div class="field with-now"><label for="datum">Datum</label>
+                <input type="date" id="datum" name="datum" />
+                <button type="button" class="now-btn" data-now="datum">Heute</button>
+              </div>
+              <div class="field with-now"><label for="einsatzbeginn">Beginn</label>
+                <input type="time" id="einsatzbeginn" name="einsatzbeginn" />
+                <button type="button" class="now-btn" data-now="einsatzbeginn">Jetzt</button>
+              </div>
+              <div class="field with-now"><label for="einsatzende">Ende</label>
+                <input type="time" id="einsatzende" name="einsatzende" />
+                <button type="button" class="now-btn" data-now="einsatzende">Jetzt</button>
+              </div>
+              <div class="field"><label for="einsatzort">Einsatzort</label><input type="text" id="einsatzort" name="einsatzort" placeholder="Adresse / Ort" /></div>
+              <div class="field"><label for="einsatznummer">Einsatznummer</label><input type="text" id="einsatznummer" name="einsatznummer" /></div>
+              <div class="field"><label for="einsatzstichwort">Stichwort</label><input type="text" id="einsatzstichwort" name="einsatzstichwort" /></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="label">Alarmierung</div>
+            <div class="chips" id="alarm-chips" data-name="alarm_durch" data-mode="single"></div>
+          </div>
+
+          <div class="section">
+            <div class="label">Crew</div>
+            <div class="grid cols-2">
+              <div class="field"><label for="einsatzkraft1">Einsatzkraft 1</label><input type="text" id="einsatzkraft1" name="einsatzkraft1" /></div>
+              <div class="field"><label for="einsatzkraft2">Einsatzkraft 2</label><input type="text" id="einsatzkraft2" name="einsatzkraft2" /></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. Notfall -->
+        <section class="page" data-page="2">
+          <h2>Notfall</h2>
+
+          <div class="section">
+            <div class="label">Notfallart</div>
+            <div class="chips" id="notfallart-chips" data-name="notfallart" data-mode="multi"></div>
+            <div style="margin-top: 8px;">
+              <input type="text" class="chip-input" id="notfallart_sonstige" name="notfallart_sonstige" placeholder="Sonstiges …" />
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="label">Situation <span class="hint">bei Eintreffen</span></div>
+            <textarea id="notfallsituation" name="notfallsituation" placeholder="Was wurde vorgefunden?"></textarea>
+          </div>
+
+          <div class="section">
+            <div class="label">Verletzung / Erkrankung</div>
+            <textarea id="verletzung" name="verletzung" placeholder="Lokalisation, Mechanismus, Schweregrad …"></textarea>
+          </div>
+        </section>
+
+        <!-- 3. Erstbefund (ABCDE) -->
+        <section class="page" data-page="3">
+          <h2>Erstbefund</h2>
+
+          <div class="pair-grid">
+            <div class="section">
+              <div class="label">Bewusstsein</div>
+              <div class="chips" data-name="bewusstsein_1" data-mode="single" data-options="orientiert|getrübt|bewusstlos"></div>
+            </div>
+            <div class="section">
+              <div class="label">Atmung</div>
+              <div class="chips" data-name="atmung_1" data-mode="single" data-options="spontan/frei|Atemnot|Hyperventilation|Atemstillstand"></div>
+            </div>
+            <div class="section">
+              <div class="label">Kreislauf <span class="hint">Mehrfachauswahl</span></div>
+              <div class="chips" data-name="kreislauf_1" data-mode="multi" data-options="Schock|Kreislaufstillstand|Puls regelmäßig|Puls unregelmäßig"></div>
+            </div>
+            <div class="section">
+              <div class="label">EKG</div>
+              <div class="chips" data-name="ekg_1" data-mode="single" data-options="Sinusrhythmus|Rhythmusstörung|Kammerflimmern|Asystolie"></div>
+            </div>
+            <div class="section">
+              <div class="label">Pupille links</div>
+              <div class="chips" data-name="pupille_l" data-mode="multi" data-options="eng|mittelweit|weit|Lichtreaktion|entrundet"></div>
+            </div>
+            <div class="section">
+              <div class="label">Pupille rechts</div>
+              <div class="chips" data-name="pupille_r" data-mode="multi" data-options="eng|mittelweit|weit|Lichtreaktion|entrundet"></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="label">Schmerzen</div>
+            <div class="chips" data-name="schmerzen_grad_1" data-mode="single" data-options="keine|mittelstark|stark"></div>
+            <div style="margin-top:10px" class="pain-scale">
+              <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">NRS</span>
+              <input type="range" id="nrs_1" name="nrs_1" min="0" max="10" step="1" value="0" />
+              <div class="value" id="nrs_1_val">0</div>
+            </div>
+          </div>
+
+          <div class="pair-grid">
+            <div class="section">
+              <div class="label">Haut</div>
+              <div class="chips" data-name="haut" data-mode="multi" data-options="kein Befund"></div>
+              <div style="margin-top: 8px;">
+                <input type="text" class="chip-input" id="haut_sonstiges" name="haut_sonstiges" placeholder="Sonstiges (z.B. zyanotisch, blass) …" />
+              </div>
+            </div>
+            <div class="section">
+              <div class="label">Psychischer Befund</div>
+              <div class="chips" data-name="psyche" data-mode="multi" data-options="unauffällig|Psychose|v.A. Suizidalität"></div>
+              <div style="margin-top: 8px;">
+                <input type="text" class="chip-input" id="psyche_sonstiges" name="psyche_sonstiges" placeholder="Sonstiges …" />
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="label">Weiterer Befund</div>
+            <textarea id="erstbefund_sonstiges" name="erstbefund_sonstiges" placeholder="Auffälligkeiten, Anamnese …"></textarea>
+          </div>
+        </section>
+
+        <!-- 4. Vitalwerte 1 -->
+        <section class="page" data-page="4">
+          <h2>Vitalwerte (Erstbefund)</h2>
+          <div class="section">
+            <div class="label">Messung <span class="hint">Erstbefund</span></div>
+            <div class="vitals">
+              <div class="field with-now"><label for="zeit_1">Zeit</label>
+                <input type="time" id="zeit_1" name="zeit_1" />
+                <button type="button" class="now-btn" data-now="zeit_1">Jetzt</button>
+              </div>
+              <div class="field"><label for="rr_sys_1">RR Sys</label><input type="number" id="rr_sys_1" name="rr_sys_1" inputmode="numeric" /></div>
+              <div class="field"><label for="rr_dia_1">RR Dia</label><input type="number" id="rr_dia_1" name="rr_dia_1" inputmode="numeric" /></div>
+              <div class="field"><label for="puls_1">Puls</label><input type="number" id="puls_1" name="puls_1" inputmode="numeric" /></div>
+              <div class="field"><label for="af_1">AF</label><input type="number" id="af_1" name="af_1" inputmode="numeric" /></div>
+              <div class="field"><label for="hf_1">HF</label><input type="number" id="hf_1" name="hf_1" inputmode="numeric" /></div>
+              <div class="field"><label for="spo2_1">SpO₂ %</label><input type="number" id="spo2_1" name="spo2_1" min="0" max="100" inputmode="numeric" /></div>
+              <div class="field"><label for="etco2_1">etCO₂</label><input type="number" id="etco2_1" name="etco2_1" inputmode="numeric" /></div>
+              <div class="field"><label for="bz_1">BZ mmol/l</label><input type="number" id="bz_1" name="bz_1" step="0.1" inputmode="decimal" /></div>
+              <div class="field"><label for="temp_1">Temp °C</label><input type="number" id="temp_1" name="temp_1" step="0.1" inputmode="decimal" /></div>
+              <div class="field"><label for="gcs_1">GCS</label>
+                <select id="gcs_1" name="gcs_1"><option value="">–</option></select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. Maßnahmen + Diagnose -->
+        <section class="page" data-page="5">
+          <h2>Maßnahmen &amp; Diagnose</h2>
+
+          <div class="section">
+            <div class="label">Durchgeführte Maßnahmen</div>
+            <div class="chips" id="massnahmen-chips" data-name="massnahme" data-mode="multi"></div>
+            <div style="margin-top:8px">
+              <textarea id="massnahmen_sonstiges" name="massnahmen_sonstiges" placeholder="Weitere Maßnahmen, Medikamente mit Dosis …" rows="3"></textarea>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="label">Erstdiagnose</div>
+            <textarea id="erstdiagnose" name="erstdiagnose" placeholder="Verdachtsdiagnose nach Erstuntersuchung …"></textarea>
+          </div>
+        </section>
+
+        <!-- 6. Verlauf -->
+        <section class="page" data-page="6">
+          <h2>Verlauf</h2>
+          <div class="section">
+            <div class="label">Zeitlicher Verlauf <span class="hint">während Einsatz</span></div>
+            <textarea id="verlauf" name="verlauf" rows="14" placeholder="Chronologische Beschreibung — Veränderungen, Reaktion auf Maßnahmen …"></textarea>
+          </div>
+        </section>
+
+        <!-- 7. Übergabe + Vitalwerte 2 -->
+        <section class="page" data-page="7">
+          <h2>Übergabe</h2>
+
+          <div class="section">
+            <div class="label">Übergabe an</div>
+            <div class="chips" data-name="uebergabe_an" data-mode="single" data-options="Notarzt|RTW|Klinik – Notaufnahme|Klinik – Schockraum|Klinik – Station|Hausarzt|vor Ort belassen|Sonstige"></div>
+          </div>
+
+          <div class="grid cols-3">
+            <div class="field"><label>Ergebnis</label>
+              <select name="ergebnis"><option value="">–</option>
+                <option>stabilisiert</option><option>verbessert</option><option>unverändert</option>
+                <option>verschlechtert</option><option>verstorben</option><option>Transport verweigert</option>
+              </select>
+            </div>
+            <div class="field"><label>Infektion</label>
+              <select name="infektion"><option value="">–</option>
+                <option>nein</option><option>V.a.</option><option>bestätigt</option><option>unbekannt</option>
+              </select>
+            </div>
+            <div class="field"><label>Begleitung RTM</label>
+              <select name="begleitung"><option value="">–</option>
+                <option>keine</option><option>Angehörige</option><option>Notarzt</option><option>Polizei</option>
+              </select>
+            </div>
+            <div class="field with-now"><label for="uebergabezeit">Übergabezeit</label>
+              <input type="time" id="uebergabezeit" name="uebergabezeit" />
+              <button type="button" class="now-btn" data-now="uebergabezeit">Jetzt</button>
+            </div>
+          </div>
+
+          <div class="section" style="margin-top:18px">
+            <div class="label">
+              Vitalwerte (Übergabe)
+              <button type="button" class="btn sm ghost" id="btn-copy-vitals">↻ Erstwerte übernehmen</button>
+            </div>
+            <div class="vitals">
+              <div class="field with-now"><label for="zeit_2">Zeit</label>
+                <input type="time" id="zeit_2" name="zeit_2" />
+                <button type="button" class="now-btn" data-now="zeit_2">Jetzt</button>
+              </div>
+              <div class="field"><label for="rr_sys_2">RR Sys</label><input type="number" id="rr_sys_2" name="rr_sys_2" inputmode="numeric" /></div>
+              <div class="field"><label for="rr_dia_2">RR Dia</label><input type="number" id="rr_dia_2" name="rr_dia_2" inputmode="numeric" /></div>
+              <div class="field"><label for="puls_2">Puls</label><input type="number" id="puls_2" name="puls_2" inputmode="numeric" /></div>
+              <div class="field"><label for="af_2">AF</label><input type="number" id="af_2" name="af_2" inputmode="numeric" /></div>
+              <div class="field"><label for="hf_2">HF</label><input type="number" id="hf_2" name="hf_2" inputmode="numeric" /></div>
+              <div class="field"><label for="spo2_2">SpO₂ %</label><input type="number" id="spo2_2" name="spo2_2" min="0" max="100" inputmode="numeric" /></div>
+              <div class="field"><label for="etco2_2">etCO₂</label><input type="number" id="etco2_2" name="etco2_2" inputmode="numeric" /></div>
+              <div class="field"><label for="bz_2">BZ mmol/l</label><input type="number" id="bz_2" name="bz_2" step="0.1" inputmode="decimal" /></div>
+              <div class="field"><label for="temp_2">Temp °C</label><input type="number" id="temp_2" name="temp_2" step="0.1" inputmode="decimal" /></div>
+              <div class="field"><label for="gcs_2">GCS</label>
+                <select id="gcs_2" name="gcs_2"><option value="">–</option></select>
+              </div>
+              <div class="field" style="grid-column: span 2"><label for="nrs_2">Schmerz NRS</label>
+                <div class="pain-scale">
+                  <input type="range" id="nrs_2" name="nrs_2" min="0" max="10" step="1" value="0" />
+                  <div class="value" id="nrs_2_val">0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pair-grid" style="margin-top:14px">
+            <div class="section">
+              <div class="label">Bewusstsein</div>
+              <div class="chips" data-name="bewusstsein_2" data-mode="single" data-options="orientiert|getrübt|bewusstlos"></div>
+            </div>
+            <div class="section">
+              <div class="label">Atmung</div>
+              <div class="chips" data-name="atmung_2" data-mode="single" data-options="spontan/frei|Atemnot|Hyperventilation|Atemstillstand"></div>
+            </div>
+            <div class="section">
+              <div class="label">Kreislauf</div>
+              <div class="chips" data-name="kreislauf_2" data-mode="multi" data-options="Schock|Kreislaufstillstand|Puls regelmäßig|Puls unregelmäßig"></div>
+            </div>
+            <div class="section">
+              <div class="label">EKG</div>
+              <div class="chips" data-name="ekg_2" data-mode="single" data-options="Sinusrhythmus|Rhythmusstörung|Kammerflimmern|Asystolie"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8. Patient + Abschluss -->
+        <section class="page" data-page="8">
+          <h2>Patient &amp; Abschluss</h2>
+
+          <div class="section">
+            <div class="label">Person</div>
+            <div class="grid cols-2">
+              <div class="field"><label for="vorname">Vorname</label><input type="text" id="vorname" name="vorname" /></div>
+              <div class="field"><label for="nachname">Nachname</label><input type="text" id="nachname" name="nachname" /></div>
+              <div class="field"><label for="geburtsdatum">Geburtsdatum</label><input type="date" id="geburtsdatum" name="geburtsdatum" /></div>
+              <div class="field"><label for="geschlecht">Geschlecht</label>
+                <select id="geschlecht" name="geschlecht">
+                  <option value="">–</option><option>männlich</option><option>weiblich</option>
+                  <option>divers</option><option>unbekannt</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="label">Anschrift &amp; Kontakt</div>
+            <div class="grid cols-2">
+              <div class="field full"><label for="strasse">Straße</label><input type="text" id="strasse" name="strasse" /></div>
+              <div class="field"><label for="plz">PLZ</label><input type="text" id="plz" name="plz" inputmode="numeric" /></div>
+              <div class="field"><label for="stadt">Stadt</label><input type="text" id="stadt" name="stadt" /></div>
+              <div class="field"><label for="krankenkasse">Krankenkasse</label><input type="text" id="krankenkasse" name="krankenkasse" /></div>
+              <div class="field"><label for="telefon">Telefon</label><input type="tel" id="telefon" name="telefon" /></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="label">Einsatzbeschreibung</div>
+            <textarea id="einsatzbeschreibung" name="einsatzbeschreibung" rows="5"></textarea>
+          </div>
+
+          <div class="section">
+            <div class="label">Material</div>
+            <textarea id="material" name="material" rows="3" placeholder="Verbrauchtes Material, Mengen, Chargen …"></textarea>
+          </div>
+
+          <div class="section">
+            <div class="label">Zusammenfassung</div>
+            <div class="summary" id="summary"></div>
+          </div>
+        </section>
+      </form>
+
+      <div class="nav">
+        <button class="btn" id="btn-prev">← Zurück</button>
+        <div class="nav-info"><span id="page-indicator">Seite 1 von 8</span></div>
+        <button class="btn primary" id="btn-next">Weiter →</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const TOTAL_PAGES = 8;
+  const SAVE_DEBOUNCE_MS = 600;
+  let currentPage = 1;
+  let currentId = null;
+  let saveTimer = null;
+  let dirty = false;
+
+  const pages = [
+    { num: 1, title: 'Einsatz' },
+    { num: 2, title: 'Notfall' },
+    { num: 3, title: 'Erstbefund' },
+    { num: 4, title: 'Vitalwerte' },
+    { num: 5, title: 'Maßn. & Dx' },
+    { num: 6, title: 'Verlauf' },
+    { num: 7, title: 'Übergabe' },
+    { num: 8, title: 'Patient' },
+  ];
+
+  // Daten für dynamische chip-Gruppen
+  const alarmDurch = ['Leitstelle', 'Notruf 112', 'Notruf 110', 'Hausarzt', 'Klinik', 'Privat', 'Sonstige'];
+  const notfallarten = [
+    'Chirurgisch', 'Herz-Kreislauf', 'Neurologisch', 'Krampfanfall',
+    'Atmung', 'Synkope', 'Reanimation', 'Apoplex/TIA',
+    'Intoxikation', 'alkoholisiert', 'Stoffwechsel', 'Übelkeit/Erbrechen',
+    'Schwindel', 'Hitzschlag', 'Baucherkrankung', 'Gynäkologisch',
+    'Pädiatrisch', 'Psychiatrisch', 'sonst. Unfall',
+  ];
+  const massnahmen = [
+    'Monitoring', 'Sauerstoffgabe', 'venöser Zugang', 'Infusion',
+    'stabile Seitenlage', 'Oberkörperhochlage', 'Flachlagerung', 'Schocklagerung',
+    'Atemwege freimachen', 'Beatmung', 'Intubation', 'HLW',
+    'Erstdefibrillation', 'Schienung', 'HWS-Stützkragen', 'Vakuummatratze',
+    'Wundversorgung', 'Medikamente', 'Notkompetenzmaßn.', 'Betreuung'
+  ];
+
+  // ============ Build chip-groups ============
+  function buildChips(container, name, items, mode) {
+    const inputType = mode === 'single' ? 'radio' : 'checkbox';
+    container.innerHTML = items.map(v =>
+      `<label class="chip"><input type="${inputType}" name="${name}" value="${v}"> ${v}</label>`
+    ).join('');
+  }
+
+  // From data-options attribute
+  document.querySelectorAll('.chips[data-options]').forEach(el => {
+    const opts = el.dataset.options.split('|');
+    buildChips(el, el.dataset.name, opts, el.dataset.mode);
+  });
+  buildChips(document.getElementById('alarm-chips'), 'alarm_durch', alarmDurch, 'single');
+  buildChips(document.getElementById('notfallart-chips'), 'notfallart', notfallarten, 'multi');
+  buildChips(document.getElementById('massnahmen-chips'), 'massnahme', massnahmen, 'multi');
+
+  // GCS dropdowns
+  ['gcs_1', 'gcs_2'].forEach(id => {
+    const sel = document.getElementById(id);
+    for (let i = 15; i >= 3; i--) {
+      const opt = document.createElement('option');
+      opt.value = i; opt.textContent = i; sel.appendChild(opt);
+    }
+  });
+
+  // ============ Stepper ============
+  const stepperEl = document.getElementById('stepper');
+  pages.forEach(p => {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.dataset.page = p.num;
+    btn.innerHTML = `<span class="step-num">${p.num}</span>${p.title}`;
+    btn.addEventListener('click', () => goToPage(p.num));
+    stepperEl.appendChild(btn);
+  });
+
+  // ============ Pain sliders ============
+  ['nrs_1', 'nrs_2'].forEach(id => {
+    const slider = document.getElementById(id);
+    const out = document.getElementById(id + '_val');
+    slider.addEventListener('input', () => out.textContent = slider.value);
+  });
+
+  // ============ "Jetzt" / "Heute" buttons ============
+  function nowHM() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  function todayISO() { return new Date().toISOString().slice(0, 10); }
+  document.querySelectorAll('.now-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.now);
+      if (!target) return;
+      target.value = target.type === 'date' ? todayISO() : nowHM();
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
+
+  // ============ Copy first vitals -> second ============
+  document.getElementById('btn-copy-vitals').addEventListener('click', () => {
+    const map = ['zeit', 'rr_sys', 'rr_dia', 'puls', 'af', 'hf', 'spo2', 'etco2', 'bz', 'temp', 'gcs', 'nrs'];
+    map.forEach(k => {
+      const a = document.querySelector(`[name="${k}_1"]`);
+      const b = document.querySelector(`[name="${k}_2"]`);
+      if (a && b && a.value) b.value = a.value;
+    });
+    document.getElementById('nrs_2_val').textContent = document.getElementById('nrs_2').value;
+    // Bewusstsein/Kreislauf/EKG/Atmung übernehmen
+    ['bewusstsein', 'ekg', 'atmung'].forEach(g => {
+      const checked = form.querySelector(`[name="${g}_1"]:checked`);
+      if (checked) {
+        const target = form.querySelector(`[name="${g}_2"][value="${CSS.escape(checked.value)}"]`);
+        if (target) target.checked = true;
+      }
+    });
+    form.querySelectorAll('[name="kreislauf_2"]').forEach(cb => cb.checked = false);
+    form.querySelectorAll('[name="kreislauf_1"]:checked').forEach(cb => {
+      const t = form.querySelector(`[name="kreislauf_2"][value="${CSS.escape(cb.value)}"]`);
+      if (t) t.checked = true;
+    });
+    scheduleSave(); toast('Erstwerte übernommen');
+  });
+
+  // ============ API ============
+  async function apiList()         { return (await fetch('/api/central/protokolle')).json(); }
+  async function apiGet(id)        { return (await fetch('/api/central/protokolle/' + id)).json(); }
+  async function apiCreate(data)   {
+    return (await fetch('/api/central/protokolle', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })).json();
+  }
+  async function apiUpdate(id, d)  {
+    return (await fetch('/api/central/protokolle/' + id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(d),
+    })).json();
+  }
+  async function apiDelete(id)     { return (await fetch('/api/central/protokolle/' + id, { method: 'DELETE' })).json(); }
+
+  // ============ Form ============
+  const form = document.getElementById('protocol-form');
+  function collectData() {
+    const fd = new FormData(form), data = {};
+    for (const [k, v] of fd.entries()) {
+      if (data[k] === undefined) data[k] = v;
+      else if (Array.isArray(data[k])) data[k].push(v);
+      else data[k] = [data[k], v];
+    }
+    return data;
+  }
+  function applyData(data) {
+    form.reset();
+    Object.entries(data || {}).forEach(([k, val]) => {
+      const els = form.querySelectorAll(`[name="${CSS.escape(k)}"]`);
+      if (!els.length) return;
+      const arr = Array.isArray(val) ? val : [val];
+      els.forEach(el => {
+        if (el.type === 'checkbox' || el.type === 'radio') el.checked = arr.includes(el.value);
+        else el.value = arr[0] != null ? arr[0] : '';
+      });
+    });
+    ['nrs_1', 'nrs_2'].forEach(id => {
+      const s = document.getElementById(id);
+      document.getElementById(id + '_val').textContent = s.value;
+    });
+  }
+
+  // ============ Status ============
+  const statusEl = document.getElementById('status');
+  function setStatus(state, label) {
+    statusEl.className = 'status-pill ' + state;
+    statusEl.querySelector('.label').textContent = label;
+  }
+
+  // ============ Auto-save ============
+  async function performSave() {
+    if (!dirty) return;
+    dirty = false;
+    const data = collectData();
+    setStatus('saving', 'Speichert');
+    try {
+      if (currentId == null) {
+        const res = await apiCreate(data);
+        if (res && res.id) {
+          currentId = res.id;
+          history.replaceState(null, '', '#' + currentId);
+        }
+      } else {
+        await apiUpdate(currentId, data);
+      }
+      setStatus('saved', 'Gespeichert');
+      updateMeta(data);
+      await refreshList();
+    } catch (e) {
+      console.error(e);
+      setStatus('error', 'Fehler');
+      dirty = true;
+    }
+  }
+  function scheduleSave() {
+    dirty = true;
+    setStatus('saving', 'Speichert');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(performSave, SAVE_DEBOUNCE_MS);
+  }
+  form.addEventListener('input', scheduleSave);
+  form.addEventListener('change', scheduleSave);
+
+  // ============ Page nav ============
+  function goToPage(num) {
+    if (num < 1 || num > TOTAL_PAGES) return;
+    currentPage = num;
+    document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', Number(p.dataset.page) === num));
+    document.querySelectorAll('.stepper button').forEach(b => b.classList.toggle('active', Number(b.dataset.page) === num));
+    document.getElementById('page-indicator').textContent = `Seite ${num} von ${TOTAL_PAGES}`;
+    document.getElementById('progress').style.width = `${(num / TOTAL_PAGES) * 100}%`;
+    document.getElementById('btn-prev').disabled = num === 1;
+    document.getElementById('btn-next').disabled = num === TOTAL_PAGES;
+    if (num === TOTAL_PAGES) renderSummary();
+    updateCompletion();
+    document.querySelector('.main').scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  document.getElementById('btn-next').addEventListener('click', () => goToPage(currentPage + 1));
+  document.getElementById('btn-prev').addEventListener('click', () => goToPage(currentPage - 1));
+  document.addEventListener('keydown', e => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (['input', 'textarea', 'select'].includes(tag)) return;
+    if (e.key === 'ArrowRight') goToPage(currentPage + 1);
+    if (e.key === 'ArrowLeft') goToPage(currentPage - 1);
+  });
+
+  // ============ Completion ============
+  function pageHasContent(num) {
+    const p = document.querySelector(`.page[data-page="${num}"]`);
+    if (!p) return false;
+    const inputs = p.querySelectorAll('input, textarea, select');
+    return Array.from(inputs).some(i => {
+      if (i.type === 'checkbox' || i.type === 'radio') return i.checked;
+      if (i.type === 'range') return Number(i.value) > 0;
+      return i.value && i.value.trim() !== '';
+    });
+  }
+  function updateCompletion() {
+    document.querySelectorAll('.stepper button').forEach(b => {
+      b.classList.toggle('completed', pageHasContent(Number(b.dataset.page)));
+    });
+  }
+
+  // ============ Toast ============
+  let toastTimer;
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+  }
+
+  // ============ Sidebar list ============
+  async function refreshList() {
+    const list = await apiList();
+    const el = document.getElementById('protocol-list');
+    if (!list.length) { el.innerHTML = '<div class="sidebar-empty">Noch keine Protokolle.</div>'; return; }
+    el.innerHTML = list.map(p => {
+      const name = [p.vorname, p.nachname].filter(Boolean).join(' ').trim() || `Protokoll #${p.id}`;
+      const sub = [p.einsatznummer, p.datum].filter(Boolean).join(' · ') || formatDate(p.updated_at);
+      const active = p.id === currentId ? ' active' : '';
+      return `<div class="protocol-item${active}" data-id="${p.id}">
+        <div class="name">${escapeHtml(name)}</div><div class="meta">${escapeHtml(sub)}</div>
+      </div>`;
+    }).join('');
+    el.querySelectorAll('.protocol-item').forEach(item =>
+      item.addEventListener('click', () => loadProtocol(Number(item.dataset.id))));
+  }
+  function formatDate(iso) {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    } catch { return iso; }
+  }
+
+  // ============ Load / new / delete ============
+  function setIfEmpty(id, val) { const el = document.getElementById(id); if (el && !el.value) el.value = val; }
+
+  async function newProtocol() {
+    if (dirty) await performSave();
+    currentId = null;
+    history.replaceState(null, '', '#');
+    form.reset();
+    setIfEmpty('datum', todayISO());
+    setIfEmpty('einsatzbeginn', nowHM());
+    setIfEmpty('zeit_1', nowHM());
+    ['nrs_1', 'nrs_2'].forEach(id => document.getElementById(id + '_val').textContent = '0');
+    updateMeta(collectData());
+    setStatus('', 'Bereit');
+    goToPage(1); updateCompletion();
+    await refreshList();
+  }
+
+  async function loadProtocol(id) {
+    if (dirty) await performSave();
+    try {
+      const rec = await apiGet(id);
+      if (!rec || rec.error) { toast('Nicht gefunden'); return; }
+      currentId = rec.id;
+      history.replaceState(null, '', '#' + currentId);
+      applyData(rec.data);
+      updateMeta(rec.data, rec);
+      setStatus('saved', 'Geladen');
+      goToPage(1); updateCompletion();
+      await refreshList();
+      if (window.innerWidth <= 900) document.getElementById('sidebar').classList.remove('open');
+    } catch (e) { console.error(e); toast('Fehler beim Laden'); }
+  }
+
+  function updateMeta(data, rec) {
+    const name = [data.vorname, data.nachname].filter(Boolean).join(' ').trim();
+    const stichwort = data.einsatzstichwort;
+    const title = name || stichwort || (currentId ? `Protokoll #${currentId}` : 'Neues Protokoll');
+    document.getElementById('protocol-title').textContent = title;
+    const parts = [];
+    if (currentId) parts.push(`#${currentId}`);
+    if (data.einsatznummer) parts.push(data.einsatznummer);
+    if (rec && rec.updated_at) parts.push(formatDate(rec.updated_at));
+    document.getElementById('meta-info').textContent = parts.join(' · ') || 'Noch nicht gespeichert';
+  }
+
+  document.getElementById('btn-new').addEventListener('click', newProtocol);
+  document.getElementById('btn-delete').addEventListener('click', async () => {
+    if (currentId == null) {
+      if (confirm('Aktuelle Eingaben verwerfen?')) await newProtocol();
+      return;
+    }
+    if (!confirm('Dieses Protokoll wirklich löschen?')) return;
+    await apiDelete(currentId); toast('Gelöscht');
+    await newProtocol();
+  });
+
+  // ============ PDF / Print ============
+  document.getElementById('btn-pdf').addEventListener('click', async () => {
+    if (dirty) await performSave();
+    if (currentId == null) {
+      const res = await apiCreate(collectData());
+      if (res && res.id) {
+        currentId = res.id;
+        history.replaceState(null, '', '#' + currentId);
+        await refreshList();
+      } else { toast('Speichern fehlgeschlagen'); return; }
+    }
+    window.open('/api/central/protokolle/' + currentId + '/pdf', '_blank');
+  });
+  document.getElementById('btn-print').addEventListener('click', () => window.print());
+  document.getElementById('btn-sidebar').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
+
+  // ============ Summary ============
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function v(x) { return x && String(x).trim() ? escapeHtml(String(x)) : '<span class="empty-val">—</span>'; }
+  function vList(x) { const arr = [].concat(x || []).filter(Boolean); return arr.length ? escapeHtml(arr.join(', ')) : '<span class="empty-val">—</span>'; }
+  function renderSummary() {
+    const d = collectData();
+    const blocks = [
+      { title: 'Einsatz', rows: [
+        ['Datum / Zeit', `${d.datum || '–'} · ${d.einsatzbeginn || '–'} → ${d.einsatzende || '–'}`],
+        ['Nr / Stichwort', `${d.einsatznummer || '–'} · ${d.einsatzstichwort || '–'}`],
+        ['Ort', d.einsatzort],
+      ]},
+      { title: 'Notfall', rows: [
+        ['Art', vList(d.notfallart)],
+        ['Situation', d.notfallsituation],
+      ]},
+      { title: 'Erstbefund', rows: [
+        ['Bewusstsein', d.bewusstsein_1],
+        ['Atmung', d.atmung_1],
+        ['Kreislauf / EKG', `${vList(d.kreislauf_1)} · ${d.ekg_1 || '–'}`],
+        ['Schmerz', `${d.schmerzen_grad_1 || '–'} (NRS ${d.nrs_1 || 0})`],
+      ]},
+      { title: 'Vitalwerte', rows: [
+        ['Erstbefund', `RR ${d.rr_sys_1 || '–'}/${d.rr_dia_1 || '–'} · Puls ${d.puls_1 || '–'} · SpO₂ ${d.spo2_1 || '–'} · GCS ${d.gcs_1 || '–'}`],
+        ['Übergabe',  `RR ${d.rr_sys_2 || '–'}/${d.rr_dia_2 || '–'} · Puls ${d.puls_2 || '–'} · SpO₂ ${d.spo2_2 || '–'} · GCS ${d.gcs_2 || '–'}`],
+      ]},
+      { title: 'Versorgung', rows: [
+        ['Maßnahmen', vList(d.massnahme)],
+        ['Diagnose', d.erstdiagnose],
+      ]},
+      { title: 'Übergabe', rows: [
+        ['An', d.uebergabe_an],
+        ['Ergebnis', d.ergebnis],
+        ['Zeit', d.uebergabezeit],
+      ]},
+    ];
+    document.getElementById('summary').innerHTML = blocks.map(b => `
+      <div class="summary-block">
+        <h3>${b.title}</h3>
+        ${b.rows.map(([k, val]) => `
+          <div class="summary-row"><dt>${k}</dt><dd>${typeof val === 'string' ? v(val) : val}</dd></div>
+        `).join('')}
+      </div>
+    `).join('');
+  }
+
+  // ============ Init ============
+  async function init() {
+    await refreshList();
+    const hashId = window.location.hash.replace('#', '');
+    if (hashId && /^\d+$/.test(hashId)) await loadProtocol(Number(hashId));
+    else await newProtocol();
+  }
+  init();
+})();
+</script>
+
+<script>
+// Vorbehandlungs-Hinweis: prüft beim Tippen, ob die Person bereits in einem
+// dezentralen oder zentralen Bericht erfasst wurde, und zeigt einen Banner
+// mit Link zur Patientenakte.
+(function () {
+  const banner = document.getElementById('central-prior-hint');
+  if (!banner) return;
+  const form = document.getElementById('protocol-form');
+  if (!form) return;
+
+  function fields() {
+    const get = (n) => (form.querySelector(`[name="${n}"]`) || {}).value || '';
+    return {
+      vorname: get('vorname').trim(),
+      nachname: get('nachname').trim(),
+      geburtsdatum: get('geburtsdatum').trim(),
+    };
+  }
+
+  let timer = null;
+  async function check() {
+    const f = fields();
+    if (!f.geburtsdatum || (!f.vorname && !f.nachname)) {
+      banner.style.display = 'none';
+      return;
+    }
+    const url = new URL('/api/central/lookup', window.location.origin);
+    url.searchParams.set('vorname', f.vorname);
+    url.searchParams.set('nachname', f.nachname);
+    url.searchParams.set('geburtsdatum', f.geburtsdatum);
+    try {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.found) {
+        banner.innerHTML =
+          `Bekannter Patient — bisher <strong>${data.previous_decentral}</strong> ` +
+          `dezentrale und <strong>${data.previous_central}</strong> zentrale ` +
+          `Behandlung(en). ` +
+          `<a href="/patients/${data.patient_id}" target="_blank">Akte ansehen</a>`;
+        banner.style.display = 'block';
+      } else {
+        banner.style.display = 'none';
+      }
+    } catch (_) { /* network errors silently ignored */ }
+  }
+
+  form.addEventListener('input', (ev) => {
+    if (!['vorname', 'nachname', 'geburtsdatum'].includes(ev.target.name)) return;
+    clearTimeout(timer);
+    timer = setTimeout(check, 300);
+  });
+  // Initial check after the SPA has hydrated existing values.
+  setTimeout(check, 500);
+})();
+</script>
+</body>
+</html>

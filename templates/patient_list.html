@@ -11,7 +11,8 @@
       <th>Name</th>
       <th>Geburtsdatum</th>
       <th>Stammnummer</th>
-      <th class="right">Einträge</th>
+      <th class="right">Dezentral</th>
+      <th class="right">Zentral</th>
       <th>Letzte Behandlung</th>
       <th class="right"></th>
     </tr>
@@ -22,11 +23,9 @@
       <td><a href="{{ url_for('patient_detail', patient_id=p.id) }}">{{ p.name }}</a></td>
       <td>{{ format_dt(p.geburtsdatum) }}</td>
       <td>{{ p.stammnummer or '—' }}</td>
-      <td class="right">
-        {% if p.protocol_count > 1 %}<span class="badge">{{ p.protocol_count }}</span>
-        {% else %}{{ p.protocol_count }}{% endif %}
-      </td>
-      <td>{{ format_dt(p.last_treatment) or '—' }}</td>
+      <td class="right">{{ p.decentral_count }}</td>
+      <td class="right">{{ p.central_count }}</td>
+      <td>{{ format_dt(p.last_treatment_any) or '—' }}</td>
       <td class="right">
         <a class="btn small secondary" href="{{ url_for('patient_detail', patient_id=p.id) }}">Öffnen</a>
       </td>

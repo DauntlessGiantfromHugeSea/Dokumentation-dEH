@@ -11,8 +11,9 @@
   <header class="topbar">
     <span class="brand">Erste Hilfe</span>
     <nav>
-      <a href="{{ url_for('index') }}">Berichte</a>
-      <a href="{{ url_for('protocol_new') }}">Neuer Bericht</a>
+      <a href="{{ url_for('index') }}">Dezentral</a>
+      <a href="{{ url_for('central_index') }}">Zentral</a>
+      <a href="{{ url_for('protocol_new_chooser') }}">Neuer Bericht</a>
       <a href="{{ url_for('patient_list') }}">Personen</a>
       <a href="{{ url_for('export_form') }}">Export</a>
       {% if current_user.is_admin %}

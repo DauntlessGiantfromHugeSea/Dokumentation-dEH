@@ -123,10 +123,12 @@
       const res = await fetch(url.toString(), { credentials: 'same-origin' });
       const data = await res.json();
       if (data.found) {
-        hint.textContent =
-          'Folgebehandlung erkannt — Patient hat bereits ' +
-          data.previous_count +
-          ' Eintrag/Einträge. Stammnummer wird übernommen, falls leer.';
+        hint.innerHTML =
+          'Folgebehandlung erkannt — bisher <strong>' +
+          (data.previous_decentral || 0) + '</strong> dezentrale und <strong>' +
+          (data.previous_central || 0) + '</strong> zentrale Behandlung(en). ' +
+          '<a href="/patients/' + data.patient_id + '" target="_blank">Akte ansehen</a>. ' +
+          'Stammnummer wird übernommen, falls leer.';
         hint.classList.add('visible');
         if (!stammEl.value && data.stammnummer) stammEl.value = data.stammnummer;
       } else {
