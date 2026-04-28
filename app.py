@@ -760,9 +760,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             abort(404)
-        if (current_user.is_zentral_only
-                and rec.get("created_by") != current_user.id):
-            abort(403)
+        # Kommentare darf jeder eingeloggte User schreiben (Diskussion
+        # über Vorbehandlungen). Bearbeiten/Löschen des Berichts bleibt
+        # weiter eigentumsbasiert.
         text = request.form.get("text", "").strip()
         if text:
             models.add_central_comment(db, pid, text, current_user.id)
@@ -837,10 +837,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             return {"error": "not found"}, 404
-        # zentral_writer can only access protocols they created.
-        if (current_user.is_zentral_only
-                and rec.get("created_by") != current_user.id):
-            return {"error": "forbidden"}, 403
+        # Lesen ist für alle eingeloggten User offen (Vorbehandlungen
+        # einsehen). Schreiben/Löschen prüft den Eigentümer für
+        # zentral_writer weiter unten.
         if request.method == "GET":
             # Adresse/Telefon/Krankenkasse für Nicht-Admins entfernen — ein
             # Voll-User oder zentral_writer sieht die Felder im SPA-Formular
@@ -849,6 +848,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                 rec = dict(rec)
                 rec["data"] = models.strip_central_contact(rec.get("data") or {})
             return rec
+        # PUT / DELETE: zentral_writer darf nur eigene Berichte ändern.
+        if (current_user.is_zentral_only
+                and rec.get("created_by") != current_user.id):
+            return {"error": "forbidden"}, 403
         if request.method == "PUT":
             data = request.get_json(silent=True) or {}
             # Wenn der Speichernde kein Admin ist, dürfen die geschützten
@@ -880,10 +883,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             abort(404)
-        if (current_user.is_zentral_only
-                and rec.get("created_by") != current_user.id):
-            abort(403)
-        # Adresse/Telefon/Krankenkasse für Nicht-Admins auch im PDF entfernen
+        # PDF-Lesen ist für alle eingeloggten User offen — Adresse/
+        # Telefon/Krankenkasse werden für Nicht-Admins jedoch maskiert.
         pdf_data = rec["data"]
         if not current_user.is_admin:
             pdf_data = models.strip_central_contact(pdf_data)
