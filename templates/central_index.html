@@ -1133,11 +1133,13 @@
       const res = await fetch(url, { credentials: 'same-origin' });
       const data = await res.json();
       if (data.found) {
+        const akteLink = data.patient_id
+          ? ` <a href="/patients/${data.patient_id}" target="_blank">Akte ansehen</a>`
+          : '';
         banner.innerHTML =
           `Bekannter Patient — bisher <strong>${data.previous_decentral}</strong> ` +
           `dezentrale und <strong>${data.previous_central}</strong> zentrale ` +
-          `Behandlung(en). ` +
-          `<a href="/patients/${data.patient_id}" target="_blank">Akte ansehen</a>`;
+          `Behandlung(en).${akteLink}`;
         banner.style.display = 'block';
       } else {
         banner.style.display = 'none';

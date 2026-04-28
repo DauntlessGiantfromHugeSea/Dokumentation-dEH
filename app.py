@@ -45,6 +45,19 @@ def admin_required(view):
     return wrapper
 
 
+def decentral_view_required(view):
+    """For routes that show decentral / patient / export data — blocked
+    for users with role 'zentral_writer'."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for("login", next=request.url))
+        if not current_user.can_view_decentral:
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapper
+
+
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__)
     app.config.update(
@@ -71,6 +84,20 @@ def create_app(test_config: dict | None = None) -> Flask:
             self.username = row["username"]
             self.full_name = row["full_name"]
             self.is_admin = bool(row["is_admin"])
+            # role is "full" or "zentral_writer"; admins always get full access.
+            self.role = (row["role"] or "full") if "role" in row.keys() else "full"
+
+        @property
+        def is_zentral_only(self) -> bool:
+            return (not self.is_admin) and self.role == "zentral_writer"
+
+        @property
+        def can_view_decentral(self) -> bool:
+            return not self.is_zentral_only
+
+        @property
+        def can_view_others_central(self) -> bool:
+            return not self.is_zentral_only
 
     @login_manager.user_loader
     def load_user(user_id: str):
@@ -88,8 +115,14 @@ def create_app(test_config: dict | None = None) -> Flask:
             password = request.form.get("password", "")
             row = models.get_user_by_username(models.get_db(), username)
             if row and models.verify_password(row, password):
-                login_user(User(row))
-                return redirect(request.args.get("next") or url_for("index"))
+                user = User(row)
+                login_user(user)
+                # zentral_writer lands on the central SPA, not the dezentral list.
+                default = (
+                    url_for("central_index") if user.is_zentral_only
+                    else url_for("index")
+                )
+                return redirect(request.args.get("next") or default)
             flash("Benutzername oder Passwort falsch.", "error")
         return render_template("login.html")
 
@@ -102,7 +135,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     # ----- Protocols -----
 
     @app.route("/")
-    @login_required
+    @decentral_view_required
     def index():
         filters = _read_filters(request.args)
         protocols = models.list_protocols(models.get_db(), **filters)
@@ -110,7 +143,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                                format_dt=models.format_dt)
 
     @app.route("/protocols/new")
-    @login_required
+    @decentral_view_required
     def protocol_new_chooser():
         """Step 1: choose between decentral or central first aid."""
         # Pass through any prefill so a follow-up still works.
@@ -124,7 +157,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
 
     @app.route("/protocols/new/dezentral", methods=["GET", "POST"])
-    @login_required
+    @decentral_view_required
     def protocol_new():
         if request.method == "POST":
             return _save_protocol(None)
@@ -137,7 +170,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                                existing_patient=None, mode="new")
 
     @app.route("/protocols/<int:protocol_id>")
-    @login_required
+    @decentral_view_required
     def protocol_detail(protocol_id: int):
         db = models.get_db()
         protocol = models.get_protocol(db, protocol_id)
@@ -150,7 +183,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                                format_dt=models.format_dt)
 
     @app.route("/protocols/<int:protocol_id>/edit", methods=["GET", "POST"])
-    @login_required
+    @decentral_view_required
     def protocol_edit(protocol_id: int):
         db = models.get_db()
         protocol = models.get_protocol(db, protocol_id)
@@ -162,7 +195,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                                existing_patient=None, mode="edit")
 
     @app.route("/protocols/<int:protocol_id>/delete", methods=["POST"])
-    @login_required
+    @decentral_view_required
     def protocol_delete(protocol_id: int):
         db = models.get_db()
         protocol = models.get_protocol(db, protocol_id)
@@ -180,7 +213,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         return redirect(url_for("index"))
 
     @app.route("/protocols/<int:protocol_id>/comments", methods=["POST"])
-    @login_required
+    @decentral_view_required
     def protocol_add_comment(protocol_id: int):
         db = models.get_db()
         if not models.get_protocol(db, protocol_id):
@@ -193,7 +226,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         return redirect(url_for("protocol_detail", protocol_id=protocol_id))
 
     @app.route("/protocols/<int:protocol_id>/pdf")
-    @login_required
+    @decentral_view_required
     def protocol_pdf(protocol_id: int):
         db = models.get_db()
         protocol = models.get_protocol(db, protocol_id)
@@ -211,14 +244,14 @@ def create_app(test_config: dict | None = None) -> Flask:
     # ----- Patients -----
 
     @app.route("/patients")
-    @login_required
+    @decentral_view_required
     def patient_list():
         patients = models.list_patients(models.get_db())
         return render_template("patient_list.html", patients=patients,
                                format_dt=models.format_dt)
 
     @app.route("/patients/<int:patient_id>")
-    @login_required
+    @decentral_view_required
     def patient_detail(patient_id: int):
         db = models.get_db()
         patient = models.get_patient(db, patient_id)
@@ -235,7 +268,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     # "Folgebehandlung" before submit) -----
 
     @app.route("/api/patient-lookup")
-    @login_required
+    @decentral_view_required
     def patient_lookup():
         name = request.args.get("name", "").strip()
         geburtsdatum = request.args.get("geburtsdatum", "").strip()
@@ -260,12 +293,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     # ----- Export -----
 
     @app.route("/export")
-    @login_required
+    @decentral_view_required
     def export_form():
         return render_template("export.html")
 
     @app.route("/export/csv")
-    @login_required
+    @decentral_view_required
     def export_csv():
         filters = _read_filters(request.args)
         rows = models.list_protocols(models.get_db(), **filters)
@@ -328,7 +361,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     def api_central_list_or_create():
         db = models.get_db()
         if request.method == "GET":
-            rows = models.list_central_protocols(db)
+            # zentral_writer: only their own protocols.
+            rows = models.list_central_protocols(
+                db,
+                created_by=(current_user.id
+                            if current_user.is_zentral_only else None),
+            )
             return [
                 {
                     "id": r["id"],
@@ -357,11 +395,14 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     def api_central_one(pid: int):
         db = models.get_db()
+        rec = models.get_central_protocol(db, pid)
+        if not rec:
+            return {"error": "not found"}, 404
+        # zentral_writer can only access protocols they created.
+        if (current_user.is_zentral_only
+                and rec.get("created_by") != current_user.id):
+            return {"error": "forbidden"}, 403
         if request.method == "GET":
-            rec = models.get_central_protocol(db, pid)
-            if not rec:
-                return {"error": "not found"}, 404
-            # Return shape compatible with the SPA's expectations.
             return rec
         if request.method == "PUT":
             data = request.get_json(silent=True) or {}
@@ -389,6 +430,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             abort(404)
+        if (current_user.is_zentral_only
+                and rec.get("created_by") != current_user.id):
+            abort(403)
         try:
             pdf_bytes = render_central_pdf(rec["data"])
         except FileNotFoundError as e:
@@ -425,9 +469,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not row:
             return {"found": False}
         counts = models.patient_protocol_counts(db, row["id"])
+        # zentral_writer sees the count but no patient_id (no link to akte).
         return {
             "found": True,
-            "patient_id": row["id"],
+            "patient_id": (None if current_user.is_zentral_only
+                           else row["id"]),
             "stammnummer": row["stammnummer"] or "",
             "previous_decentral": counts["decentral"],
             "previous_central": counts["central"],
@@ -474,6 +520,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         full_name = (request.form.get("full_name") or "").strip() or None
         password = request.form.get("password") or ""
         is_admin = bool(request.form.get("is_admin"))
+        role = request.form.get("role") or "full"
+        if role not in models.VALID_ROLES:
+            flash(f"Unbekannte Rolle: {role}", "error")
+            return redirect(url_for("admin_users"))
         if not username or not password:
             flash("Benutzername und Passwort sind Pflicht.", "error")
         elif len(password) < 6:
@@ -481,9 +531,27 @@ def create_app(test_config: dict | None = None) -> Flask:
         elif models.get_user_by_username(db, username):
             flash(f"Benutzername '{username}' existiert bereits.", "error")
         else:
-            models.create_user(db, username, password, full_name, is_admin)
+            models.create_user(db, username, password, full_name,
+                               is_admin=is_admin, role=role)
             db.commit()
             flash(f"Benutzer '{username}' angelegt.", "success")
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/users/<int:user_id>/role", methods=["POST"])
+    @admin_required
+    def admin_user_set_role(user_id: int):
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        role = request.form.get("role") or "full"
+        if role not in models.VALID_ROLES:
+            flash(f"Unbekannte Rolle: {role}", "error")
+            return redirect(url_for("admin_users"))
+        models.set_user_role(db, user_id, role)
+        db.commit()
+        flash(f"Rolle für '{row['username']}' geändert auf '{role}'.",
+              "success")
         return redirect(url_for("admin_users"))
 
     @app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
@@ -554,7 +622,11 @@ def create_app(test_config: dict | None = None) -> Flask:
     @click.option("--full-name", default=None)
     @click.option("--admin/--no-admin", default=False,
                   help="Mark this user as administrator.")
-    def cli_create_user(username, password, full_name, admin):
+    @click.option("--role",
+                  type=click.Choice(list(models.VALID_ROLES)),
+                  default="full",
+                  help="Role: 'full' (default) or 'zentral_writer'.")
+    def cli_create_user(username, password, full_name, admin, role):
         """Create a new user account."""
         db = models.get_db()
         if models.get_user_by_username(db, username):
@@ -562,12 +634,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             raise SystemExit(1)
         # If no admin exists yet, the first user is auto-promoted by init_db,
         # but allow explicit --admin too.
-        models.create_user(db, username, password, full_name, is_admin=admin)
+        models.create_user(db, username, password, full_name,
+                           is_admin=admin, role=role)
         db.commit()
         # Re-run admin migration so the very first user gets is_admin=1
         # without needing the flag.
         models.init_db(Path(app.config["DB_PATH"]))
-        click.echo(f"User '{username}' created.")
+        click.echo(f"User '{username}' created (role={role}).")
 
     return app
 

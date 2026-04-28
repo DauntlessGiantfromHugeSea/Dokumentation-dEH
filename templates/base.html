@@ -11,11 +11,15 @@
   <header class="topbar">
     <span class="brand">Erste Hilfe</span>
     <nav>
-      <a href="{{ url_for('index') }}">Dezentral</a>
+      {% if current_user.can_view_decentral %}
+        <a href="{{ url_for('index') }}">Dezentral</a>
+      {% endif %}
       <a href="{{ url_for('central_index') }}">Zentral</a>
-      <a href="{{ url_for('protocol_new_chooser') }}">Neuer Bericht</a>
-      <a href="{{ url_for('patient_list') }}">Personen</a>
-      <a href="{{ url_for('export_form') }}">Export</a>
+      {% if current_user.can_view_decentral %}
+        <a href="{{ url_for('protocol_new_chooser') }}">Neuer Bericht</a>
+        <a href="{{ url_for('patient_list') }}">Personen</a>
+        <a href="{{ url_for('export_form') }}">Export</a>
+      {% endif %}
       {% if current_user.is_admin %}
         <a href="{{ url_for('admin_users') }}">Benutzer</a>
       {% endif %}

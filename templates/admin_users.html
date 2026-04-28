@@ -24,9 +24,16 @@
                autocomplete="new-password" placeholder="min. 6 Zeichen">
       </label>
     </div>
+    <label class="field">
+      Rolle
+      <select name="role">
+        <option value="full">Voll (kann alles lesen + schreiben)</option>
+        <option value="zentral_writer">Nur Zentrale Erste Hilfe schreiben</option>
+      </select>
+    </label>
     <label class="checkbox-row">
       <input type="checkbox" name="is_admin" value="1">
-      Als Administrator anlegen (kann andere Benutzer verwalten)
+      Zusätzlich Administrator (kann Benutzer verwalten)
     </label>
     <div><button class="btn" type="submit">Benutzer anlegen</button></div>
   </form>
@@ -40,6 +47,7 @@
         <th>Benutzername</th>
         <th>Voller Name</th>
         <th>Rolle</th>
+        <th>Berechtigung</th>
         <th>Angelegt</th>
         <th class="right">Aktionen</th>
       </tr>
@@ -55,6 +63,13 @@
           {% if u.is_admin %}<span class="badge admin">Admin</span>
           {% else %}<span class="muted">Benutzer</span>{% endif %}
         </td>
+        <td>
+          {% if u.role == 'zentral_writer' %}
+            <span class="badge">Nur Zentral schreiben</span>
+          {% else %}
+            <span class="muted">Voll (Lesen + Schreiben)</span>
+          {% endif %}
+        </td>
         <td>{{ format_dt(u.created_at) }}</td>
         <td class="right action-cell">
           <details class="inline-action">
@@ -68,6 +83,14 @@
             </form>
           </details>
           {% if u.id != current_user.id %}
+            <form method="post"
+                  action="{{ url_for('admin_user_set_role', user_id=u.id) }}"
+                  class="inline-form">
+              <select name="role" onchange="this.form.submit()">
+                <option value="full" {% if u.role == 'full' %}selected{% endif %}>Voll</option>
+                <option value="zentral_writer" {% if u.role == 'zentral_writer' %}selected{% endif %}>Nur Zentral</option>
+              </select>
+            </form>
             <form method="post"
                   action="{{ url_for('admin_user_toggle_admin', user_id=u.id) }}"
                   class="inline-form">

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     full_name     TEXT,
     is_admin      INTEGER NOT NULL DEFAULT 0,
+    role          TEXT NOT NULL DEFAULT 'full',
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -109,11 +110,15 @@ def init_db(db_path: Path) -> None:
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA)
-        # Migration: add is_admin to existing users tables.
+        # Migration: add columns introduced after the initial release.
         cols = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
         if "is_admin" not in cols:
             conn.execute(
                 "ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"
+            )
+        if "role" not in cols:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'full'"
             )
         # Promote oldest user to admin if there isn't one yet — keeps the
         # initial bootstrap simple ("first user = admin").
@@ -145,16 +150,28 @@ def standalone_connection(db_path: Path) -> Iterator[sqlite3.Connection]:
 
 # ---------- Users ----------
 
+VALID_ROLES = ("full", "zentral_writer")
+
+
 def create_user(conn: sqlite3.Connection, username: str, password: str,
                 full_name: Optional[str] = None,
-                is_admin: bool = False) -> int:
+                is_admin: bool = False,
+                role: str = "full") -> int:
+    if role not in VALID_ROLES:
+        raise ValueError(f"unknown role: {role}")
     cur = conn.execute(
-        "INSERT INTO users (username, password_hash, full_name, is_admin) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO users (username, password_hash, full_name, is_admin, role) "
+        "VALUES (?, ?, ?, ?, ?)",
         (username, generate_password_hash(password), full_name,
-         1 if is_admin else 0),
+         1 if is_admin else 0, role),
     )
     return cur.lastrowid
+
+
+def set_user_role(conn: sqlite3.Connection, user_id: int, role: str) -> None:
+    if role not in VALID_ROLES:
+        raise ValueError(f"unknown role: {role}")
+    conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
 
 
 def get_user_by_id(conn: sqlite3.Connection, user_id: int) -> Optional[sqlite3.Row]:
@@ -435,11 +452,13 @@ def _link_central_to_patient(conn: sqlite3.Connection, data: dict) -> Optional[i
 
 
 def list_central_protocols(conn: sqlite3.Connection, *,
-                           patient_id: Optional[int] = None) -> list[sqlite3.Row]:
+                           patient_id: Optional[int] = None,
+                           created_by: Optional[int] = None
+                           ) -> list[sqlite3.Row]:
     sql = [
         """
         SELECT cp.id, cp.patient_id, cp.einsatznummer, cp.datum,
-               cp.name_summary, cp.created_at, cp.updated_at,
+               cp.name_summary, cp.created_by, cp.created_at, cp.updated_at,
                p.name AS patient_name, p.geburtsdatum AS patient_geburtsdatum,
                p.stammnummer AS patient_stammnummer
         FROM central_protocols cp
@@ -451,6 +470,9 @@ def list_central_protocols(conn: sqlite3.Connection, *,
     if patient_id is not None:
         sql.append("AND cp.patient_id = ?")
         params.append(patient_id)
+    if created_by is not None:
+        sql.append("AND cp.created_by = ?")
+        params.append(created_by)
     sql.append("ORDER BY datetime(cp.updated_at) DESC")
     return conn.execute("\n".join(sql), params).fetchall()
 
