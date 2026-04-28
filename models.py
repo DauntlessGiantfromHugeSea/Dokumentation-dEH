@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
-from flask import g
+from flask import current_app, g
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -67,9 +67,9 @@ CREATE INDEX IF NOT EXISTS idx_comments_protocol ON comments(protocol_id);
 
 
 def get_db() -> sqlite3.Connection:
-    """Return the request-scoped DB connection, opening one if needed."""
+    """Return the app-context DB connection, opening one if needed."""
     if "db" not in g:
-        db_path: Path = g.db_path
+        db_path = Path(current_app.config["DB_PATH"])
         db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
         conn.row_factory = sqlite3.Row

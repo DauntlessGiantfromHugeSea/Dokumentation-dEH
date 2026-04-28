@@ -13,7 +13,6 @@ from flask import (
     Response,
     abort,
     flash,
-    g,
     redirect,
     render_template,
     request,
@@ -41,10 +40,6 @@ def create_app(test_config: dict | None = None) -> Flask:
     )
     if test_config:
         app.config.update(test_config)
-
-    @app.before_request
-    def _attach_db_path() -> None:
-        g.db_path = Path(app.config["DB_PATH"])
 
     app.teardown_appcontext(models.close_db)
 
