@@ -782,6 +782,161 @@ def patient_last_treatment(conn: sqlite3.Connection,
     return row["last"] if row and row["last"] else None
 
 
+# ---------- Suche & Lookup ----------
+
+def search_patients(conn: sqlite3.Connection, *,
+                    name_query: Optional[str] = None,
+                    geburtsdatum: Optional[str] = None,
+                    limit: int = 20) -> list[sqlite3.Row]:
+    """Suche Patienten — nach Name (substring, case-insensitive) und/oder
+    Geburtsdatum (exakt). Beide Felder optional, mindestens eines muss
+    gefüllt sein (sonst leer)."""
+    name_query = (name_query or "").strip()
+    geburtsdatum = (geburtsdatum or "").strip()
+    if not name_query and not geburtsdatum:
+        return []
+    sql = ["SELECT id, name, geburtsdatum, stammnummer FROM patients WHERE 1=1"]
+    params: list = []
+    if name_query:
+        sql.append("AND name LIKE ? COLLATE NOCASE")
+        params.append(f"%{name_query}%")
+    if geburtsdatum:
+        sql.append("AND geburtsdatum = ?")
+        params.append(geburtsdatum)
+    sql.append("ORDER BY name COLLATE NOCASE LIMIT ?")
+    params.append(limit)
+    return conn.execute("\n".join(sql), params).fetchall()
+
+
+def patient_history(conn: sqlite3.Connection,
+                    patient_id: int) -> list[dict]:
+    """Alle Berichte (dezentral + zentral) eines Patienten, chronologisch
+    absteigend. Wird für die Vorbehandlungs-Popup-Liste genutzt."""
+    rows = conn.execute(
+        """
+        SELECT 'decentral' AS source, id, laufende_nr,
+               COALESCE(eh_datum_uhrzeit, created_at) AS event_date,
+               name_ersthelfer AS responder, created_at
+        FROM protocols WHERE patient_id = ?
+        UNION ALL
+        SELECT 'central' AS source, id, laufende_nr,
+               COALESCE(datum, created_at) AS event_date,
+               name_summary AS responder, created_at
+        FROM central_protocols WHERE patient_id = ?
+        ORDER BY event_date DESC, created_at DESC
+        """,
+        (patient_id, patient_id),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------- Dashboard ----------
+
+def _count_decentral(conn, where_sql, params):
+    return conn.execute(
+        f"SELECT COUNT(*) AS n FROM protocols WHERE {where_sql}", params
+    ).fetchone()["n"]
+
+
+def _count_central(conn, where_sql, params):
+    return conn.execute(
+        f"SELECT COUNT(*) AS n FROM central_protocols WHERE {where_sql}",
+        params,
+    ).fetchone()["n"]
+
+
+def _treatment_date_decentral():
+    return "COALESCE(date(eh_datum_uhrzeit), date(created_at))"
+
+
+def _treatment_date_central():
+    return "COALESCE(date(datum), date(created_at))"
+
+
+def dashboard_stats(conn: sqlite3.Connection, ref_date) -> dict:
+    """Liefert Statistiken bezogen auf ref_date (datetime.date)."""
+    from datetime import date as _date, timedelta
+    iso = ref_date.isoformat()
+
+    def one(d_iso):
+        d = _count_decentral(conn, f"{_treatment_date_decentral()} = ?", (d_iso,))
+        c = _count_central(conn, f"{_treatment_date_central()} = ?", (d_iso,))
+        return {"d": d, "c": c}
+
+    def rng(start_iso, end_iso):
+        d = _count_decentral(conn,
+            f"{_treatment_date_decentral()} BETWEEN ? AND ?",
+            (start_iso, end_iso))
+        c = _count_central(conn,
+            f"{_treatment_date_central()} BETWEEN ? AND ?",
+            (start_iso, end_iso))
+        return {"d": d, "c": c}
+
+    week_start = ref_date - timedelta(days=ref_date.weekday())
+    month_start = ref_date.replace(day=1)
+    yesterday = ref_date - timedelta(days=1)
+
+    return {
+        "selected": one(iso),
+        "yesterday": one(yesterday.isoformat()),
+        "week": rng(week_start.isoformat(), iso),
+        "month": rng(month_start.isoformat(), iso),
+        "total": {
+            "d": conn.execute("SELECT COUNT(*) AS n FROM protocols").fetchone()["n"],
+            "c": conn.execute("SELECT COUNT(*) AS n FROM central_protocols").fetchone()["n"],
+        },
+    }
+
+
+def dashboard_daily_counts(conn: sqlite3.Connection, *,
+                           end_date, days: int = 14) -> list[dict]:
+    """Pro Tag (rückwärts ab end_date) Zähler dezentral/zentral."""
+    from datetime import timedelta
+    out = []
+    for i in range(days - 1, -1, -1):
+        d = end_date - timedelta(days=i)
+        d_iso = d.isoformat()
+        out.append({
+            "date": d,
+            "decentral": _count_decentral(
+                conn, f"{_treatment_date_decentral()} = ?", (d_iso,)
+            ),
+            "central": _count_central(
+                conn, f"{_treatment_date_central()} = ?", (d_iso,)
+            ),
+        })
+    return out
+
+
+def list_decentral_responders(conn: sqlite3.Connection) -> list[str]:
+    """Liefert alle bisher in der dezentralen Erfassung verwendeten
+    Ersthelfer-Namen, dedupliziert + alphabetisch."""
+    rows = conn.execute(
+        """
+        SELECT DISTINCT TRIM(name_ersthelfer) AS h
+        FROM protocols
+        WHERE name_ersthelfer IS NOT NULL AND TRIM(name_ersthelfer) != ''
+        ORDER BY h COLLATE NOCASE
+        """
+    ).fetchall()
+    return [r["h"] for r in rows]
+
+
+def top_decentral_responders(conn: sqlite3.Connection,
+                             limit: int = 5) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT TRIM(name_ersthelfer) AS responder, COUNT(*) AS n
+        FROM protocols
+        WHERE name_ersthelfer IS NOT NULL AND TRIM(name_ersthelfer) != ''
+        GROUP BY responder COLLATE NOCASE
+        ORDER BY n DESC, responder COLLATE NOCASE
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
 # ---------- Central comments (zentral, separates Tabellen-Pendant zu comments) ----------
 
 def add_central_comment(conn: sqlite3.Connection, central_protocol_id: int,

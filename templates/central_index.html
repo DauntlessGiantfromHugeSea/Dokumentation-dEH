@@ -33,7 +33,55 @@
   body { min-height: 100vh; }
 
   /* ============ Layout ============ */
-  .layout { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+  .layout { display: grid; grid-template-columns: 1fr; min-height: 100vh; }
+  .main.full-width { max-width: 1080px; margin: 0 auto; width: 100%; }
+  /* Modal */
+  .vh-modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+  }
+  .vh-modal-backdrop.open { display: flex; }
+  .vh-modal {
+    background: #fff;
+    border-radius: 8px;
+    max-width: 720px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  }
+  .vh-modal-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .vh-modal-header h3 { margin: 0; color: var(--primary, #d32f2f); }
+  .vh-modal-close {
+    background: none; border: none; font-size: 1.4rem;
+    cursor: pointer; color: var(--muted); padding: 0 4px;
+  }
+  .vh-modal-body { padding: 16px 18px; }
+  .vh-modal-body table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .vh-modal-body th, .vh-modal-body td {
+    padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left;
+  }
+  .vh-modal-body th {
+    background: #fafbfc; font-size: 0.8rem; text-transform: uppercase;
+    letter-spacing: 0.4px; color: var(--muted);
+  }
+  /* Lookup-Banner Erweiterung — Multi-Match-Liste */
+  .app-bar-banner ul { margin: 6px 0 0; padding-left: 18px; }
+  .app-bar-banner ul li { margin-bottom: 2px; }
+  .app-bar-banner button.linklike {
+    background: none; border: none; color: var(--primary, #d32f2f);
+    cursor: pointer; padding: 0 0 0 4px; font: inherit; text-decoration: underline;
+  }
   @media (max-width: 900px) {
     .layout { grid-template-columns: 1fr; }
     .sidebar {
@@ -337,7 +385,8 @@
   <span class="brand">Erste Hilfe</span>
   <nav>
     {% if current_user.can_view_decentral %}
-      <a href="/">Dezentral</a>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/">Berichte</a>
     {% endif %}
     <a href="/central" class="active">Zentral</a>
     {% if current_user.can_view_decentral %}
@@ -355,23 +404,33 @@
   </span>
 </header>
 <div id="central-prior-hint" class="app-bar-banner" style="display:none;"></div>
+
+<div class="vh-modal-backdrop" id="vh-modal" role="dialog" aria-modal="true">
+  <div class="vh-modal">
+    <div class="vh-modal-header">
+      <h3 id="vh-modal-title">Vorbehandlungen</h3>
+      <button class="vh-modal-close" type="button"
+              onclick="document.getElementById('vh-modal').classList.remove('open')">×</button>
+    </div>
+    <div class="vh-modal-body" id="vh-modal-body">
+      <p class="muted">Lade …</p>
+    </div>
+  </div>
+</div>
+
 <div class="layout">
 
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-      <h2>Protokolle</h2>
-      <button class="btn primary sm" id="btn-new">+ Neu</button>
-    </div>
-    <div class="sidebar-list" id="protocol-list">
-      <div class="sidebar-empty">Lade …</div>
-    </div>
-  </aside>
+  {# Sidebar entfernt — Listen-Übersicht läuft jetzt über die unified Liste auf "/".
+     Versteckte Stubs bleiben erhalten, damit das bestehende JS nicht
+     auf null-Referenzen läuft. #}
+  <div id="sidebar" style="display:none;"><div id="protocol-list"></div></div>
+  <button id="btn-sidebar" style="display:none;"></button>
+  <button id="btn-new" style="display:none;"></button>
 
-  <main class="main">
+  <main class="main full-width">
     <div class="app">
       <header class="top">
         <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
-          <button class="btn sm sidebar-toggle" id="btn-sidebar" aria-label="Menü">☰</button>
           <div style="min-width:0">
             <h1 id="protocol-title">Neues Protokoll</h1>
             <div class="meta" id="meta-info">Noch nicht gespeichert</div>
@@ -1149,11 +1208,17 @@
 </script>
 
 <script>
-// Vorbehandlungs-Hinweis: prüft beim Tippen, ob die Person bereits in einem
-// dezentralen oder zentralen Bericht erfasst wurde, und zeigt einen Banner
-// mit Link zur Patientenakte.
+// Live-Lookup: schon beim Tippen von Vorname, Nachname ODER Geburtsdatum
+// nach Patienten suchen. Banner zeigt:
+//  - 0 Treffer + alle Felder gefüllt → "neue Person"
+//  - 1 Treffer → "Bekannter Patient — X Vorbehandlungen [Anzeigen]"
+//  - mehrere Treffer → Liste mit Stammnummer, Geburtsdatum + Pickern
+// "Anzeigen" öffnet das Vorbehandlungs-Popup mit der vollen History.
 (function () {
   const banner = document.getElementById('central-prior-hint');
+  const modal = document.getElementById('vh-modal');
+  const modalBody = document.getElementById('vh-modal-body');
+  const modalTitle = document.getElementById('vh-modal-title');
   if (!banner) return;
   const form = document.getElementById('protocol-form');
   if (!form) return;
@@ -1167,41 +1232,196 @@
     };
   }
 
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = String(iso).slice(0, 10).split('-');
+    return d.length === 3 ? `${d[2]}.${d[1]}.${d[0]}` : iso;
+  }
+
+  function setBannerState(state) {
+    banner.dataset.state = state;
+    banner.style.display = state === 'hidden' ? 'none' : 'block';
+  }
+
+  async function openHistoryModal(patientId, patientName) {
+    if (!patientId) return;
+    modalTitle.textContent = 'Vorbehandlungen — ' + (patientName || '');
+    modalBody.innerHTML = '<p class="muted">Lade …</p>';
+    modal.classList.add('open');
+    try {
+      const res = await fetch(`/api/central/patient-history?patient_id=${patientId}`,
+                              { credentials: 'same-origin' });
+      if (res.status === 403) {
+        modalBody.innerHTML = '<p class="muted">Keine Berechtigung, Vorbehandlungen einzusehen.</p>';
+        return;
+      }
+      if (!res.ok) {
+        modalBody.innerHTML = '<p class="muted">Fehler beim Laden.</p>';
+        return;
+      }
+      const data = await res.json();
+      const p = data.patient || {};
+      const history = data.history || [];
+      let html = `<p style="margin-top: 0;"><strong>${escapeHtml(p.name)}</strong>
+                     · geb. ${escapeHtml(fmtDate(p.geburtsdatum))}
+                     ${p.stammnummer ? '· Stamm-Nr. ' + escapeHtml(p.stammnummer) : ''}</p>`;
+      if (!history.length) {
+        html += '<p class="muted">Keine Berichte.</p>';
+      } else {
+        html += '<table><thead><tr><th>Bericht</th><th>Typ</th><th>Datum</th><th></th></tr></thead><tbody>';
+        for (const h of history) {
+          const target = h.source === 'decentral'
+            ? `/protocols/${h.id}` : `/central/${h.id}`;
+          const badge = h.source === 'decentral'
+            ? '<span class="badge type-d">dEH</span>'
+            : '<span class="badge type-z">zEH</span>';
+          html += `<tr>
+            <td><strong>${escapeHtml(h.laufende_nr || '')}</strong></td>
+            <td>${badge}</td>
+            <td>${escapeHtml(fmtDate(h.event_date))}</td>
+            <td style="text-align:right;"><a href="${target}" target="_blank" class="btn small secondary">Öffnen</a></td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+      }
+      modalBody.innerHTML = html;
+    } catch (_) {
+      modalBody.innerHTML = '<p class="muted">Fehler beim Laden.</p>';
+    }
+  }
+
+  // Click handler for "Anzeigen" links in the banner
+  banner.addEventListener('click', (e) => {
+    const tgt = e.target.closest('[data-vh-action]');
+    if (!tgt) return;
+    e.preventDefault();
+    const action = tgt.dataset.vhAction;
+    if (action === 'history') {
+      openHistoryModal(Number(tgt.dataset.patientId),
+                       tgt.dataset.patientName || '');
+    } else if (action === 'pick') {
+      // Felder mit dem ausgewählten Patienten füllen
+      const name = tgt.dataset.patientName || '';
+      const parts = name.split(' ');
+      const vorname = parts[0] || '';
+      const nachname = parts.length > 1 ? parts.slice(1).join(' ') : '';
+      const setVal = (n, v) => {
+        const el = form.querySelector(`[name="${n}"]`);
+        if (el) { el.value = v; }
+      };
+      setVal('vorname', vorname);
+      setVal('nachname', nachname);
+      setVal('geburtsdatum', tgt.dataset.geburtsdatum || '');
+      // Re-run lookup, will switch to single-match state
+      check();
+    }
+  });
+
+  // ESC + click on backdrop close modal
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.classList.remove('open');
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') modal.classList.remove('open');
+  });
+
   let timer = null;
   async function check() {
     const f = fields();
-    if (!f.geburtsdatum || (!f.vorname && !f.nachname)) {
-      banner.style.display = 'none';
+    const fullName = [f.vorname, f.nachname].filter(Boolean).join(' ').trim();
+
+    if (!fullName && !f.geburtsdatum) {
+      setBannerState('hidden');
       return;
     }
+
     const url = new URL('/api/central/lookup', window.location.origin);
-    url.searchParams.set('vorname', f.vorname);
-    url.searchParams.set('nachname', f.nachname);
-    url.searchParams.set('geburtsdatum', f.geburtsdatum);
+    if (fullName) url.searchParams.set('name', fullName);
+    if (f.geburtsdatum) url.searchParams.set('geburtsdatum', f.geburtsdatum);
+
     try {
       const res = await fetch(url, { credentials: 'same-origin' });
       const data = await res.json();
-      if (data.found) {
-        const akteLink = data.patient_id
-          ? ` <a href="/patients/${data.patient_id}" target="_blank">Akte ansehen</a>`
-          : '';
-        banner.innerHTML =
-          `Bekannter Patient — bisher <strong>${data.previous_decentral}</strong> ` +
-          `dezentrale und <strong>${data.previous_central}</strong> zentrale ` +
-          `Behandlung(en).${akteLink}`;
-        banner.style.display = 'block';
-      } else {
-        banner.style.display = 'none';
+      const matches = data.matches || [];
+
+      if (matches.length === 0) {
+        // Nur "neue Person" anzeigen, wenn beide Felder gefüllt sind —
+        // sonst ist der User wahrscheinlich noch am Tippen.
+        if (fullName && f.geburtsdatum) {
+          banner.innerHTML = `Keine bekannte Person mit
+            <strong>${escapeHtml(fullName)}</strong> ·
+            geb. <strong>${escapeHtml(fmtDate(f.geburtsdatum))}</strong> —
+            beim Speichern wird ein neuer Patientendatensatz angelegt.`;
+          setBannerState('new');
+        } else {
+          setBannerState('hidden');
+        }
+        return;
       }
-    } catch (_) { /* network errors silently ignored */ }
+
+      if (matches.length === 1) {
+        const m = matches[0];
+        const total = (m.previous_decentral + m.previous_central);
+        const nameParts = (m.name || '').split(' ');
+        let html = `Bekannter Patient: <strong>${escapeHtml(m.name)}</strong>
+          · geb. ${escapeHtml(fmtDate(m.geburtsdatum))}
+          ${m.stammnummer ? '· Stamm-Nr. ' + escapeHtml(m.stammnummer) : ''}
+          · <strong>${m.previous_decentral}</strong> dezentrale,
+            <strong>${m.previous_central}</strong> zentrale Behandlung(en).`;
+        if (total > 0 && m.patient_id) {
+          html += ` <button type="button" class="linklike"
+                       data-vh-action="history"
+                       data-patient-id="${m.patient_id}"
+                       data-patient-name="${escapeHtml(m.name)}">
+                       Vorbehandlungen anzeigen
+                    </button>`;
+        }
+        // Falls Felder noch nicht alle gefüllt sind: Pick-Button anbieten
+        if (!fullName || !f.geburtsdatum) {
+          html += ` <button type="button" class="linklike"
+                       data-vh-action="pick"
+                       data-patient-name="${escapeHtml(m.name)}"
+                       data-geburtsdatum="${escapeHtml(m.geburtsdatum)}">
+                       Felder übernehmen
+                    </button>`;
+        }
+        banner.innerHTML = html;
+        setBannerState('single');
+        return;
+      }
+
+      // Mehrere Treffer → Disambiguierung
+      let html = `<strong>${matches.length}</strong> Personen passen zur Eingabe — bitte präzisieren:<ul>`;
+      for (const m of matches.slice(0, 10)) {
+        html += `<li>
+          <strong>${escapeHtml(m.name)}</strong>
+          · geb. ${escapeHtml(fmtDate(m.geburtsdatum))}
+          ${m.stammnummer ? '· Stamm-Nr. ' + escapeHtml(m.stammnummer) : ''}
+          · ${m.previous_decentral} dEH / ${m.previous_central} zEH
+          <button type="button" class="linklike"
+                  data-vh-action="pick"
+                  data-patient-name="${escapeHtml(m.name)}"
+                  data-geburtsdatum="${escapeHtml(m.geburtsdatum)}">
+                  diese auswählen
+          </button>
+        </li>`;
+      }
+      html += '</ul>';
+      banner.innerHTML = html;
+      setBannerState('multi');
+    } catch (_) { /* network — silently ignore */ }
   }
 
   form.addEventListener('input', (ev) => {
     if (!['vorname', 'nachname', 'geburtsdatum'].includes(ev.target.name)) return;
     clearTimeout(timer);
-    timer = setTimeout(check, 300);
+    timer = setTimeout(check, 250);
   });
-  // Initial check after the SPA has hydrated existing values.
   setTimeout(check, 500);
 })();
 </script>

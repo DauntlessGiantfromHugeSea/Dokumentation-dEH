@@ -281,6 +281,131 @@ table.data.measurements th:first-child { text-align: left; }
 .confirm-card.confirm-new { border-left-color: #1f6b3a; }
 .confirm-card.confirm-found { border-left-color: var(--accent); }
 
+/* Dashboard */
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.dash-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+.dash-stat-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+.dash-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1.1;
+  margin: 4px 0;
+}
+.dash-stat-split { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.quick-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+.quick-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #fafafa;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.15s, background 0.15s;
+}
+.quick-link:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  text-decoration: none;
+}
+.quick-icon {
+  flex: 0 0 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.quick-title { font-weight: 600; font-size: 0.95rem; }
+.quick-sub { font-size: 0.8rem; color: var(--muted); }
+
+.chart-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.chart-svg { width: 100%; height: auto; min-width: 600px; }
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.legend-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+/* Modal (Vorbehandlungs-Popup im SPA) */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.modal-backdrop.open { display: flex; }
+.modal-window {
+  background: #fff;
+  border-radius: 8px;
+  max-width: 720px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
+.modal-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.modal-header h3 { margin: 0; color: var(--accent); }
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0 4px;
+}
+.modal-body { padding: 16px 18px; }
+.modal-body table.data { font-size: 0.92rem; }
+
 .page-header {
   display: flex;
   align-items: flex-start;

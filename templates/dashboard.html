@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% set selected_iso = ref_date.isoformat() %}
+{% set is_today = (ref_date == today) %}
+{% set day_label = "Heute" if is_today else format_dt(selected_iso) %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="tagline">
+      Tagesansicht für <strong>{{ format_dt(selected_iso) }}</strong>
+      {% if is_today %}<span class="muted">(heute)</span>{% endif %}
+    </p>
+  </div>
+  <form method="get" class="btn-row" style="gap: 6px;">
+    <input name="date" type="date" value="{{ selected_iso }}"
+           onchange="this.form.submit()">
+    {% if not is_today %}
+      <a class="btn small secondary" href="{{ url_for('dashboard') }}">Heute</a>
+    {% endif %}
+  </form>
+</div>
+
+{# ---------- Stat-Karten ---------- #}
+<div class="dash-stats">
+  <div class="dash-stat">
+    <div class="dash-stat-label">{{ day_label }}</div>
+    <div class="dash-stat-value">{{ stats.selected.d + stats.selected.c }}</div>
+    <div class="dash-stat-split">
+      <span class="badge type-d">{{ stats.selected.d }} dEH</span>
+      <span class="badge type-z">{{ stats.selected.c }} zEH</span>
+    </div>
+  </div>
+  <div class="dash-stat">
+    <div class="dash-stat-label">Gestern</div>
+    <div class="dash-stat-value">{{ stats.yesterday.d + stats.yesterday.c }}</div>
+    <div class="dash-stat-split">
+      <span class="badge type-d">{{ stats.yesterday.d }} dEH</span>
+      <span class="badge type-z">{{ stats.yesterday.c }} zEH</span>
+    </div>
+  </div>
+  <div class="dash-stat">
+    <div class="dash-stat-label">Diese Woche</div>
+    <div class="dash-stat-value">{{ stats.week.d + stats.week.c }}</div>
+    <div class="dash-stat-split">
+      <span class="badge type-d">{{ stats.week.d }} dEH</span>
+      <span class="badge type-z">{{ stats.week.c }} zEH</span>
+    </div>
+  </div>
+  <div class="dash-stat">
+    <div class="dash-stat-label">Insgesamt</div>
+    <div class="dash-stat-value">{{ stats.total.d + stats.total.c }}</div>
+    <div class="dash-stat-split">
+      <span class="badge type-d">{{ stats.total.d }} dEH</span>
+      <span class="badge type-z">{{ stats.total.c }} zEH</span>
+    </div>
+  </div>
+</div>
+
+{# ---------- Quick links ---------- #}
+<div class="card">
+  <div class="card-header">Schnell-Aktionen</div>
+  <div class="quick-links">
+    <a class="quick-link" href="{{ url_for('protocol_new_chooser') }}">
+      <div class="quick-icon">＋</div>
+      <div class="quick-text">
+        <div class="quick-title">Neuer Bericht</div>
+        <div class="quick-sub">Auswahl Dezentral / Zentral</div>
+      </div>
+    </a>
+    <a class="quick-link" href="{{ url_for('protocol_new') }}">
+      <div class="quick-icon">＋</div>
+      <div class="quick-text">
+        <div class="quick-title">Direkt: Dezentral</div>
+        <div class="quick-sub">DGUV-Formular</div>
+      </div>
+    </a>
+    <a class="quick-link" href="{{ url_for('central_new') }}">
+      <div class="quick-icon">＋</div>
+      <div class="quick-text">
+        <div class="quick-title">Direkt: Zentral</div>
+        <div class="quick-sub">mit Patientenprüfung</div>
+      </div>
+    </a>
+    <a class="quick-link" href="{{ url_for('index') }}">
+      <div class="quick-icon">≡</div>
+      <div class="quick-text">
+        <div class="quick-title">Alle Berichte</div>
+        <div class="quick-sub">filterbar</div>
+      </div>
+    </a>
+    <a class="quick-link" href="{{ url_for('patient_list') }}">
+      <div class="quick-icon">⌕</div>
+      <div class="quick-text">
+        <div class="quick-title">Personen</div>
+        <div class="quick-sub">Patientenstamm</div>
+      </div>
+    </a>
+    <a class="quick-link" href="{{ url_for('export_form') }}">
+      <div class="quick-icon">↓</div>
+      <div class="quick-text">
+        <div class="quick-title">Export</div>
+        <div class="quick-sub">CSV gefiltert</div>
+      </div>
+    </a>
+  </div>
+</div>
+
+{# ---------- Daily chart ---------- #}
+<div class="card">
+  <div class="card-header">Behandlungen — letzte 14 Tage</div>
+  <div class="chart-wrap">
+    {% set bar_w = 38 %}
+    {% set gap = 6 %}
+    {% set chart_h = 160 %}
+    {% set total_w = (bar_w + gap) * (chart|length) + gap %}
+    <svg viewBox="0 0 {{ total_w }} {{ chart_h + 30 }}" class="chart-svg" preserveAspectRatio="xMidYMid meet">
+      {# Y-Achsen-Linien (sehr dezent) #}
+      {% for tick in [0, 0.25, 0.5, 0.75, 1.0] %}
+        {% set y = chart_h - (chart_h * tick) %}
+        <line x1="0" y1="{{ y }}" x2="{{ total_w }}" y2="{{ y }}"
+              stroke="#eee" stroke-width="1" />
+      {% endfor %}
+      {% for d in chart %}
+        {% set x = gap + loop.index0 * (bar_w + gap) %}
+        {% set h_d = (d.decentral / chart_max * chart_h) | round(0, 'floor') | int %}
+        {% set h_c = (d.central / chart_max * chart_h) | round(0, 'floor') | int %}
+        {% set is_sel = (d.date == ref_date) %}
+        {# zentral oben, dezentral unten #}
+        {% if h_d > 0 %}
+          <rect x="{{ x }}" y="{{ chart_h - h_d }}"
+                width="{{ bar_w }}" height="{{ h_d }}"
+                fill="#2c5b8a" />
+        {% endif %}
+        {% if h_c > 0 %}
+          <rect x="{{ x }}" y="{{ chart_h - h_d - h_c }}"
+                width="{{ bar_w }}" height="{{ h_c }}"
+                fill="#b3261e" />
+        {% endif %}
+        {% if is_sel %}
+          <rect x="{{ x - 1 }}" y="0"
+                width="{{ bar_w + 2 }}" height="{{ chart_h }}"
+                fill="none" stroke="#7a1f2b" stroke-width="2"
+                stroke-dasharray="3,3" />
+        {% endif %}
+        <text x="{{ x + bar_w / 2 }}" y="{{ chart_h + 14 }}"
+              font-size="10" text-anchor="middle"
+              fill="{{ '#7a1f2b' if is_sel else '#6b7280' }}">
+          {{ d.date.strftime('%d.%m') }}
+        </text>
+        {% if d.decentral + d.central > 0 %}
+          <text x="{{ x + bar_w / 2 }}" y="{{ chart_h - h_d - h_c - 4 }}"
+                font-size="11" text-anchor="middle"
+                fill="#2a2422" font-weight="600">
+            {{ d.decentral + d.central }}
+          </text>
+        {% endif %}
+      {% endfor %}
+    </svg>
+  </div>
+  <div class="chart-legend">
+    <span><span class="legend-dot" style="background:#2c5b8a;"></span> dezentral</span>
+    <span><span class="legend-dot" style="background:#b3261e;"></span> zentral</span>
+    <span class="muted">— Achse skaliert auf Maximum von {{ chart_max }}</span>
+  </div>
+</div>
+
+{# ---------- Berichte des Tages ---------- #}
+<div class="card">
+  <div class="card-header">Berichte am {{ format_dt(selected_iso) }}</div>
+  {% if day_protocols %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Bericht</th>
+          <th>Typ</th>
+          <th>Zeit</th>
+          <th>Name</th>
+          <th>Stammnummer</th>
+          <th class="right"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in day_protocols %}
+        <tr>
+          <td class="id">{{ p.laufende_nr }}</td>
+          <td>
+            {% if p.source == 'decentral' %}
+              <span class="badge type-d">dEH</span>
+            {% else %}
+              <span class="badge type-z">zEH</span>
+            {% endif %}
+          </td>
+          <td>{{ format_dt(p.event_date) }}</td>
+          <td>{{ p.patient_name or '—' }}</td>
+          <td>{{ p.patient_stammnummer or '—' }}</td>
+          <td class="right">
+            {% if p.source == 'decentral' %}
+              <a class="btn small secondary" href="{{ url_for('protocol_detail', protocol_id=p.source_id) }}">Öffnen</a>
+            {% else %}
+              <a class="btn small secondary" href="{{ url_for('central_detail', pid=p.source_id) }}">Öffnen</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Keine Behandlungen an diesem Tag.</p>
+  {% endif %}
+</div>
+
+{# ---------- Top Ersthelfer ---------- #}
+{% if top_responders %}
+<div class="card">
+  <div class="card-header">Top Ersthelfer (dezentral, alle Zeit)</div>
+  <table class="data">
+    <thead><tr><th>Ersthelfer</th><th class="right">Behandlungen</th></tr></thead>
+    <tbody>
+      {% for r in top_responders %}
+        <tr>
+          <td>{{ r.responder }}</td>
+          <td class="right"><strong>{{ r.n }}</strong></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

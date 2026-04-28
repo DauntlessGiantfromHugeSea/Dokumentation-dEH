@@ -82,7 +82,14 @@
       </label>
       <label class="field">
         Name des Ersthelfers / der Ersthelferin
-        <input name="name_ersthelfer" value="{{ protocol.name_ersthelfer or '' }}">
+        <input name="name_ersthelfer" list="responder-options"
+               value="{{ protocol.name_ersthelfer or '' }}"
+               autocomplete="off">
+        <datalist id="responder-options">
+          {% for r in responder_options or [] %}
+            <option value="{{ r }}"></option>
+          {% endfor %}
+        </datalist>
       </label>
     </div>
     <label class="field">

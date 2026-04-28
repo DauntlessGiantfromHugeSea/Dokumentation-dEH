@@ -275,8 +275,11 @@ def create_app(test_config: dict | None = None) -> Flask:
             "patient_geburtsdatum": request.args.get("geburtsdatum", ""),
             "patient_stammnummer": request.args.get("stammnummer", ""),
         }
-        return render_template("protocol_form.html", protocol=prefill,
-                               existing_patient=None, mode="new")
+        return render_template(
+            "protocol_form.html", protocol=prefill,
+            existing_patient=None, mode="new",
+            responder_options=models.list_decentral_responders(models.get_db()),
+        )
 
     @app.route("/protocols/<int:protocol_id>")
     @decentral_view_required
@@ -300,8 +303,11 @@ def create_app(test_config: dict | None = None) -> Flask:
             abort(404)
         if request.method == "POST":
             return _save_protocol(protocol_id)
-        return render_template("protocol_form.html", protocol=protocol,
-                               existing_patient=None, mode="edit")
+        return render_template(
+            "protocol_form.html", protocol=protocol,
+            existing_patient=None, mode="edit",
+            responder_options=models.list_decentral_responders(db),
+        )
 
     @app.route("/protocols/<int:protocol_id>/delete", methods=["POST"])
     @decentral_view_required
@@ -449,55 +455,110 @@ def create_app(test_config: dict | None = None) -> Flask:
             },
         )
 
+    # ----- Dashboard -----
+
+    @app.route("/dashboard")
+    @decentral_view_required
+    def dashboard():
+        from datetime import date as _date
+        db = models.get_db()
+        # Selected day for the day-view; default heute.
+        sel = (request.args.get("date") or "").strip()
+        try:
+            ref = _date.fromisoformat(sel) if sel else _date.today()
+        except ValueError:
+            ref = _date.today()
+
+        stats = models.dashboard_stats(db, ref)
+        chart = models.dashboard_daily_counts(db, end_date=ref, days=14)
+        chart_max = max((d["decentral"] + d["central"] for d in chart),
+                        default=0)
+        # Berichte des ausgewählten Tages
+        day_protocols = models.list_unified_protocols(
+            db, date_from=ref.isoformat(), date_to=ref.isoformat()
+        )
+        top = models.top_decentral_responders(db, limit=5)
+        return render_template(
+            "dashboard.html",
+            stats=stats,
+            chart=chart,
+            chart_max=max(chart_max, 4),  # mind. 4er-Achse, sonst sieht's leer aus
+            day_protocols=day_protocols,
+            top_responders=top,
+            ref_date=ref,
+            today=_date.today(),
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/api/responders")
+    @decentral_view_required
+    def api_responders():
+        return {"responders": models.list_decentral_responders(models.get_db())}
+
     # ----- Central first-aid (Notfallprotokoll) -----
 
     @app.route("/central/new", methods=["GET", "POST"])
     @login_required
     def central_new():
-        """Interstitial step: validate patient identity before opening the SPA.
+        """Interstitial: Patient identifizieren, bevor die SPA geöffnet wird.
 
-        On GET: show identity form (vorname/nachname/geburtsdatum).
-        On POST: lookup the patient and render the page with a confirmation
-        card (Bestätigen/Nein).
+        Akzeptiert beliebige Kombination aus Vorname/Nachname/Geburtsdatum
+        (mind. eins). Bei genau 1 Treffer → Bestätigung. Bei 0 Treffern
+        und vollem Datensatz → Bestätigung "neue Person". Bei mehreren
+        Treffern oder unvollständiger Eingabe → Trefferliste zur Auswahl.
         """
-        # Keep form values and lookup parameters strictly separate from the
-        # query string so the chooser's empty params can't shadow form data.
         src = request.form if request.method == "POST" else request.args
         prefill = {
             "vorname": (src.get("vorname") or "").strip(),
             "nachname": (src.get("nachname") or "").strip(),
             "geburtsdatum": (src.get("geburtsdatum") or "").strip(),
         }
-        lookup = None
-        if request.method == "POST" and prefill["geburtsdatum"] and (
-                prefill["vorname"] or prefill["nachname"]):
+        full_name = " ".join(
+            p for p in (prefill["vorname"], prefill["nachname"]) if p
+        )
+
+        result = None  # one of: None, "single", "multiple", "new"
+        match = None
+        matches: list[dict] = []
+
+        if request.method == "POST" and (
+                full_name or prefill["geburtsdatum"]):
             db = models.get_db()
-            full_name = " ".join(
-                p for p in (prefill["vorname"], prefill["nachname"]) if p
+            rows = models.search_patients(
+                db, name_query=full_name, geburtsdatum=prefill["geburtsdatum"]
             )
-            row = db.execute(
-                "SELECT id, stammnummer FROM patients "
-                "WHERE name = ? AND geburtsdatum = ?",
-                (full_name, prefill["geburtsdatum"]),
-            ).fetchone()
-            if row:
-                counts = models.patient_protocol_counts(db, row["id"])
-                last = models.patient_last_treatment(db, row["id"])
-                lookup = {
-                    "found": True,
-                    "patient_id": row["id"]
-                                   if not current_user.is_zentral_only
-                                   else None,
-                    "patient_name": full_name,
-                    "stammnummer": row["stammnummer"] or "",
+            for r in rows:
+                counts = models.patient_protocol_counts(db, r["id"])
+                last = models.patient_last_treatment(db, r["id"])
+                matches.append({
+                    "id": r["id"],
+                    "name": r["name"],
+                    "geburtsdatum": r["geburtsdatum"],
+                    "stammnummer": r["stammnummer"] or "",
                     "decentral_count": counts["decentral"],
                     "central_count": counts["central"],
                     "last_treatment": last,
-                }
+                })
+
+            if len(matches) == 1:
+                result = "single"
+                match = matches[0]
+            elif len(matches) > 1:
+                result = "multiple"
+            elif full_name and prefill["geburtsdatum"]:
+                # Name + Geburtsdatum eindeutig → wirklich neue Person
+                result = "new"
             else:
-                lookup = {"found": False, "patient_name": full_name}
+                # Nur ein Feld eingegeben, nichts gefunden — User soll
+                # mehr Info eingeben statt direkt anlegen.
+                result = "no_partial_match"
+
         return render_template("central_new.html", prefill=prefill,
-                               lookup=lookup,
+                               result=result,
+                               match=match,
+                               matches=matches,
+                               full_name=full_name,
+                               is_zentral_only=current_user.is_zentral_only,
                                format_dt=models.format_dt)
 
     @app.route("/central")
@@ -689,29 +750,65 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/api/central/lookup")
     @login_required
     def api_central_lookup():
-        """Same idea as /api/patient-lookup but used by the central SPA."""
+        """Patientenstamm-Suche für SPA und /central/new.
+
+        Akzeptiert beliebige Kombination von vorname/nachname (zu name
+        kombiniert) und/oder geburtsdatum. Liefert eine Liste aller
+        Treffer (max. 20). Wenn >1 Treffer → der Aufrufer muss
+        disambiguieren (Name eingeben oder Patient auswählen).
+        """
         db = models.get_db()
         vorname = (request.args.get("vorname") or "").strip()
         nachname = (request.args.get("nachname") or "").strip()
+        # `name` kann auch direkt als ganzer Suchbegriff übergeben werden.
+        name_query = (
+            (request.args.get("name") or "").strip()
+            or " ".join(p for p in (vorname, nachname) if p)
+        )
         geburtsdatum = (request.args.get("geburtsdatum") or "").strip()
-        name = " ".join(p for p in (vorname, nachname) if p)
-        if not name or not geburtsdatum:
-            return {"found": False}
-        row = db.execute(
-            "SELECT id, stammnummer FROM patients WHERE name = ? AND geburtsdatum = ?",
-            (name, geburtsdatum),
-        ).fetchone()
-        if not row:
-            return {"found": False}
-        counts = models.patient_protocol_counts(db, row["id"])
-        # zentral_writer sees the count but no patient_id (no link to akte).
+        if not name_query and not geburtsdatum:
+            return {"matches": []}
+
+        rows = models.search_patients(
+            db, name_query=name_query, geburtsdatum=geburtsdatum
+        )
+        matches = []
+        for r in rows:
+            counts = models.patient_protocol_counts(db, r["id"])
+            last = models.patient_last_treatment(db, r["id"])
+            matches.append({
+                "patient_id": (None if current_user.is_zentral_only
+                               else r["id"]),
+                "name": r["name"],
+                "geburtsdatum": r["geburtsdatum"],
+                "stammnummer": r["stammnummer"] or "",
+                "previous_decentral": counts["decentral"],
+                "previous_central": counts["central"],
+                "last_treatment": last,
+            })
+        return {"matches": matches}
+
+    @app.route("/api/central/patient-history")
+    @login_required
+    def api_central_patient_history():
+        """Liste aller Berichte (dezentral + zentral) eines Patienten —
+        Datenquelle für das Vorbehandlungs-Popup. Für zentral_writer
+        gesperrt (sie sehen nur Anzahlen, keinen Inhalt)."""
+        if current_user.is_zentral_only:
+            abort(403)
+        db = models.get_db()
+        try:
+            pid = int(request.args.get("patient_id") or 0)
+        except ValueError:
+            return {"error": "invalid patient_id"}, 400
+        if not pid:
+            return {"error": "patient_id required"}, 400
+        patient = models.get_patient(db, pid)
+        if not patient:
+            return {"error": "not found"}, 404
         return {
-            "found": True,
-            "patient_id": (None if current_user.is_zentral_only
-                           else row["id"]),
-            "stammnummer": row["stammnummer"] or "",
-            "previous_decentral": counts["decentral"],
-            "previous_central": counts["central"],
+            "patient": dict(patient),
+            "history": models.patient_history(db, pid),
         }
 
     # ----- Account (any logged-in user) -----

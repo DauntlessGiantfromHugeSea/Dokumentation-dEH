@@ -3,22 +3,21 @@
 {% block content %}
 <h1>Zentrale Erste Hilfe</h1>
 <p class="tagline">
-  {% if lookup %}
-    Schritt 2 von 2 — bitte bestätigen oder zurückgehen.
+  {% if result %}
+    Schritt 2 von 2 — Person bestätigen.
   {% else %}
-    Schritt 1 von 2 — zuerst Person identifizieren.
+    Schritt 1 von 2 — Person identifizieren (Name <em>oder</em> Geburtsdatum reicht).
   {% endif %}
 </p>
 
-{% if not lookup %}
-{# ------- Suche ------- #}
+{# ------- Suchformular ------- #}
 <form method="post" action="{{ url_for('central_new') }}" class="card stack">
   <div class="card-header">Wer wird behandelt?</div>
   <div class="row three">
     <label class="field">
       Vorname
-      <input name="vorname" value="{{ prefill.vorname }}" autofocus
-             autocomplete="off">
+      <input name="vorname" value="{{ prefill.vorname }}"
+             autocomplete="off" {% if not result %}autofocus{% endif %}>
     </label>
     <label class="field">
       Nachname
@@ -26,40 +25,39 @@
              autocomplete="off">
     </label>
     <label class="field">
-      Geburtsdatum <span class="req">*</span>
-      <input name="geburtsdatum" type="date" required
+      Geburtsdatum
+      <input name="geburtsdatum" type="date"
              value="{{ prefill.geburtsdatum }}">
     </label>
   </div>
-  <div><button class="btn" type="submit">Suchen</button></div>
+  <div class="btn-row">
+    <button class="btn" type="submit">Suchen</button>
+    {% if result %}
+      <a class="btn secondary" href="{{ url_for('central_new') }}">Zurücksetzen</a>
+    {% endif %}
+  </div>
   <p class="muted" style="font-size: 0.85rem; margin: 0;">
-    Geburtsdatum + Name werden gegen die Patientenakten geprüft.
-    Schritt 2 verlangt eine Bestätigung, bevor das Protokoll geöffnet wird.
+    Mindestens ein Feld ausfüllen. Mehrere Treffer? — Name + Geburtsdatum
+    zusammen liefert eindeutige Ergebnisse.
   </p>
 </form>
 
-{% else %}
-{# ------- Bestätigung ------- #}
+{# ------- Ergebnis ------- #}
 
-<p class="muted" style="margin-bottom: 12px;">
-  Eingabe: <strong>{{ lookup.patient_name }}</strong>,
-  geb. {{ format_dt(prefill.geburtsdatum) }}
-</p>
-
-{% if lookup.found %}
+{% if result == "single" %}
   <div class="card confirm-card confirm-found">
     <div class="card-header">Bekannte Person — bitte bestätigen</div>
     <p style="margin: 0 0 14px;">
-      Eine Patientenakte zu <strong>{{ lookup.patient_name }}</strong>
-      (geb. {{ format_dt(prefill.geburtsdatum) }}) existiert bereits.
+      Eine Patientenakte zu <strong>{{ match.name }}</strong>
+      (geb. {{ format_dt(match.geburtsdatum) }}) existiert bereits.
       Stimmt das überein?
     </p>
     <div class="protocol-meta">
       <div class="kv">
         <div class="label">Stammnummer</div>
         <div class="value">
-          {% if lookup.stammnummer %}
-            <strong>{{ lookup.stammnummer }}</strong>
+          {% if match.stammnummer %}
+            <strong>{{ match.stammnummer }}</strong>
           {% else %}
             <span class="muted">— (keine vergeben)</span>
           {% endif %}
@@ -68,14 +66,14 @@
       <div class="kv">
         <div class="label">Bisherige Behandlungen</div>
         <div class="value">
-          <strong>{{ lookup.decentral_count }}</strong> dezentral
-          · <strong>{{ lookup.central_count }}</strong> zentral
+          <strong>{{ match.decentral_count }}</strong> dezentral
+          · <strong>{{ match.central_count }}</strong> zentral
         </div>
       </div>
-      {% if lookup.last_treatment %}
+      {% if match.last_treatment %}
       <div class="kv">
         <div class="label">Letzte Behandlung</div>
-        <div class="value">{{ format_dt(lookup.last_treatment) }}</div>
+        <div class="value">{{ format_dt(match.last_treatment) }}</div>
       </div>
       {% endif %}
     </div>
@@ -83,27 +81,69 @@
     <div class="btn-row" style="margin-top: 16px;">
       <a class="btn"
          href="{{ url_for('central_index',
-                          vorname=prefill.vorname,
-                          nachname=prefill.nachname,
-                          geburtsdatum=prefill.geburtsdatum) }}">
-        Ja, das ist die richtige Person — Behandlung beginnen
+                          vorname=match.name.split(' ')[0],
+                          nachname=match.name.rsplit(' ', 1)[-1] if ' ' in match.name else '',
+                          geburtsdatum=match.geburtsdatum) }}">
+        Ja — Behandlung beginnen
       </a>
       <a class="btn secondary" href="{{ url_for('central_new') }}">
-        Nein, andere Person eingeben
+        Nein, andere Person
       </a>
-      {% if lookup.patient_id %}
+      {% if not is_zentral_only %}
         <a class="btn secondary" target="_blank"
-           href="{{ url_for('patient_detail', patient_id=lookup.patient_id) }}">
+           href="{{ url_for('patient_detail', patient_id=match.id) }}">
           Vollständige Akte öffnen
         </a>
       {% endif %}
     </div>
   </div>
-{% else %}
+
+{% elif result == "multiple" %}
+  <div class="card confirm-card">
+    <div class="card-header">Mehrere Treffer — bitte auswählen</div>
+    <p style="margin: 0 0 14px;">
+      <strong>{{ matches|length }}</strong> Personen passen zur Eingabe.
+      Wähle die richtige Person aus oder verfeinere die Suche oben.
+    </p>
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Geburtsdatum</th>
+          <th>Stammnummer</th>
+          <th class="right">Vorbehandl.</th>
+          <th class="right"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in matches %}
+          <tr>
+            <td><strong>{{ m.name }}</strong></td>
+            <td>{{ format_dt(m.geburtsdatum) }}</td>
+            <td>{{ m.stammnummer or '—' }}</td>
+            <td class="right">
+              {{ m.decentral_count }} dEH · {{ m.central_count }} zEH
+            </td>
+            <td class="right">
+              <a class="btn small"
+                 href="{{ url_for('central_index',
+                                  vorname=m.name.split(' ')[0],
+                                  nachname=m.name.rsplit(' ', 1)[-1] if ' ' in m.name else '',
+                                  geburtsdatum=m.geburtsdatum) }}">
+                Wählen
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+{% elif result == "new" %}
   <div class="card confirm-card confirm-new">
     <div class="card-header">Neue Person — bitte bestätigen</div>
     <p style="margin: 0 0 12px;">
-      Für <strong>{{ lookup.patient_name }}</strong>
+      Für <strong>{{ full_name }}</strong>
       (geb. {{ format_dt(prefill.geburtsdatum) }}) gibt es noch
       <strong>keine Patientenakte</strong>. Beim Speichern des Berichts
       wird ein neuer Datensatz angelegt.
@@ -125,6 +165,25 @@
       </a>
     </div>
   </div>
-{% endif %}
+
+{% elif result == "no_partial_match" %}
+  <div class="card confirm-card confirm-new">
+    <div class="card-header">Kein Treffer mit dieser Eingabe</div>
+    <p style="margin: 0 0 12px;">
+      Mit
+      {% if full_name and prefill.geburtsdatum %}
+        Name „{{ full_name }}" + Geburtsdatum {{ format_dt(prefill.geburtsdatum) }}
+      {% elif full_name %}
+        Name „{{ full_name }}"
+      {% else %}
+        Geburtsdatum {{ format_dt(prefill.geburtsdatum) }}
+      {% endif %}
+      wurde keine Akte gefunden.
+    </p>
+    <p class="muted" style="margin: 0 0 14px; font-size: 0.9rem;">
+      Bitte das fehlende Feld ergänzen, dann erkennt das System eine
+      neue Person sicher.
+    </p>
+  </div>
 {% endif %}
 {% endblock %}
