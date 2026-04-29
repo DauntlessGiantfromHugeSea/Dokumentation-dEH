@@ -40,9 +40,11 @@
       <a class="btn secondary small"
          href="{{ url_for('central_index') }}#{{ protocol.id }}">Bearbeiten</a>
     {% endif %}
-    <a class="btn small"
-       href="{{ url_for('api_central_pdf', pid=protocol.id) }}"
-       target="_blank">PDF</a>
+    {% if current_user.is_admin %}
+      <a class="btn small"
+         href="{{ url_for('api_central_pdf', pid=protocol.id) }}"
+         target="_blank">PDF</a>
+    {% endif %}
     {% if is_owner or not current_user.is_zentral_only %}
       <details class="inline-action">
         <summary class="btn small danger">Löschen</summary>
@@ -379,6 +381,46 @@
   <div class="kv">
     <div class="label">Verbrauchtes Material</div>
     <div class="value">{{ v(d.get("material")) }}</div>
+  </div>
+</div>
+{% endif %}
+
+{% if d.get("signature_einsatzkraft1") or d.get("signature_einsatzkraft2") %}
+<div class="card">
+  <div class="card-header">Unterschriften</div>
+  <div class="protocol-meta">
+    <div class="kv">
+      <div class="label">Einsatzkraft 1
+        {% if d.get("einsatzkraft1") %}— {{ d.get("einsatzkraft1") }}{% endif %}
+      </div>
+      <div class="value">
+        {% if d.get("signature_einsatzkraft1") %}
+          <img src="{{ d.get('signature_einsatzkraft1') }}"
+               alt="Unterschrift Einsatzkraft 1"
+               style="max-width: 100%; height: 110px; background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 4px;">
+          <div style="font-size: 0.78rem; color: var(--muted); margin-top: 4px;">
+            {% if d.get("signature_einsatzkraft1_at") %}am {{ format_dt(d.get("signature_einsatzkraft1_at")) }}{% endif %}
+            {% if d.get("signature_einsatzkraft1_by") %}· erfasst von {{ d.get("signature_einsatzkraft1_by") }}{% endif %}
+          </div>
+        {% else %}—{% endif %}
+      </div>
+    </div>
+    <div class="kv">
+      <div class="label">Einsatzkraft 2
+        {% if d.get("einsatzkraft2") %}— {{ d.get("einsatzkraft2") }}{% endif %}
+      </div>
+      <div class="value">
+        {% if d.get("signature_einsatzkraft2") %}
+          <img src="{{ d.get('signature_einsatzkraft2') }}"
+               alt="Unterschrift Einsatzkraft 2"
+               style="max-width: 100%; height: 110px; background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 4px;">
+          <div style="font-size: 0.78rem; color: var(--muted); margin-top: 4px;">
+            {% if d.get("signature_einsatzkraft2_at") %}am {{ format_dt(d.get("signature_einsatzkraft2_at")) }}{% endif %}
+            {% if d.get("signature_einsatzkraft2_by") %}· erfasst von {{ d.get("signature_einsatzkraft2_by") }}{% endif %}
+          </div>
+        {% else %}—{% endif %}
+      </div>
+    </div>
   </div>
 </div>
 {% endif %}

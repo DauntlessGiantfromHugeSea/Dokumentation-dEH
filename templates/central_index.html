@@ -220,6 +220,24 @@
     font-size: 0.8rem;
     margin: 0;
   }
+
+  /* Unterschriften-Pads */
+  .sig-wrap { display: flex; flex-direction: column; gap: 6px; }
+  .sig-label { font-size: 0.85rem; font-weight: 600; }
+  .sig-label .muted { font-weight: 400; color: var(--muted); }
+  .sig-pad {
+    width: 100%;
+    height: 160px;
+    background: #fff;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  .sig-pad.signed { border-color: #1f6b3a; box-shadow: 0 0 0 2px rgba(31,107,58,0.15) inset; }
+  .sig-actions { display: flex; align-items: center; gap: 10px; }
+  .sig-status { font-size: 0.78rem; color: var(--muted); }
+  .sig-status.ok { color: #1f6b3a; font-weight: 600; }
   .vh-unlocked-meta {
     font-size: 0.75rem;
     color: var(--muted);
@@ -578,8 +596,10 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span class="status-pill" id="status"><span class="dot"></span><span class="label">Bereit</span></span>
           <div class="btn-group">
-            <button class="btn sm primary" id="btn-pdf">PDF</button>
-            <button class="btn sm" id="btn-print">Drucken</button>
+            {% if current_user.is_admin %}
+              <button class="btn sm primary" id="btn-pdf">PDF</button>
+              <button class="btn sm" id="btn-print">Drucken</button>
+            {% endif %}
             <button class="btn sm danger" id="btn-delete">Löschen</button>
           </div>
         </div>
@@ -623,11 +643,39 @@
           {% else %}
           <div class="section">
             <div class="label">Anschrift &amp; Kontakt</div>
-            <p style="margin: 6px 0 0; font-size: 0.88rem; color: var(--muted);">
-              Nur Admins dürfen diese Felder erfassen oder einsehen. Auf der
-              Detailseite des Berichts kann ein Admin die Daten per PIN
-              kurzzeitig freigeben.
+            <p style="margin: 6px 0 8px; font-size: 0.88rem; color: var(--muted);">
+              Nur Admins dürfen diese Felder erfassen oder bearbeiten. Mit
+              Admin-PIN kannst du die Daten kurzzeitig einsehen.
             </p>
+            <button class="btn sm" type="button" id="contactRevealBtn"
+                    style="display: none;">
+              Daten freigeben (Admin-PIN)
+            </button>
+            <p id="contactRevealHint" class="muted" style="font-size: 0.78rem; margin: 6px 0 0; display: none;">
+              Daten werden hier nur sichtbar, wenn der Bericht bereits
+              Anschrift hinterlegt hat — wird beim Öffnen geprüft.
+            </p>
+            <form id="contactRevealForm" style="display:none; margin-top: 8px; padding: 10px; background: var(--bg-alt); border-radius: 6px;">
+              <div class="grid cols-2">
+                <div class="field">
+                  <label>Admin
+                    <select id="contactRevealAdmin" required></select>
+                  </label>
+                </div>
+                <div class="field">
+                  <label>PIN
+                    <input id="contactRevealPin" type="password" inputmode="numeric"
+                           autocomplete="off" required>
+                  </label>
+                </div>
+              </div>
+              <div class="btn-row" style="margin-top: 8px;">
+                <button class="btn sm primary" type="submit">Anzeigen</button>
+                <button class="btn sm" type="button" id="contactRevealCancel">Abbrechen</button>
+              </div>
+              <p id="contactRevealErr" class="muted" style="color:#b3261e; font-size: 0.8rem; margin: 6px 0 0; display: none;"></p>
+            </form>
+            <div id="contactRevealResult" style="display:none; margin-top: 12px;"></div>
           </div>
           {% endif %}
         </section>
@@ -909,6 +957,42 @@
           </div>
 
           <div class="section">
+            <div class="label">Unterschriften</div>
+            <p style="font-size: 0.85rem; color: var(--muted); margin: 6px 0 12px;">
+              Beide Einsatzkräfte unterschreiben als Nachweis der Behandlung.
+              Mit Maus oder Finger im Feld unterschreiben.
+            </p>
+            <div class="grid cols-2">
+              <div class="sig-wrap">
+                <label class="sig-label" for="sig-pad-1">
+                  Einsatzkraft 1 <span id="sig-name-1" class="muted"></span>
+                </label>
+                <canvas id="sig-pad-1" class="sig-pad" width="600" height="160"></canvas>
+                <div class="sig-actions">
+                  <button class="btn sm" type="button" data-sig-clear="1">Löschen</button>
+                  <span class="sig-status" id="sig-status-1"></span>
+                </div>
+                <input type="hidden" name="signature_einsatzkraft1" id="signature_einsatzkraft1">
+                <input type="hidden" name="signature_einsatzkraft1_at" id="signature_einsatzkraft1_at">
+                <input type="hidden" name="signature_einsatzkraft1_by" id="signature_einsatzkraft1_by">
+              </div>
+              <div class="sig-wrap">
+                <label class="sig-label" for="sig-pad-2">
+                  Einsatzkraft 2 <span id="sig-name-2" class="muted"></span>
+                </label>
+                <canvas id="sig-pad-2" class="sig-pad" width="600" height="160"></canvas>
+                <div class="sig-actions">
+                  <button class="btn sm" type="button" data-sig-clear="2">Löschen</button>
+                  <span class="sig-status" id="sig-status-2"></span>
+                </div>
+                <input type="hidden" name="signature_einsatzkraft2" id="signature_einsatzkraft2">
+                <input type="hidden" name="signature_einsatzkraft2_at" id="signature_einsatzkraft2_at">
+                <input type="hidden" name="signature_einsatzkraft2_by" id="signature_einsatzkraft2_by">
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
             <div class="label">Zusammenfassung</div>
             <div class="summary" id="summary"></div>
           </div>
@@ -932,6 +1016,11 @@
   const SAVE_DEBOUNCE_MS = 600;
   let currentPage = 1;
   let currentId = null;
+  // Für externes Reveal-Script (Admin-PIN-Freigabe der Anschrift) sichtbar machen.
+  Object.defineProperty(window, '__centralCurrentId', {
+    get: () => currentId,
+    configurable: false,
+  });
   let saveTimer = null;
   let dirty = false;
 
@@ -1290,8 +1379,9 @@
     await newProtocol();
   });
 
-  // ============ PDF / Print ============
-  document.getElementById('btn-pdf').addEventListener('click', async () => {
+  // ============ PDF / Print (nur Admins) ============
+  const btnPdf = document.getElementById('btn-pdf');
+  if (btnPdf) btnPdf.addEventListener('click', async () => {
     if (dirty) await performSave();
     if (currentId == null) {
       const res = await apiCreate(collectData());
@@ -1303,7 +1393,8 @@
     }
     window.open('/api/central/protokolle/' + currentId + '/pdf', '_blank');
   });
-  document.getElementById('btn-print').addEventListener('click', () => window.print());
+  const btnPrint = document.getElementById('btn-print');
+  if (btnPrint) btnPrint.addEventListener('click', () => window.print());
   document.getElementById('btn-sidebar').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
 
   // ============ Summary ============
@@ -1365,6 +1456,307 @@
 
 <script>
 const IS_ZENTRAL_ONLY = {{ 'true' if current_user.is_zentral_only else 'false' }};
+const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
+const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|tojson }};
+</script>
+
+<script>
+// Anschrift-&-Kontakt-Reveal in der SPA: zeigt Button nur wenn ein
+// existierender Bericht geladen ist; klickt Admin+PIN; rendert Daten
+// read-only inline.
+(function () {
+  if (IS_ADMIN) return;  // Admins sehen die Felder direkt
+  const btn = document.getElementById('contactRevealBtn');
+  const form = document.getElementById('contactRevealForm');
+  const sel = document.getElementById('contactRevealAdmin');
+  const pinEl = document.getElementById('contactRevealPin');
+  const cancel = document.getElementById('contactRevealCancel');
+  const errEl = document.getElementById('contactRevealErr');
+  const resultEl = document.getElementById('contactRevealResult');
+  const hint = document.getElementById('contactRevealHint');
+  if (!btn || !form) return;
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  // Show button only if we have a saved protocol id (currentId)
+  function refresh() {
+    const has = (typeof window.__centralCurrentId !== 'undefined' && window.__centralCurrentId);
+    btn.style.display = has ? 'inline-block' : 'none';
+    if (hint) hint.style.display = has ? 'none' : 'block';
+    if (!has) {
+      form.style.display = 'none';
+      resultEl.style.display = 'none';
+    }
+  }
+  setInterval(refresh, 500);
+  refresh();
+
+  async function loadAdmins() {
+    try {
+      const res = await fetch('/api/admin-list', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (!data.admins || !data.admins.length) {
+        sel.innerHTML = '<option value="">— kein Admin mit PIN —</option>';
+        return;
+      }
+      sel.innerHTML = data.admins.map(
+        a => `<option value="${escapeHtml(a.username)}">${escapeHtml(a.label)}</option>`
+      ).join('');
+    } catch (_) {
+      sel.innerHTML = '<option value="">— Fehler beim Laden —</option>';
+    }
+  }
+  btn.addEventListener('click', async () => {
+    await loadAdmins();
+    form.style.display = 'block';
+    btn.style.display = 'none';
+    setTimeout(() => pinEl.focus(), 50);
+  });
+  cancel.addEventListener('click', () => {
+    form.style.display = 'none';
+    btn.style.display = 'inline-block';
+    errEl.style.display = 'none';
+    pinEl.value = '';
+  });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errEl.style.display = 'none';
+    const pid = window.__centralCurrentId;
+    if (!pid) return;
+    try {
+      const res = await fetch(`/api/central/protokolle/${pid}/reveal-contact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          admin_username: sel.value,
+          admin_pin: pinEl.value.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        errEl.textContent = data.error || 'Freigabe fehlgeschlagen.';
+        errEl.style.display = 'block';
+        pinEl.value = '';
+        return;
+      }
+      form.style.display = 'none';
+      const c = data.contact || {};
+      let html = '<div style="background: #e8f4ec; padding: 10px 12px; border-radius: 6px; border-left: 4px solid #1f6b3a;">' +
+        '<div style="font-size: 0.85rem; font-weight: 600; color: #1f6b3a;">' +
+          'Freigegeben durch ' + escapeHtml(data.approved_by) + ' · ' +
+          new Date().toLocaleString('de-DE') +
+        '</div>' +
+        '<div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">' +
+          (c.strasse ? '<div><div style="color:var(--muted);font-size:0.78rem;">Straße</div>' + escapeHtml(c.strasse) + '</div>' : '') +
+          (c.plz ? '<div><div style="color:var(--muted);font-size:0.78rem;">PLZ</div>' + escapeHtml(c.plz) + '</div>' : '') +
+          (c.stadt ? '<div><div style="color:var(--muted);font-size:0.78rem;">Stadt</div>' + escapeHtml(c.stadt) + '</div>' : '') +
+          (c.telefon ? '<div><div style="color:var(--muted);font-size:0.78rem;">Telefon</div>' + escapeHtml(c.telefon) + '</div>' : '') +
+          (c.krankenkasse ? '<div><div style="color:var(--muted);font-size:0.78rem;">Krankenkasse</div>' + escapeHtml(c.krankenkasse) + '</div>' : '') +
+        '</div></div>';
+      resultEl.innerHTML = html;
+      resultEl.style.display = 'block';
+    } catch (_) {
+      errEl.textContent = 'Netzwerkfehler.';
+      errEl.style.display = 'block';
+    }
+  });
+})();
+</script>
+
+<script>
+// Unterschriften-Pads für Einsatzkraft 1 und 2 (Page 9 — Abschluss).
+// Speichert die Signatur als Data-URL in den hidden inputs, dazu Timestamp
+// und User-Label. applyData() lädt sie zurück, wenn ein Bericht geöffnet wird.
+(function () {
+  const pads = [1, 2].map(n => {
+    const canvas = document.getElementById('sig-pad-' + n);
+    if (!canvas) return null;
+    const ctx = canvas.getContext('2d');
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#18202b';
+    let drawing = false;
+    let lastX = 0, lastY = 0;
+    let hasInk = false;
+
+    function getPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const t = e.touches && e.touches[0];
+      const cx = t ? t.clientX : e.clientX;
+      const cy = t ? t.clientY : e.clientY;
+      return {
+        x: (cx - rect.left) * (canvas.width / rect.width),
+        y: (cy - rect.top) * (canvas.height / rect.height),
+      };
+    }
+    function start(e) {
+      e.preventDefault();
+      drawing = true;
+      const p = getPos(e);
+      lastX = p.x; lastY = p.y;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+    }
+    function move(e) {
+      if (!drawing) return;
+      e.preventDefault();
+      const p = getPos(e);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      lastX = p.x; lastY = p.y;
+      hasInk = true;
+    }
+    function end(e) {
+      if (!drawing) return;
+      drawing = false;
+      onChange();
+    }
+    function onChange() {
+      if (!hasInk) return;
+      const dataUrl = canvas.toDataURL('image/png');
+      const elSig = document.getElementById('signature_einsatzkraft' + n);
+      const elAt = document.getElementById('signature_einsatzkraft' + n + '_at');
+      const elBy = document.getElementById('signature_einsatzkraft' + n + '_by');
+      if (elSig) elSig.value = dataUrl;
+      if (elAt && !elAt.value) elAt.value = new Date().toISOString();
+      if (elBy && !elBy.value) elBy.value = CURRENT_USER_LABEL;
+      canvas.classList.add('signed');
+      const status = document.getElementById('sig-status-' + n);
+      if (status) {
+        status.textContent = 'unterschrieben · ' +
+          new Date(elAt.value).toLocaleString('de-DE');
+        status.classList.add('ok');
+      }
+      // dirty-Flag triggern (im Haupt-SPA über das form-input-Event)
+      elSig && elSig.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    canvas.addEventListener('mouseup', end);
+    canvas.addEventListener('mouseleave', end);
+    canvas.addEventListener('touchstart', start, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
+    canvas.addEventListener('touchend', end);
+
+    return {
+      n,
+      canvas, ctx,
+      clear() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        hasInk = false;
+        canvas.classList.remove('signed');
+        const elSig = document.getElementById('signature_einsatzkraft' + n);
+        const elAt = document.getElementById('signature_einsatzkraft' + n + '_at');
+        const elBy = document.getElementById('signature_einsatzkraft' + n + '_by');
+        if (elSig) { elSig.value = ''; elSig.dispatchEvent(new Event('input', { bubbles: true })); }
+        if (elAt) elAt.value = '';
+        if (elBy) elBy.value = '';
+        const status = document.getElementById('sig-status-' + n);
+        if (status) { status.textContent = ''; status.classList.remove('ok'); }
+      },
+      restoreFromData(dataUrl, at, by) {
+        if (!dataUrl) return;
+        const img = new Image();
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          hasInk = true;
+          canvas.classList.add('signed');
+          const status = document.getElementById('sig-status-' + n);
+          if (status) {
+            const when = at ? new Date(at).toLocaleString('de-DE') : 'gespeichert';
+            const who = by ? ' · ' + by : '';
+            status.textContent = 'unterschrieben · ' + when + who;
+            status.classList.add('ok');
+          }
+        };
+        img.src = dataUrl;
+      },
+    };
+  });
+
+  document.querySelectorAll('[data-sig-clear]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const n = Number(btn.dataset.sigClear);
+      const pad = pads[n - 1];
+      if (pad) pad.clear();
+    });
+  });
+
+  // Wenn ein bestehender Bericht geladen wird (applyData), die Signaturen
+  // aus den hidden inputs ins Canvas zurückzeichnen.
+  const form = document.getElementById('protocol-form');
+  if (form) {
+    const observer = new MutationObserver(() => {});
+    // einfacher: nach apiGet hört der Haupt-SPA auf, die Felder zu setzen.
+    // Wir hängen uns an den load-protocol-Flow per Custom Event:
+    form.addEventListener('vh:after-apply', () => {
+      [1, 2].forEach(n => {
+        const pad = pads[n - 1];
+        if (!pad) return;
+        const sig = document.getElementById('signature_einsatzkraft' + n);
+        const at = document.getElementById('signature_einsatzkraft' + n + '_at');
+        const by = document.getElementById('signature_einsatzkraft' + n + '_by');
+        if (sig && sig.value) {
+          pad.restoreFromData(sig.value, at && at.value, by && by.value);
+        } else {
+          pad.clear();
+        }
+      });
+      // Pre-fill name labels from einsatzkraft1/2 inputs
+      const ek1 = document.querySelector('[name="einsatzkraft1"]');
+      const ek2 = document.querySelector('[name="einsatzkraft2"]');
+      const lab1 = document.getElementById('sig-name-1');
+      const lab2 = document.getElementById('sig-name-2');
+      if (lab1) lab1.textContent = ek1 && ek1.value ? '— ' + ek1.value : '';
+      if (lab2) lab2.textContent = ek2 && ek2.value ? '— ' + ek2.value : '';
+    });
+    // Update labels live
+    form.addEventListener('input', (e) => {
+      if (e.target.name === 'einsatzkraft1') {
+        const lab = document.getElementById('sig-name-1');
+        if (lab) lab.textContent = e.target.value ? '— ' + e.target.value : '';
+      }
+      if (e.target.name === 'einsatzkraft2') {
+        const lab = document.getElementById('sig-name-2');
+        if (lab) lab.textContent = e.target.value ? '— ' + e.target.value : '';
+      }
+    });
+  }
+})();
+</script>
+
+<script>
+// Helper-Bridge: nach jedem applyData() in der Haupt-SPA dispatchen wir
+// ein Custom Event, damit das Signatur-Skript die Pads neu zeichnen kann.
+(function () {
+  const form = document.getElementById('protocol-form');
+  if (!form) return;
+  // Hook in form.reset() and applyData via MutationObserver — easier:
+  // patch the global applyData if present. Falls back to listening on
+  // 'change' of hidden signature inputs (apiGet sets them via applyData).
+  let lastSig = '';
+  const sig1 = document.getElementById('signature_einsatzkraft1');
+  function poll() {
+    const v = (sig1 ? sig1.value : '');
+    if (v !== lastSig) {
+      lastSig = v;
+      form.dispatchEvent(new CustomEvent('vh:after-apply'));
+    }
+  }
+  // Initial trigger after a short delay so that init's loadProtocol/newProtocol
+  // has populated the form.
+  setTimeout(() => { lastSig = ''; poll(); }, 600);
+  // Re-trigger whenever applyData runs — applyData calls form.reset() then
+  // sets values; a focus/blur on hidden inputs doesn't fire change. Use
+  // a periodic poll. Cheap.
+  setInterval(poll, 500);
+})();
 </script>
 <script>
 // Live-Lookup: schon beim Tippen von Vorname/Nachname/Geburtsdatum

@@ -879,6 +879,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/api/central/protokolle/<int:pid>/pdf")
     @login_required
     def api_central_pdf(pid: int):
+        # Notfallprotokoll-PDF ist admin-only — Voll-User und zentral_writer
+        # haben keine Veranlassung, PDFs zu generieren (Admin-Aufgabe).
+        if not current_user.is_admin:
+            abort(403)
         db = models.get_db()
         rec = models.get_central_protocol(db, pid)
         if not rec:
