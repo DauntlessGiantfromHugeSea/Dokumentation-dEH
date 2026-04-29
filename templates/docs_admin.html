@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Anleitung — Admins{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Anleitung für Admins</h1>
+    <p class="tagline">
+      Verwaltung, Sicherheit, Akten-Export und Server-Betrieb.
+    </p>
+  </div>
+  <a class="btn small secondary" href="{{ url_for('docs_index') }}">← Übersicht</a>
+</div>
+
+<div class="card">
+  <div class="card-header">1. Initiales Setup</div>
+  <ol class="docs-list">
+    <li>Erster User wird beim Erststart automatisch zum Admin promoted.</li>
+    <li><strong>2FA</strong> ist Pflicht. Beim ersten Login kommt der QR-Code,
+      einmal mit der Authenticator-App scannen.</li>
+    <li><strong>Admin-PIN setzen</strong>: Klick auf deinen Namen oben rechts →
+      <strong>Account-PIN</strong> (Pfad: <code>/account/pin</code>). Mindestens 4 Ziffern,
+      nur Zahlen.
+      <br>Ohne PIN tauchst du im Entschlüsseln-Dialog nicht auf!</li>
+  </ol>
+</div>
+
+<div class="card">
+  <div class="card-header">2. Benutzer verwalten</div>
+  <p>Topnav → <strong>Benutzer</strong> (<code>/admin/users</code>).</p>
+  <h3 style="font-size: 1rem;">Anlegen</h3>
+  <ul class="docs-list">
+    <li><strong>Benutzername</strong> + <strong>Voller Name</strong> + <strong>Passwort</strong>
+      (mindestens 6 Zeichen, idealerweise einmalig vergeben — User soll
+      es selbst ändern).</li>
+    <li><strong>Rolle</strong>:
+      <ul>
+        <li><strong>Voll (Lesen + Schreiben)</strong> — Standard-Helfer mit Zugang
+          zu beiden Welten.</li>
+        <li><strong>Nur Zentrale Erste Hilfe schreiben</strong> — kann nur eigene
+          zentrale Berichte anlegen, kann Vorbehandlungen lesen, aber
+          keine dezentralen Berichte schreiben.</li>
+      </ul>
+    </li>
+    <li>Häkchen <strong>Administrator</strong> — orthogonal zur Rolle. Nur Admins können
+      User verwalten und Adress-Daten freigeben.</li>
+  </ul>
+  <h3 style="font-size: 1rem;">In der Liste</h3>
+  <ul class="docs-list">
+    <li><strong>Passwort</strong>-Aktion: setzt ein neues Passwort für den User
+      (z.&nbsp;B. wenn er es vergessen hat).</li>
+    <li><strong>Rolle ändern</strong>: Dropdown direkt in der Zeile.</li>
+    <li><strong>Admin geben / entziehen</strong>: für andere User toggeln. Letzten Admin
+      kann das System nicht löschen oder demoten.</li>
+    <li><strong>2FA aktivieren / deaktivieren</strong>: per User. Mit „deaktiviert"
+      wird der User mit nur Passwort eingeloggt — bestehende Authenticator-
+      Secrets bleiben erhalten und werden bei Re-Aktivierung weiter genutzt.</li>
+    <li><strong>2FA zurücksetzen</strong>: löscht das Authenticator-Secret. Beim nächsten
+      Login wird neu eingerichtet (z.&nbsp;B. nach Handy-Verlust).</li>
+    <li><strong>Löschen</strong>: User komplett entfernen. Ihre erstellten Berichte
+      bleiben erhalten (nur die Autoren-Verknüpfung wird gelöst).</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-header">3. Admin-PIN &amp; Daten-Freigabe</div>
+  <p>Sensible Daten sind admin-only:</p>
+  <ul class="docs-list">
+    <li><strong>Notfallkontakt</strong> + <strong>Allergien-Details</strong> + <strong>Medikamente-Details</strong>
+      auf der Patientenakte</li>
+    <li><strong>Adresse</strong> + <strong>PLZ</strong> + <strong>Ort</strong> + <strong>Telefon</strong> + <strong>Krankenkasse</strong>
+      im zentralen Notfallprotokoll</li>
+  </ul>
+  <p>Helfer (Voll oder zentral_writer) sehen nur die Indikatoren (ja/nein/
+  unbekannt) bzw. den Hinweis „vertraulich". Mit dem
+  <strong>Entschlüsseln-Button</strong> öffnen sie eine PIN-Eingabe:</p>
+  <ol class="docs-list">
+    <li>Helfer klickt <strong>Daten entschlüsseln (Admin-PIN)</strong>.</li>
+    <li>Dropdown zeigt alle Admins mit gesetztem PIN. Du wählst dich aus.</li>
+    <li>Du tippst deine PIN.</li>
+    <li>Bei Erfolg erscheinen die Daten kurzzeitig inline. Audit landet
+      in <code>emergency_unlocks</code> — sichtbar in der Akten-Export-Vorschau.</li>
+  </ol>
+  <p class="muted" style="font-size: 0.9rem;">
+    Wenn ein Helfer beim Entschlüsseln „kein Admin mit PIN" sieht — bitte
+    deine PIN auf <code>/account/pin</code> setzen.
+  </p>
+</div>
+
+<div class="card">
+  <div class="card-header">4. Akten-Export</div>
+  <ol class="docs-list">
+    <li>Patientenakte öffnen (<code>/patients/&lt;ID&gt;</code>).</li>
+    <li>Button <strong>Akte exportieren</strong> oben rechts.</li>
+    <li>Vorschau-Seite zeigt, was im PDF landen wird:
+      <ul>
+        <li>Stammdaten + Notfallkontakt + Allergien/Medikamente
+          (vollständig für Admins, nur Indikatoren für andere)</li>
+        <li>Alle dezentralen Berichte mit Hergang, Maßnahmen, Material,
+          Kommentaren, Autor</li>
+        <li>Alle zentralen Notfallprotokolle mit Vitalwerten, Diagnose,
+          Maßnahmen, Verlauf, Übergabe, Abschluss, Kommentaren,
+          Unterschriften</li>
+        <li>Änderungs-Historie + Notfall-Datenfreigaben (Audit)</li>
+      </ul>
+    </li>
+    <li><strong>Akte als PDF herunterladen</strong> — fertig. Footer auf jeder Seite
+      mit Exporter-Name + Zeitstempel + Sicht-Modus.</li>
+  </ol>
+  <p class="muted" style="font-size: 0.9rem;">
+    Jeder Akten-Export wird in der Änderungs-Historie protokolliert
+    („Akten-PDF exportiert · Admin-Sicht").
+  </p>
+</div>
+
+<div class="card">
+  <div class="card-header">5. Berichte verwalten</div>
+  <ul class="docs-list">
+    <li><strong>Bearbeiten</strong>: jeder Voll-User kann eigene und fremde dezentrale
+      Berichte bearbeiten. Zentrale Berichte sind eigentumsbasiert
+      (Eigentümer + Admin).</li>
+    <li><strong>Löschen</strong> erfordert das eigene Passwort als Bestätigung
+      (nicht den PIN). Comments werden mit gelöscht (CASCADE).</li>
+    <li><strong>PDF-Generierung</strong> des zentralen Notfallprotokolls
+      ist <strong>admin-only</strong>. Helfer haben den Button nicht.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-header">6. Server-Betrieb</div>
+  <h3 style="font-size: 1rem;">Aktualisieren</h3>
+  <pre style="background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem;">cd ~/Dokumentation-dEH/Dokumentation-dEH &amp;&amp; git pull
+docker stop camp-doku &amp;&amp; docker rm camp-doku
+docker build -t camp-doku . &amp;&amp; docker run -d --restart unless-stopped \
+  -p 8000:8000 -v /srv/camp-doku:/data \
+  -e SECRET_KEY="$(cat /srv/camp-doku/.secret 2&gt;/dev/null || openssl rand -hex 32 | tee /srv/camp-doku/.secret)" \
+  --name camp-doku camp-doku</pre>
+
+  <h3 style="font-size: 1rem;">Backup</h3>
+  <p>Datenbank liegt im Volume <code>/srv/camp-doku/app.db</code>. Tägliches Backup:</p>
+  <pre style="background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem;">cp /srv/camp-doku/app.db /srv/camp-doku/app.db.$(date +%F).bak</pre>
+
+  <h3 style="font-size: 1rem;">User per CLI anlegen</h3>
+  <pre style="background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem;">docker exec -it camp-doku flask create-user nico --full-name "Nico Test"
+# zentral_writer:
+docker exec -it camp-doku flask create-user lisa --role zentral_writer --full-name "Lisa Helferin"</pre>
+</div>
+
+<div class="card">
+  <div class="card-header">7. Sicherheit / DSGVO</div>
+  <ul class="docs-list">
+    <li><strong>HTTPS</strong> ist Pflicht für echten Betrieb — über HTTP gehen
+      Passwort + 2FA-Code im Klartext durchs Netz. Caddy + Subdomain
+      ist 10&nbsp;Minuten Arbeit.</li>
+    <li><strong>SECRET_KEY</strong> muss zwischen Container-Neustarts stabil bleiben
+      (im obigen Befehl per <code>/srv/camp-doku/.secret</code> persistiert).</li>
+    <li>Akten-PDFs enthalten medizinische Daten — sicher ablegen, nach
+      Übergabe ans Krankenhaus/Eltern keine Kopie auf unverschlüsselten
+      USB-Sticks o.ä.</li>
+    <li><strong>Audit-Trail</strong>: Jede Daten-Freigabe (Notfallkontakt,
+      Adresse) und jeder Akten-Export werden mit Wer/Wann
+      protokolliert. Sichtbar in der Patientenakte und im Akten-PDF.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-header">8. Troubleshooting</div>
+  <dl class="docs-faq">
+    <dt>„kein Admin mit PIN" im Entschlüsseln-Dialog</dt>
+    <dd>Mindestens ein Admin muss auf <code>/account/pin</code> einen PIN setzen.</dd>
+
+    <dt>User kommt nach 2FA-Setup nicht durch</dt>
+    <dd>Server-Uhr und Handy-Uhr müssen synchron sein (TOTP toleriert nur
+      ±30&nbsp;s). Prüfen mit <code>date</code> auf dem Server.</dd>
+
+    <dt>Container wirft DB-Fehler beim Start</dt>
+    <dd>Volume <code>/data</code> nicht beschreibbar oder beschädigt. Prüfe Mount und
+      <code>ls -la /srv/camp-doku/</code>. Backup zurückspielen, falls nötig.</dd>
+
+    <dt>Berichte mit fehlender Bericht-Nr.</dt>
+    <dd>Beim ersten Start nach dem Update werden alle Berichte automatisch
+      mit globalen IDs versehen. Wenn ein Bericht trotzdem keine hat:
+      Container neu bauen.</dd>
+
+    <dt>Gelöschten User wiederherstellen</dt>
+    <dd>Aus dem letzten Backup einspielen, dann neu anlegen — User-IDs
+      werden nicht recycelt.</dd>
+  </dl>
+</div>
+{% endblock %}

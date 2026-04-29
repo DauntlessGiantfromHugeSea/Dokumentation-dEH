@@ -1317,6 +1317,25 @@ def create_app(test_config: dict | None = None) -> Flask:
             "approved_by": approver["full_name"] or approver["username"],
         }
 
+    # ----- Hilfe / Anleitungen -----
+
+    @app.route("/docs")
+    @login_required
+    def docs_index():
+        return render_template("docs_index.html")
+
+    @app.route("/docs/user")
+    @login_required
+    def docs_user():
+        return render_template("docs_user.html")
+
+    @app.route("/docs/admin")
+    @login_required
+    def docs_admin():
+        if not current_user.is_admin:
+            abort(403)
+        return render_template("docs_admin.html")
+
     @app.errorhandler(403)
     def forbidden(_e):
         return render_template("403.html"), 403

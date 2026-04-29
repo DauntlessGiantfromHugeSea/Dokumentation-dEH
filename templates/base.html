@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Erste Hilfe — Camp-Dokumentation{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -24,6 +26,7 @@
       {% if current_user.is_admin %}
         <a href="{{ url_for('admin_users') }}">Benutzer</a>
       {% endif %}
+      <a href="{{ url_for('docs_index') }}">Hilfe</a>
     </nav>
     <span class="user">
       <a href="{{ url_for('account_password') }}">{{ current_user.full_name or current_user.username }}</a>

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Hilfe &amp; Anleitungen{% endblock %}
+{% block content %}
+<h1>Hilfe &amp; Anleitungen</h1>
+<p class="tagline">
+  Kurze Anleitungen für die typischen Abläufe — je nach deiner Rolle
+  reicht eine der beiden Karten.
+</p>
+
+<div class="chooser-grid">
+  <a class="chooser-card" href="{{ url_for('docs_user') }}">
+    <div class="chooser-title">Anleitung für Helfer</div>
+    <div class="chooser-subtitle">Voll-User · zentral_writer</div>
+    <ul class="chooser-list">
+      <li>Login + 2FA einrichten</li>
+      <li>Dezentrale Berichte schreiben (DGUV-Formular)</li>
+      <li>Zentrales Notfallprotokoll: Ablauf, Vorbehandlungen, Unterschriften</li>
+      <li>Kontaktdaten per Admin-PIN freigeben lassen</li>
+    </ul>
+    <div class="chooser-cta">Öffnen →</div>
+  </a>
+
+  {% if current_user.is_admin %}
+  <a class="chooser-card central" href="{{ url_for('docs_admin') }}">
+    <div class="chooser-title">Anleitung für Admins</div>
+    <div class="chooser-subtitle">User-Verwaltung · PIN · Akten-Export</div>
+    <ul class="chooser-list">
+      <li>Benutzer anlegen, Rollen vergeben</li>
+      <li>Admin-PIN setzen (für Daten-Freigabe)</li>
+      <li>2FA verwalten / zurücksetzen / deaktivieren</li>
+      <li>Akten-Export erzeugen + Audit-Trail</li>
+      <li>Server-Betrieb &amp; Backup</li>
+    </ul>
+    <div class="chooser-cta">Öffnen →</div>
+  </a>
+  {% else %}
+  <div class="chooser-card" style="opacity: 0.6;">
+    <div class="chooser-title">Anleitung für Admins</div>
+    <div class="chooser-subtitle">nur sichtbar für Administratoren</div>
+    <ul class="chooser-list">
+      <li>User-Verwaltung</li>
+      <li>Admin-PIN, 2FA-Reset</li>
+      <li>Akten-Export, Server-Betrieb</li>
+    </ul>
+    <div class="chooser-cta" style="color: var(--muted);">— gesperrt —</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

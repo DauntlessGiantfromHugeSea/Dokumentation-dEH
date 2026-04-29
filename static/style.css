@@ -281,6 +281,13 @@ table.data.measurements th:first-child { text-align: left; }
 .confirm-card.confirm-new { border-left-color: #1f6b3a; }
 .confirm-card.confirm-found { border-left-color: var(--accent); }
 
+.docs-list { padding-left: 22px; line-height: 1.6; }
+.docs-list li { margin-bottom: 6px; }
+.docs-list code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px;
+                  font-size: 0.88em; }
+.docs-faq dt { font-weight: 600; margin-top: 10px; color: var(--accent-dark); }
+.docs-faq dd { margin: 2px 0 0 0; padding-left: 0; }
+
 /* Dashboard */
 .dash-stats {
   display: grid;

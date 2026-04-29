@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Anleitung — Helfer{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Anleitung für Helfer</h1>
+    <p class="tagline">
+      Kompakte Schritt-für-Schritt-Anleitung für alltägliche Aufgaben im
+      Camp.
+    </p>
+  </div>
+  <a class="btn small secondary" href="{{ url_for('docs_index') }}">← Übersicht</a>
+</div>
+
+<div class="card">
+  <div class="card-header">1. Erste Anmeldung &amp; 2FA</div>
+  <ol class="docs-list">
+    <li>Im Browser auf die System-URL gehen (Admin sagt dir die Adresse).</li>
+    <li><strong>Benutzername</strong> und <strong>Passwort</strong> eingeben — wenn du sie noch nicht hast,
+      lass dich von einem Admin anlegen.</li>
+    <li>Beim ersten Login wirst du durch das <strong>2FA-Setup</strong> geführt:
+      Authenticator-App öffnen (z.&nbsp;B. <em>Google Authenticator</em>,
+      <em>Microsoft Authenticator</em>, <em>Aegis</em>, <em>1Password</em>),
+      QR-Code scannen, den 6-stelligen Code eintippen — fertig.</li>
+    <li>Beim nächsten Login fragt das System nur noch den 6-stelligen Code ab.</li>
+    <li>Authenticator-App verloren? Bitte einen Admin um <strong>2FA-Reset</strong>;
+      dann läuft das Setup erneut.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <div class="card-header">2. Dashboard &amp; Berichte-Übersicht</div>
+  <ul class="docs-list">
+    <li><strong>Dashboard</strong> (Startseite) zeigt Tageszahlen und Schnellzugriff.</li>
+    <li><strong>Berichte</strong> ist die zentrale Liste aller Einträge —
+      dezentral (dEH, blau) und zentral (zEH, rot) gemischt, sortiert nach
+      laufender Bericht-Nr.</li>
+    <li>Filter: Name, Stammnummer, Datumsbereich, Typ.</li>
+    <li>Klick auf <strong>Öffnen</strong> bringt dich auf die Detailseite des Berichts
+      (egal welcher Typ).</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-header">3. Dezentralen Bericht (dEH) anlegen</div>
+  <ol class="docs-list">
+    <li>Oben in der Topnav <strong>Neuer Bericht</strong> → Karte
+      <strong>Dezentrale Erste Hilfe</strong> wählen.</li>
+    <li>Pflichtfelder: <strong>Name</strong>, <strong>Geburtsdatum</strong>. Live-Lookup zeigt sofort,
+      ob die Person schon im System ist (Folgebehandlung).</li>
+    <li>Hergang, Verletzung, Maßnahmen, Material — alles ausfüllen,
+      <strong>Speichern</strong>.</li>
+    <li>Nach dem Speichern kannst du <strong>Kommentare</strong> hinzufügen
+      (z.&nbsp;B. „Mutter hat angerufen — alles OK").</li>
+    <li><strong>PDF herunterladen</strong> für die Akte oder den Druck.</li>
+  </ol>
+  <p class="muted" style="margin-top: 8px; font-size: 0.9rem;">
+    Tipp: Der Schnellerfass-Modus links oben (sobald aktiviert) lässt
+    Papierberichte sehr schnell digital nachtragen.
+  </p>
+</div>
+
+<div class="card">
+  <div class="card-header">4. Zentrales Notfallprotokoll (zEH)</div>
+  <ol class="docs-list">
+    <li>Topnav → <strong>Zentral</strong> öffnet das Notfallprotokoll direkt.
+      Cursor steht im Vorname-Feld; sofort lostippen.</li>
+    <li>Linke Sidebar zeigt automatisch:
+      <ul>
+        <li><strong>Bekannte Person</strong> mit Stammnummer und Anzahl Vorbehandlungen, oder</li>
+        <li><strong>Mehrere Treffer</strong> — Person aus Liste übernehmen, oder</li>
+        <li><strong>Neuer Patient</strong> — wird beim Speichern automatisch angelegt.</li>
+      </ul>
+    </li>
+    <li>Im Sidebar-Block <strong>Notfall &amp; Medizin</strong> siehst du
+      <em>Allergien</em>, <em>Medikamente</em>, <em>Notfallkontakt</em>
+      als Indikatoren (ja/nein/unbekannt).</li>
+    <li>Mit dem Button <strong>Entschlüsseln (Admin-PIN)</strong> kann ein Admin
+      seine PIN eingeben, um die Klartext-Daten kurzzeitig anzuzeigen.</li>
+    <li>Durch die Seiten 1 bis 9 navigieren (Patient → Einsatz → Notfall →
+      Erstbefund → Vitalwerte → Maßnahmen → Verlauf → Übergabe → Abschluss).</li>
+    <li>Auf Seite 9 unterschreiben beide Einsatzkräfte mit Maus oder Finger
+      im Unterschriften-Pad.</li>
+    <li>Speichern: das Protokoll wird automatisch beim Tippen gespeichert.
+      Status oben rechts zeigt „Bereit / Speichert / Gespeichert".</li>
+  </ol>
+</div>
+
+<div class="card">
+  <div class="card-header">5. Anschrift / Krankenkasse / Telefon — Datenschutz</div>
+  <ul class="docs-list">
+    <li>Diese Felder dürfen <strong>nur Admins</strong> eingeben oder einsehen.</li>
+    <li>Auf der <strong>Detailseite</strong> eines Berichts (<code>/central/&lt;Nr&gt;</code>) gibt es
+      einen Button <strong>Daten entschlüsseln (Admin-PIN)</strong> — der Admin
+      wählt sich aus dem Dropdown, tippt die PIN, schon erscheint die
+      Anschrift kurzzeitig inline.</li>
+    <li>Jede Freigabe wird protokolliert — wer hat angefordert, wer hat
+      freigegeben, wann. Sichtbar im Akten-Export.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-header">6. Patientenakte ansehen</div>
+  <ul class="docs-list">
+    <li>In der Berichteliste oder im SPA auf den <strong>Namen</strong> klicken — bringt
+      dich auf <code>/patients/&lt;ID&gt;</code>.</li>
+    <li>Du siehst Stammdaten, Vorbehandlungs-Indikatoren und alle bisherigen
+      Berichte (gemischt dezentral/zentral).</li>
+    <li>Klick auf eine Bericht-Zeile öffnet die Detailseite.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-header">7. Tipps für Notfälle</div>
+  <ul class="docs-list">
+    <li><strong>Schnell speichern</strong>: Im SPA reicht „Speichern" oben oder einfach
+      weiterblättern — das Protokoll wird automatisch zwischengespeichert.</li>
+    <li><strong>Vorbehandlungen sehen</strong>: Linke Sidebar im SPA — sobald Name oder
+      Geburtsdatum getippt sind, lädt sie sich live.</li>
+    <li><strong>Mehr als zwei Helfer</strong>? Aktuell sind zwei Unterschriften-Pads
+      vorgesehen — Zusatzpersonen ggf. im Verlauf-Feld erwähnen.</li>
+    <li><strong>Falsch gespeichert?</strong> Detailseite öffnen → <strong>Bearbeiten</strong> (eigene Berichte) oder Admin
+      bitten.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-header">8. Häufige Fragen</div>
+  <dl class="docs-faq">
+    <dt>Ich kann den PDF-Download nicht klicken.</dt>
+    <dd>PDF-Generierung im zentralen Notfallprotokoll ist nur für Admins.
+      Frag einen Admin, das PDF zu erzeugen.</dd>
+
+    <dt>Ich sehe die Adresse / Krankenkasse nicht.</dt>
+    <dd>Diese Felder sind admin-only. Auf der Detailseite kannst du einen
+      Admin-PIN-Dialog öffnen — der Admin tippt seine PIN ein und du siehst
+      die Daten kurzzeitig.</dd>
+
+    <dt>Mein Authenticator zeigt einen abgelaufenen Code.</dt>
+    <dd>TOTP-Codes wechseln alle 30&nbsp;Sekunden. Den aktuell angezeigten Code
+      neu eingeben — das System akzeptiert ±30&nbsp;Sekunden Toleranz.</dd>
+
+    <dt>Wie ändere ich mein Passwort?</dt>
+    <dd>Oben rechts auf deinen Namen klicken → <strong>Passwort ändern</strong>.</dd>
+
+    <dt>Wer hat etwas geändert?</dt>
+    <dd>Auf der Patientenakte siehst du eine Änderungs-Historie der
+      Stammdaten. Berichte zeigen den Eintragenden im Footer.</dd>
+  </dl>
+</div>
+{% endblock %}

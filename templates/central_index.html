@@ -4,6 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Patientenprotokoll</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
 <style>
   :root {
     --primary: #d32f2f;
@@ -559,6 +561,7 @@
     {% if current_user.is_admin %}
       <a href="/admin/users">Benutzer</a>
     {% endif %}
+    <a href="/docs">Hilfe</a>
   </nav>
   <span class="app-bar-user">
     <a href="/account/password">{{ current_user_label }}</a>
