@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS users (
     totp_secret     TEXT,
     totp_confirmed  INTEGER NOT NULL DEFAULT 0,
     totp_required   INTEGER NOT NULL DEFAULT 1,
+    perm_view_contact INTEGER NOT NULL DEFAULT 0,
+    perm_export_pdf   INTEGER NOT NULL DEFAULT 0,
+    perm_export_akte  INTEGER NOT NULL DEFAULT 0,
+    perm_edit_patient INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -192,6 +196,13 @@ def init_db(db_path: Path) -> None:
             )
         if "admin_pin_hash" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN admin_pin_hash TEXT")
+        for perm in ("perm_view_contact", "perm_export_pdf",
+                     "perm_export_akte", "perm_edit_patient"):
+            if perm not in cols:
+                conn.execute(
+                    f"ALTER TABLE users ADD COLUMN {perm} "
+                    "INTEGER NOT NULL DEFAULT 0"
+                )
 
         # Patient extras (Notfallkontakt / Allergien / Medikamente)
         pat_cols = {row[1] for row in conn.execute("PRAGMA table_info(patients)")}
@@ -326,12 +337,32 @@ def verify_password(user_row: sqlite3.Row, password: str) -> bool:
     return check_password_hash(user_row["password_hash"], password)
 
 
+USER_PERMISSIONS = (
+    "perm_view_contact",   # Adresse / Krankenkasse / Telefon ohne PIN sehen
+    "perm_export_pdf",     # Notfallprotokoll-PDF erzeugen
+    "perm_export_akte",    # Akten-Export (PDF) erzeugen
+    "perm_edit_patient",   # Patientenstammdaten + Notfallkontakt bearbeiten
+)
+
+
 def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    cols = ", ".join(USER_PERMISSIONS)
     return conn.execute(
-        "SELECT id, username, full_name, is_admin, role, "
-        "       totp_secret, totp_confirmed, totp_required, created_at "
-        "FROM users ORDER BY username COLLATE NOCASE"
+        f"SELECT id, username, full_name, is_admin, role, "
+        f"       totp_secret, totp_confirmed, totp_required, "
+        f"       {cols}, created_at "
+        f"FROM users ORDER BY username COLLATE NOCASE"
     ).fetchall()
+
+
+def set_user_permission(conn: sqlite3.Connection, user_id: int,
+                        perm: str, value: bool) -> None:
+    if perm not in USER_PERMISSIONS:
+        raise ValueError(f"unknown permission: {perm}")
+    conn.execute(
+        f"UPDATE users SET {perm} = ? WHERE id = ?",
+        (1 if value else 0, user_id),
+    )
 
 
 def set_user_password(conn: sqlite3.Connection, user_id: int, password: str) -> None:

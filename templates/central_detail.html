@@ -40,7 +40,7 @@
       <a class="btn secondary small"
          href="{{ url_for('central_index') }}#{{ protocol.id }}">Bearbeiten</a>
     {% endif %}
-    {% if current_user.is_admin %}
+    {% if current_user.can_export_pdf %}
       <a class="btn small"
          href="{{ url_for('api_central_pdf', pid=protocol.id) }}"
          target="_blank">PDF</a>
@@ -75,7 +75,7 @@
     {% endif %}
   </div>
   {% set has_contact = d.get("strasse") or d.get("plz") or d.get("stadt") or d.get("telefon") or d.get("krankenkasse") %}
-  {% if has_contact and current_user.is_admin %}
+  {% if has_contact and current_user.can_view_contact %}
     <div class="protocol-meta">
       {{ kv("Straße", d.get("strasse")) }}
       {{ kv("PLZ", d.get("plz")) }}

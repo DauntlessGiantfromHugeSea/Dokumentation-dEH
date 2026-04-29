@@ -106,6 +106,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             self.is_admin = bool(row["is_admin"])
             # role is "full" or "zentral_writer"; admins always get full access.
             self.role = (row["role"] or "full") if "role" in row.keys() else "full"
+            # Per-User-Berechtigungen (additiv zu Rolle/Admin)
+            keys = row.keys() if hasattr(row, "keys") else []
+            for perm in ("perm_view_contact", "perm_export_pdf",
+                         "perm_export_akte", "perm_edit_patient"):
+                setattr(self, perm,
+                        bool(row[perm]) if perm in keys else False)
 
         @property
         def is_zentral_only(self) -> bool:
@@ -118,6 +124,23 @@ def create_app(test_config: dict | None = None) -> Flask:
         @property
         def can_view_others_central(self) -> bool:
             return not self.is_zentral_only
+
+        # ---- Per-User-Berechtigungen (Admin hat immer alles) ----
+        @property
+        def can_view_contact(self) -> bool:
+            return self.is_admin or self.perm_view_contact
+
+        @property
+        def can_export_pdf(self) -> bool:
+            return self.is_admin or self.perm_export_pdf
+
+        @property
+        def can_export_akte(self) -> bool:
+            return self.is_admin or self.perm_export_akte
+
+        @property
+        def can_edit_patient(self) -> bool:
+            return self.is_admin or self.perm_edit_patient
 
     @login_manager.user_loader
     def load_user(user_id: str):
@@ -253,18 +276,27 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
 
     @app.route("/protocols/new")
-    @decentral_view_required
+    @login_required
     def protocol_new_chooser():
-        """Step 1: choose between decentral or central first aid."""
-        # Pass through any prefill so a follow-up still works.
-        return render_template(
-            "protocol_chooser.html",
-            prefill={
-                "name": request.args.get("name", ""),
-                "geburtsdatum": request.args.get("geburtsdatum", ""),
-                "stammnummer": request.args.get("stammnummer", ""),
-            },
-        )
+        """Step 1: choose between decentral or central first aid.
+
+        zentral_writer hat nur eine Option ("Zentrale EH") — direkt
+        weiterleiten, sonst die Auswahl zeigen.
+        """
+        prefill = {
+            "name": request.args.get("name", ""),
+            "geburtsdatum": request.args.get("geburtsdatum", ""),
+            "stammnummer": request.args.get("stammnummer", ""),
+        }
+        if current_user.is_zentral_only:
+            # Direkt zur zentralen Patientenprüfung
+            vorname = prefill["name"].split(" ")[0] if prefill["name"] else ""
+            nachname = (prefill["name"].rsplit(" ", 1)[-1]
+                        if prefill["name"] and " " in prefill["name"] else "")
+            return redirect(url_for("central_new",
+                                    vorname=vorname, nachname=nachname,
+                                    geburtsdatum=prefill["geburtsdatum"]))
+        return render_template("protocol_chooser.html", prefill=prefill)
 
     @app.route("/protocols/new/dezentral", methods=["GET", "POST"])
     @decentral_view_required
@@ -378,7 +410,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         change_log = models.list_patient_changes(db, patient_id)
         sensitive = (
             models.patient_sensitive_full(patient)
-            if current_user.is_admin
+            if current_user.can_view_contact
             else models.patient_sensitive_summary(patient)
         )
         return render_template("patient_detail.html", patient=patient,
@@ -386,14 +418,16 @@ def create_app(test_config: dict | None = None) -> Flask:
                                central_protocols=central_protocols,
                                change_log=change_log,
                                sensitive=sensitive,
-                               sensitive_full=current_user.is_admin,
+                               sensitive_full=current_user.can_view_contact,
                                field_label=models.PATIENT_FIELD_LABELS,
                                sensitive_fields=set(models.SENSITIVE_PATIENT_FIELDS),
                                format_dt=models.format_dt)
 
     @app.route("/patients/<int:patient_id>/akte")
-    @decentral_view_required
+    @login_required
     def patient_akte(patient_id: int):
+        if not current_user.can_export_akte:
+            abort(403)
         """Vorschauseite für den vollständigen Akten-Export.
         Zeigt, was im PDF landet, plus den Download-Button.
         Sensible Daten erscheinen nur für Admins; Voll-User sehen
@@ -425,13 +459,15 @@ def create_app(test_config: dict | None = None) -> Flask:
             central=central,
             change_log=change_log,
             unlocks=unlocks,
-            sensitive_visible=current_user.is_admin,
+            sensitive_visible=current_user.can_view_contact,
             format_dt=models.format_dt,
         )
 
     @app.route("/patients/<int:patient_id>/akte.pdf")
-    @decentral_view_required
+    @login_required
     def patient_akte_pdf(patient_id: int):
+        if not current_user.can_export_akte:
+            abort(403)
         db = models.get_db()
         patient = models.get_patient(db, patient_id)
         if not patient:
@@ -450,8 +486,9 @@ def create_app(test_config: dict | None = None) -> Flask:
                                models.list_central_comments(db, c["id"])]
             central.append(rec)
         change_log = [dict(r) for r in models.list_patient_changes(db, patient_id)]
-        # Sensitive Daten landen nur dann im PDF, wenn ein Admin den Export auslöst
-        include_sensitive = current_user.is_admin
+        # Sensitive Daten landen nur dann im PDF, wenn der Exporter
+        # can_view_contact hat (Admin oder explizit per perm_view_contact)
+        include_sensitive = current_user.can_view_contact
         from akte_export import render_patient_akte_pdf
         pdf_bytes = render_patient_akte_pdf(
             patient=dict(patient),
@@ -481,19 +518,23 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
 
     @app.route("/patients/<int:patient_id>/edit", methods=["GET", "POST"])
-    @decentral_view_required
+    @login_required
     def patient_edit(patient_id: int):
+        if not current_user.can_edit_patient:
+            abort(403)
         db = models.get_db()
         patient = models.get_patient(db, patient_id)
         if not patient:
             abort(404)
-        # Sensible Felder dürfen nur Admins ändern. Normale Voll-User
-        # können nur Name / Geburtsdatum / Stammnummer pflegen.
+        # Sensible Felder dürfen nur User mit can_view_contact ändern
+        # (Admin oder explizit per perm_view_contact freigeschaltet) — ohne
+        # diese Berechtigung sehen sie die Felder gar nicht erst.
         if request.method == "POST":
             updates = {}
             for f in models.PATIENT_EDIT_FIELDS:
-                # Sensitive Felder nur bei Admin akzeptieren
-                if f in models.SENSITIVE_PATIENT_FIELDS and not current_user.is_admin:
+                # Sensitive Felder nur bei View-Contact-Berechtigung akzeptieren
+                if (f in models.SENSITIVE_PATIENT_FIELDS
+                        and not current_user.can_view_contact):
                     continue
                 if f in ("has_allergies", "has_medications"):
                     raw = request.form.get(f, "").strip()
@@ -843,8 +884,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         if request.method == "GET":
             # Adresse/Telefon/Krankenkasse für Nicht-Admins entfernen — ein
             # Voll-User oder zentral_writer sieht die Felder im SPA-Formular
-            # also leer. Admin bekommt die Werte unverändert.
-            if not current_user.is_admin:
+            # also leer — außer perm_view_contact ist gesetzt. Admin bekommt
+            # die Werte unverändert.
+            if not current_user.can_view_contact:
                 rec = dict(rec)
                 rec["data"] = models.strip_central_contact(rec.get("data") or {})
             return rec
@@ -854,10 +896,10 @@ def create_app(test_config: dict | None = None) -> Flask:
             return {"error": "forbidden"}, 403
         if request.method == "PUT":
             data = request.get_json(silent=True) or {}
-            # Wenn der Speichernde kein Admin ist, dürfen die geschützten
-            # Kontaktfelder nicht überschrieben werden — sie waren beim
-            # Laden gestrippt und kommen entsprechend leer zurück.
-            if not current_user.is_admin:
+            # Wenn der Speichernde keine Kontakt-Berechtigung hat, dürfen
+            # die geschützten Felder nicht überschrieben werden — sie
+            # waren beim Laden gestrippt und kommen entsprechend leer zurück.
+            if not current_user.can_view_contact:
                 data = models.merge_central_contact(data, rec.get("data") or {})
             ok = models.update_central_protocol(db, pid, data)
             db.commit()
@@ -879,18 +921,18 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/api/central/protokolle/<int:pid>/pdf")
     @login_required
     def api_central_pdf(pid: int):
-        # Notfallprotokoll-PDF ist admin-only — Voll-User und zentral_writer
-        # haben keine Veranlassung, PDFs zu generieren (Admin-Aufgabe).
-        if not current_user.is_admin:
+        # Notfallprotokoll-PDF: admin-only oder explizit per
+        # perm_export_pdf freigeschaltet.
+        if not current_user.can_export_pdf:
             abort(403)
         db = models.get_db()
         rec = models.get_central_protocol(db, pid)
         if not rec:
             abort(404)
-        # PDF-Lesen ist für alle eingeloggten User offen — Adresse/
-        # Telefon/Krankenkasse werden für Nicht-Admins jedoch maskiert.
+        # Adresse / Telefon / Krankenkasse werden für User ohne
+        # perm_view_contact aus dem PDF gestrippt.
         pdf_data = rec["data"]
-        if not current_user.is_admin:
+        if not current_user.can_view_contact:
             pdf_data = models.strip_central_contact(pdf_data)
         try:
             pdf_bytes = render_central_pdf(pdf_data)
@@ -1038,6 +1080,23 @@ def create_app(test_config: dict | None = None) -> Flask:
                                is_admin=is_admin, role=role)
             db.commit()
             flash(f"Benutzer '{username}' angelegt.", "success")
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/users/<int:user_id>/permissions", methods=["POST"])
+    @admin_required
+    def admin_user_set_permissions(user_id: int):
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        for perm in models.USER_PERMISSIONS:
+            value = bool(request.form.get(perm))
+            models.set_user_permission(db, user_id, perm, value)
+        db.commit()
+        flash(
+            f"Berechtigungen für '{row['username']}' aktualisiert.",
+            "success",
+        )
         return redirect(url_for("admin_users"))
 
     @app.route("/admin/users/<int:user_id>/role", methods=["POST"])
@@ -1275,13 +1334,14 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/api/patient/<int:pid>/sensitive")
     @login_required
     def api_patient_sensitive(pid: int):
-        """Liefert maskierte Sicht (ja/nein) für nicht-Admins, volle Sicht
-        für Admins. Wird vom SPA-Sidebar-Widget aufgerufen."""
+        """Liefert maskierte Sicht (ja/nein) für User ohne Kontakt-
+        Berechtigung, volle Sicht sonst. Wird vom SPA-Sidebar-Widget
+        aufgerufen."""
         db = models.get_db()
         patient = models.get_patient(db, pid)
         if not patient:
             return {"error": "not found"}, 404
-        if current_user.is_admin:
+        if current_user.can_view_contact:
             return {"locked": False,
                     "data": models.patient_sensitive_full(patient)}
         return {"locked": True,

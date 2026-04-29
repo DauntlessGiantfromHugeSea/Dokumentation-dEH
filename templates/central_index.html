@@ -599,7 +599,7 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span class="status-pill" id="status"><span class="dot"></span><span class="label">Bereit</span></span>
           <div class="btn-group">
-            {% if current_user.is_admin %}
+            {% if current_user.can_export_pdf %}
               <button class="btn sm primary" id="btn-pdf">PDF</button>
               <button class="btn sm" id="btn-print">Drucken</button>
             {% endif %}
@@ -632,7 +632,7 @@
             </div>
           </div>
 
-          {% if current_user.is_admin %}
+          {% if current_user.can_view_contact %}
           <div class="section">
             <div class="label">Anschrift &amp; Kontakt</div>
             <div class="grid cols-2">
@@ -647,9 +647,9 @@
           <div class="section">
             <div class="label">Anschrift &amp; Kontakt</div>
             <p style="margin: 6px 0 0; font-size: 0.88rem; color: var(--muted);">
-              Nur Admins dürfen diese Felder erfassen oder einsehen. Auf der
-              Detailseite des Berichts kann ein Admin die Daten per PIN
-              kurzzeitig freigeben.
+              Diese Felder sind vertraulich und nur für Admins (oder mit
+              entsprechender Berechtigung) sichtbar. Auf der Detailseite des
+              Berichts kann ein Admin die Daten per PIN kurzzeitig freigeben.
             </p>
           </div>
           {% endif %}
@@ -1427,6 +1427,7 @@
 <script>
 const IS_ZENTRAL_ONLY = {{ 'true' if current_user.is_zentral_only else 'false' }};
 const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
+const CAN_VIEW_CONTACT = {{ 'true' if current_user.can_view_contact else 'false' }};
 const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|tojson }};
 </script>
 

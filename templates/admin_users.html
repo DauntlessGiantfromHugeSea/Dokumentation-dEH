@@ -129,6 +129,37 @@
                   onsubmit="return confirm('2FA für „{{ u.username }}“ zurücksetzen? Beim nächsten Login muss neu eingerichtet werden.');">
               <button class="btn small secondary" type="submit">2FA zurücksetzen</button>
             </form>
+            <details class="inline-action">
+              <summary class="btn small secondary">Berechtigungen</summary>
+              <form method="post"
+                    action="{{ url_for('admin_user_set_permissions', user_id=u.id) }}"
+                    class="perm-form">
+                <label class="perm-row">
+                  <input type="checkbox" name="perm_view_contact"
+                         {% if u.perm_view_contact %}checked{% endif %}>
+                  Adresse / Krankenkasse / Telefon ohne PIN sehen
+                </label>
+                <label class="perm-row">
+                  <input type="checkbox" name="perm_export_pdf"
+                         {% if u.perm_export_pdf %}checked{% endif %}>
+                  Notfallprotokoll-PDF erzeugen
+                </label>
+                <label class="perm-row">
+                  <input type="checkbox" name="perm_export_akte"
+                         {% if u.perm_export_akte %}checked{% endif %}>
+                  Akte exportieren (PDF)
+                </label>
+                <label class="perm-row">
+                  <input type="checkbox" name="perm_edit_patient"
+                         {% if u.perm_edit_patient %}checked{% endif %}>
+                  Patientendaten bearbeiten
+                </label>
+                <button class="btn small" type="submit">Speichern</button>
+                <p class="muted" style="margin: 6px 0 0; font-size: 0.78rem;">
+                  Admins haben automatisch alle Berechtigungen.
+                </p>
+              </form>
+            </details>
             <form method="post"
                   action="{{ url_for('admin_user_delete', user_id=u.id) }}"
                   class="inline-form"
