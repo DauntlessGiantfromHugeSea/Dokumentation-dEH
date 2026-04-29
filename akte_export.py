@@ -13,6 +13,7 @@ ausführlichen Auszug für Rettungsdienst, Eltern oder Ärzte:
 
 from __future__ import annotations
 
+import base64
 import io
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
@@ -22,6 +23,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
+    Image as RLImage,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -126,6 +128,101 @@ def _comments_block(comments: list[dict], styles) -> list:
                              styles["comment"]))
         out.append(Spacer(1, 4))
     return out
+
+
+def _decode_data_url(data_url) -> Optional[bytes]:
+    if not data_url or not isinstance(data_url, str) or "," not in data_url:
+        return None
+    try:
+        return base64.b64decode(data_url.split(",", 1)[1])
+    except Exception:
+        return None
+
+
+def _is_valid_png(data: bytes) -> bool:
+    """Validiert das PNG mit Pillow vorab — sonst kracht ReportLab beim
+    eigentlichen Rendern (drawOn)."""
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(io.BytesIO(data)) as im:
+            im.verify()
+        # verify() invalidiert das Bild — neu öffnen für späteres laden
+        with PILImage.open(io.BytesIO(data)) as im:
+            im.load()
+        return True
+    except Exception:
+        return False
+
+
+def _signatures_block(d: dict, styles) -> list:
+    """Render signatures of einsatzkraft1 + einsatzkraft2 if present."""
+    rows = []
+    for n in (1, 2):
+        sig_bytes = _decode_data_url(d.get(f"signature_einsatzkraft{n}"))
+        if not sig_bytes or not _is_valid_png(sig_bytes):
+            continue
+        rows.append({
+            "n": n,
+            "img_bytes": sig_bytes,
+            "name": d.get(f"einsatzkraft{n}") or "",
+            "at": d.get(f"signature_einsatzkraft{n}_at"),
+            "by": d.get(f"signature_einsatzkraft{n}_by") or "",
+        })
+    if not rows:
+        return []
+
+    elements = [Paragraph("Unterschriften", styles["h3"])]
+    cells = []
+    for r in rows:
+        label = f"Einsatzkraft {r['n']}"
+        if r["name"]:
+            label += f" — {r['name']}"
+        try:
+            img = RLImage(io.BytesIO(r["img_bytes"]),
+                          width=82 * mm, height=24 * mm,
+                          kind="proportional")
+        except Exception:
+            img = Paragraph("(Unterschrift konnte nicht gerendert werden)",
+                            styles["small"])
+        meta_parts = []
+        if r["at"]:
+            meta_parts.append(f"am {format_dt(r['at'])}")
+        if r["by"]:
+            meta_parts.append(f"erfasst von {r['by']}")
+        meta = Paragraph(" · ".join(meta_parts) or "—", styles["small"])
+        cells.append([
+            Paragraph(label, styles["label"]),
+            img,
+            meta,
+        ])
+    # Layout: two columns side-by-side if two signatures
+    if len(cells) == 1:
+        col_widths = [170 * mm]
+        rows_table = [
+            [cells[0][0]],
+            [cells[0][1]],
+            [cells[0][2]],
+        ]
+    else:
+        col_widths = [85 * mm, 85 * mm]
+        rows_table = [
+            [cells[0][0], cells[1][0]],
+            [cells[0][1], cells[1][1]],
+            [cells[0][2], cells[1][2]],
+        ]
+    tbl = Table(rows_table, colWidths=col_widths)
+    tbl.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.4, colors.lightgrey),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.lightgrey),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("BACKGROUND", (0, 0), (-1, 0), SOFT),
+    ]))
+    elements.append(tbl)
+    return elements
 
 
 def _decentral_block(p: dict, styles) -> list:
@@ -258,6 +355,7 @@ def _central_block(rec: dict, styles) -> list:
             elements.append(_kv_full("Einsatzbeschreibung", d.get("einsatzbeschreibung"), styles))
         if d.get("material"):
             elements.append(_kv_full("Verbrauchtes Material", d.get("material"), styles))
+    elements.extend(_signatures_block(d, styles))
     elements.extend(_comments_block(rec.get("comments") or [], styles))
     elements.append(Paragraph(
         f"Erstellt am {format_dt(rec.get('created_at'))}"
