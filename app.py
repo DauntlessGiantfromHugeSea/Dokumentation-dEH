@@ -935,7 +935,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not current_user.can_view_contact:
             pdf_data = models.strip_central_contact(pdf_data)
         try:
-            pdf_bytes = render_central_pdf(pdf_data)
+            pdf_bytes = render_central_pdf(
+                pdf_data,
+                exporter_label=(current_user.full_name
+                                or current_user.username),
+            )
         except FileNotFoundError as e:
             return {"error": str(e)}, 500
         name = rec["name_summary"] or "Protokoll"

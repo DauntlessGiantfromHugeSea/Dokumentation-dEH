@@ -134,9 +134,17 @@ def _p(text, style=S_TXT):
 
 
 def _label_value(label, value, value_style=S_VAL, min_h=None):
-    """Mini-Block: Label oben klein, Wert darunter."""
+    """Mini-Block: Label oben klein, Wert darunter.
+    Akzeptiert für `value` entweder einen String oder einen ReportLab-
+    Flowable (Paragraph/Table) — wenn `wrap` vorhanden ist, wird der
+    Flowable direkt eingesetzt, sonst durch `_v()` als String gerendert.
+    """
+    if hasattr(value, "wrap"):
+        value_cell = value
+    else:
+        value_cell = _p(_v(value), value_style)
     inner = Table(
-        [[_p(label, S_LABEL)], [_p(_v(value), value_style)]],
+        [[_p(label, S_LABEL)], [value_cell]],
         colWidths=["100%"],
         rowHeights=[None, min_h] if min_h else None,
     )
@@ -317,50 +325,67 @@ def _section_2_notfall(d):
     return _bordered_table(rows, [186 * mm], padding=4)
 
 
+def _messwerte_para(d, suffix):
+    """Compact key/value list of vital signs as a single Paragraph."""
+    lines = []
+    if _v(d.get(f"zeit_{suffix}")):
+        lines.append(f"<b>Zeit:</b> {_v(d.get(f'zeit_{suffix}'))}")
+    rr_sys = _v(d.get(f"rr_sys_{suffix}"))
+    rr_dia = _v(d.get(f"rr_dia_{suffix}"))
+    if rr_sys or rr_dia:
+        lines.append(f"<b>RR:</b> {rr_sys or '?'}/{rr_dia or '?'} mmHg")
+    if _v(d.get(f"puls_{suffix}")):
+        lines.append(f"<b>Puls:</b> {_v(d.get(f'puls_{suffix}'))}/min")
+    af = _v(d.get(f"af_{suffix}"))
+    hf = _v(d.get(f"hf_{suffix}"))
+    af_hf = []
+    if af: af_hf.append(f"AF {af}")
+    if hf: af_hf.append(f"HF {hf}")
+    if af_hf:
+        lines.append("<b>" + " &middot; ".join(af_hf) + "</b>")
+    if _v(d.get(f"spo2_{suffix}")):
+        lines.append(f"<b>SpO₂:</b> {_v(d.get(f'spo2_{suffix}'))}%")
+    if _v(d.get(f"etco2_{suffix}")):
+        lines.append(f"<b>etCO₂:</b> {_v(d.get(f'etco2_{suffix}'))}")
+    if _v(d.get(f"bz_{suffix}")):
+        lines.append(f"<b>BZ:</b> {_v(d.get(f'bz_{suffix}'))} mmol/l")
+    if _v(d.get(f"temp_{suffix}")):
+        lines.append(f"<b>Temp:</b> {_v(d.get(f'temp_{suffix}'))}°C")
+    if _v(d.get(f"gcs_{suffix}")):
+        lines.append(f"<b>GCS:</b> {_v(d.get(f'gcs_{suffix}'))}")
+    if not lines:
+        return Paragraph("—", S_TXT)
+    return Paragraph("<br/>".join(lines), S_TXT)
+
+
 def _section_3_erstbefund(d):
-    pupillen = "Re.: " + _v(d.get("pupille_l")) + " · Li.: " + _v(d.get("pupille_r"))
-    if not _v(d.get("pupille_l")) and not _v(d.get("pupille_r")):
-        pupillen = ""
-    neuro_text = ""
     parts = []
     if _v(d.get("pupille_l")) or _v(d.get("pupille_r")):
-        parts.append(f"Pupillen Re/Li: {_v(d.get('pupille_l')) or '—'} / {_v(d.get('pupille_r')) or '—'}")
+        parts.append(f"Pupillen Re/Li: {_v(d.get('pupille_l')) or '—'} / "
+                     f"{_v(d.get('pupille_r')) or '—'}")
     if _v(d.get("gcs_1")):
         parts.append(f"GCS: {_v(d.get('gcs_1'))}")
-    neuro_text = "<br/>".join(parts)
+    neuro = Paragraph("<br/>".join(parts), S_VAL) if parts else _v("")
 
     schmerzen = _v(d.get("schmerzen_grad_1"))
     nrs = _v(d.get("nrs_1"))
-
-    # Messwerte 1
-    mw_lines = []
-    if _v(d.get("zeit_1")):
-        mw_lines.append(f"<b>Zeit:</b> {_v(d.get('zeit_1'))}")
-    pairs = [
-        ("RR Sys (mmHg)", "rr_sys_1"), ("RR Dia (mmHg)", "rr_dia_1"),
-        ("Puls (1/min)", "puls_1"), ("HF (1/min)", "hf_1"),
-        ("BZ (mmol/l)", "bz_1"), ("AF (1/min)", "af_1"),
-        ("etCO2 (mmHg)", "etco2_1"), ("SpO2 (%)", "spo2_1"),
-        ("Temperatur (°C)", "temp_1"),
-    ]
-    for label, key in pairs:
-        v = _v(d.get(key))
-        if v:
-            mw_lines.append(f"{label}: <b>{v}</b>")
-    messwerte = "<br/>".join(mw_lines) if mw_lines else "—"
+    schmerz_lines = []
+    if schmerzen:
+        schmerz_lines.append(f"<b>{schmerzen}</b>")
+    if nrs:
+        schmerz_lines.append(f"NRS: <b>{nrs}</b>")
+    schmerz = (Paragraph("<br/>".join(schmerz_lines), S_TXT)
+               if schmerz_lines else "")
 
     psych = _combine(d.get("psyche"), d.get("psyche_sonstiges"))
     haut = _combine(d.get("haut"), d.get("haut_sonstiges"))
 
     return _bordered_table([
         [
-            _label_value("3.1 Neurologie", neuro_text),
-            _label_value("3.7 Schmerzen / NRS",
-                         (f"{schmerzen}" if schmerzen else "")
-                         + (f"\nNRS: {nrs}" if nrs else "")),
+            _label_value("3.1 Neurologie", neuro),
+            _label_value("3.7 Schmerzen / NRS", schmerz),
             _label_value("3.2 Messwerte (Erstbefund)",
-                         Paragraph(messwerte, S_TXT) if mw_lines else "—",
-                         value_style=S_TXT),
+                         _messwerte_para(d, "1")),
         ],
         [
             _label_value("3.3 Atmung", d.get("atmung_1")),
@@ -407,38 +432,21 @@ def _section_6_massnahmen(d):
 
 
 def _section_7_uebergabe(d):
-    # 7.2 Messwerte (Übergabe)
-    mw_lines = []
-    if _v(d.get("zeit_2")):
-        mw_lines.append(f"<b>Zeit:</b> {_v(d.get('zeit_2'))}")
-    pairs = [
-        ("RR Sys (mmHg)", "rr_sys_2"), ("RR Dia (mmHg)", "rr_dia_2"),
-        ("Puls (1/min)", "puls_2"), ("HF (1/min)", "hf_2"),
-        ("BZ (mmol/l)", "bz_2"), ("AF (1/min)", "af_2"),
-        ("etCO2 (mmHg)", "etco2_2"), ("SpO2 (%)", "spo2_2"),
-        ("Temperatur (°C)", "temp_2"),
-    ]
-    for label, key in pairs:
-        v = _v(d.get(key))
-        if v:
-            mw_lines.append(f"{label}: <b>{v}</b>")
-    if _v(d.get("nrs_2")):
-        mw_lines.append(f"Schmerz NRS: <b>{_v(d.get('nrs_2'))}</b>")
-    messwerte = "<br/>".join(mw_lines) if mw_lines else "—"
-
-    zustand_parts = []
+    zustand_lines = []
     if _v(d.get("bewusstsein_2")):
-        zustand_parts.append(f"Zustand: {_v(d.get('bewusstsein_2'))}")
+        zustand_lines.append(f"Zustand: <b>{_v(d.get('bewusstsein_2'))}</b>")
     if _v(d.get("gcs_2")):
-        zustand_parts.append(f"GCS-Summe: {_v(d.get('gcs_2'))}")
-    zustand_text = "\n".join(zustand_parts)
+        zustand_lines.append(f"GCS-Summe: <b>{_v(d.get('gcs_2'))}</b>")
+    if _v(d.get("nrs_2")):
+        zustand_lines.append(f"Schmerz NRS: <b>{_v(d.get('nrs_2'))}</b>")
+    zustand = (Paragraph("<br/>".join(zustand_lines), S_TXT)
+               if zustand_lines else "")
 
     return _bordered_table([
         [
-            _label_value("7.1 Zustand", zustand_text),
+            _label_value("7.1 Zustand", zustand),
             _label_value("7.2 Messwerte (Übergabe)",
-                         Paragraph(messwerte, S_TXT) if mw_lines else "—",
-                         value_style=S_TXT),
+                         _messwerte_para(d, "2")),
         ],
         [
             _label_value("7.3 Atmung", d.get("atmung_2")),
@@ -505,7 +513,35 @@ def _top_header(d):
 
 # ============================ Signature page ============================
 
-def _build_signature_page(data):
+def _draw_footer(canvas, data, exporter_label, page_num):
+    """Identischer Footer wie auf den Hauptseiten — auf jede Seite drauf."""
+    sig1_signed = bool(_decode_data_url(_first(data.get("signature_einsatzkraft1"))))
+    sig2_signed = bool(_decode_data_url(_first(data.get("signature_einsatzkraft2"))))
+    sig1_name = _first(data.get("einsatzkraft1")) or "Einsatzkraft 1"
+    sig2_name = _first(data.get("einsatzkraft2")) or "Einsatzkraft 2"
+    signed = []
+    if sig1_signed: signed.append(sig1_name)
+    if sig2_signed: signed.append(sig2_name)
+    sig_text = ("Unterschrieben: " + " · ".join(signed)) if signed else "Noch nicht unterschrieben"
+
+    exported_at = datetime.now().strftime("%d.%m.%Y %H:%M")
+    exporter_text = (f"Exportiert von {exporter_label} · {exported_at}"
+                     if exporter_label
+                     else f"Exportiert {exported_at}")
+
+    canvas.saveState()
+    canvas.setFont("Helvetica", 6.5)
+    canvas.setFillColor(colors.grey)
+    canvas.setStrokeColor(colors.HexColor("#CCCCCC"))
+    canvas.setLineWidth(0.3)
+    canvas.line(12 * mm, 11 * mm, 198 * mm, 11 * mm)
+    canvas.drawString(12 * mm, 7 * mm, sig_text[:90])
+    canvas.drawCentredString(105 * mm, 7 * mm, exporter_text[:80])
+    canvas.drawRightString(198 * mm, 7 * mm, f"Seite {page_num}")
+    canvas.restoreState()
+
+
+def _build_signature_page(data, exporter_label=None, page_num=3):
     sigs = []
     for n in (1, 2):
         sig_data = _decode_data_url(_first(data.get(f"signature_einsatzkraft{n}")))
@@ -564,10 +600,9 @@ def _build_signature_page(data):
             c.drawString(20 * mm, img_y - 4 * mm, " · ".join(meta_parts))
             c.setFillColor(colors.black)
 
-    c.setFont("Helvetica", 7)
-    c.setFillColor(colors.grey)
-    c.drawString(20 * mm, 12 * mm,
-                 "Unterschriften wurden digital im Erste-Hilfe-Camp-System erfasst.")
+    # Footer wie auf Hauptseiten
+    _draw_footer(c, data, exporter_label, page_num)
+
     c.showPage()
     c.save()
     return buf.getvalue()
@@ -575,32 +610,58 @@ def _build_signature_page(data):
 
 # ============================ Page footer ============================
 
-def _make_page_footer(total_pages_label="von 2"):
+def _make_page_footer(data, exporter_label=None):
+    """Footer auf jeder Seite: links Unterschriften-Status, mittig
+    Export-Info, rechts Seitenzahl."""
+    sig1_signed = bool(_decode_data_url(_first(data.get("signature_einsatzkraft1"))))
+    sig2_signed = bool(_decode_data_url(_first(data.get("signature_einsatzkraft2"))))
+    sig1_name = _first(data.get("einsatzkraft1")) or "Einsatzkraft 1"
+    sig2_name = _first(data.get("einsatzkraft2")) or "Einsatzkraft 2"
+    signed_names = []
+    if sig1_signed: signed_names.append(sig1_name)
+    if sig2_signed: signed_names.append(sig2_name)
+    if signed_names:
+        sig_text = "Unterschrieben: " + " · ".join(signed_names)
+    else:
+        sig_text = "Noch nicht unterschrieben"
+
+    exported_at = datetime.now().strftime("%d.%m.%Y %H:%M")
+    exporter_text = (f"Exportiert von {exporter_label} · {exported_at}"
+                     if exporter_label
+                     else f"Exportiert {exported_at}")
+
     def _on_page(canvas, doc):
         canvas.saveState()
-        canvas.setFont("Helvetica", 7)
+        canvas.setFont("Helvetica", 6.5)
         canvas.setFillColor(colors.grey)
-        canvas.drawRightString(
-            190 * mm, 8 * mm,
-            f"Seite {doc.page} {total_pages_label}",
-        )
+        # Trenn-Linie über dem Footer
+        canvas.setStrokeColor(colors.HexColor("#CCCCCC"))
+        canvas.setLineWidth(0.3)
+        canvas.line(12 * mm, 11 * mm, 198 * mm, 11 * mm)
+        # Links: Unterschriften
+        canvas.drawString(12 * mm, 7 * mm, sig_text[:90])
+        # Mittig: Exporter + Zeitstempel
+        canvas.drawCentredString(105 * mm, 7 * mm, exporter_text[:80])
+        # Rechts: Seite n
+        canvas.drawRightString(198 * mm, 7 * mm, f"Seite {doc.page}")
         canvas.restoreState()
     return _on_page
 
 
 # ============================ Main ==============================
 
-def render_pdf(data):
+def render_pdf(data, exporter_label=None):
     """Rendert das Notfallprotokoll auf 2 A4-Seiten + ggf. Unterschriften.
 
     Erwartet das `data`-Dict eines zentralen Berichts (so wie es in
-    central_protocols.data steht).
+    central_protocols.data steht). `exporter_label` erscheint im Fuß
+    jeder Seite zusammen mit Unterschriften-Status und Zeitstempel.
     """
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=12 * mm, rightMargin=12 * mm,
-        topMargin=12 * mm, bottomMargin=14 * mm,
+        topMargin=12 * mm, bottomMargin=16 * mm,
         title="Einsatzprotokoll",
     )
 
@@ -662,16 +723,19 @@ def render_pdf(data):
     story.append(Spacer(1, 4))
     story.append(_section_10_material(data))
 
-    on_page = _make_page_footer()
+    on_page = _make_page_footer(data, exporter_label=exporter_label)
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     main_pdf = buf.getvalue()
 
-    # Signaturseite anhängen
-    sig_pdf = _build_signature_page(data)
+    main_reader = PdfReader(io.BytesIO(main_pdf))
+    n_main = len(main_reader.pages)
+
+    # Signaturseite anhängen — Seitenzahl folgt auf Hauptseiten
+    sig_pdf = _build_signature_page(data, exporter_label=exporter_label,
+                                     page_num=n_main + 1)
     if not sig_pdf:
         return main_pdf
 
-    main_reader = PdfReader(io.BytesIO(main_pdf))
     sig_reader = PdfReader(io.BytesIO(sig_pdf))
     writer = PdfWriter()
     for page in main_reader.pages:
