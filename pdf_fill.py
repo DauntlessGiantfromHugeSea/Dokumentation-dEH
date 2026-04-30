@@ -264,51 +264,51 @@ def _patient_block(d):
 
 
 def _einsatz_block(d):
-    notfallart = _combine(d.get("notfallart"), d.get("notfallart_sonstige"))
-    rows = [
+    """Rechter Block: Rettungs-Einsatzprotokoll-Daten als flache 2-Spalten-
+    Tabelle (kein verschachtelter Stack, damit die Zellen kompakt bleiben)."""
+    title_rows = Table([
         [_p("Rettungs-Einsatzprotokoll", S_PATIENT)],
         [_subsection("1. Rettungstechnische Daten", width=96 * mm)],
-        [_label_value("Einsatznummer", d.get("einsatznummer"))],
-        [_bordered_table(
-            [[_label_value("Einsatzort", d.get("einsatzort"), min_h=10 * mm),
-              Table([
-                  [_label_value("Datum", _fmt_date(d.get("datum")))],
-                  [_label_value("Stichwort", d.get("einsatzstichwort"))],
-                  [_label_value("Einsatzbeginn", d.get("einsatzbeginn"))],
-              ], colWidths=[40 * mm], style=TableStyle([
-                  ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                  ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                  ("TOPPADDING", (0, 0), (-1, -1), 1),
-                  ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-              ]))]],
-            [48 * mm, 40 * mm], padding=3,
-        )],
-        [_bordered_table(
-            [[_label_value("Einsatzkraft 1", d.get("einsatzkraft1")),
-              _label_value("Alarm durch", d.get("alarm_durch"))]],
-            [48 * mm, 40 * mm], padding=3,
-        )],
-        [_bordered_table(
-            [[_label_value("Einsatzkraft 2", d.get("einsatzkraft2")),
-              _label_value("Übergabezeit", d.get("uebergabezeit"))]],
-            [48 * mm, 40 * mm], padding=3,
-        )],
-        [_bordered_table(
-            [[_label_value("Einsatzende", d.get("einsatzende")),
-              _label_value("Begleitung RTM", d.get("begleitung"))]],
-            [48 * mm, 40 * mm], padding=3,
-        )],
-    ]
-    tbl = Table(rows, colWidths=[96 * mm])
-    tbl.setStyle(TableStyle([
+    ], colWidths=[96 * mm])
+    title_rows.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+
+    body = Table([
+        [_label_value("Einsatznummer", d.get("einsatznummer")), ""],
+        [_label_value("Einsatzort", d.get("einsatzort")),
+         _label_value("Datum", _fmt_date(d.get("datum")))],
+        [_label_value("Einsatzkraft 1", d.get("einsatzkraft1")),
+         _label_value("Stichwort", d.get("einsatzstichwort"))],
+        [_label_value("Einsatzkraft 2", d.get("einsatzkraft2")),
+         _label_value("Einsatzbeginn", d.get("einsatzbeginn"))],
+        [_label_value("Alarm durch", d.get("alarm_durch")),
+         _label_value("Einsatzende", d.get("einsatzende"))],
+        [_label_value("Übergabezeit", d.get("uebergabezeit")),
+         _label_value("Begleitung RTM", d.get("begleitung"))],
+    ], colWidths=[52 * mm, 44 * mm])
+    body.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, LIGHT_BORDER),
+        ("SPAN", (0, 0), (1, 0)),  # Einsatznummer spans both cols
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 4),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
-    return tbl
+
+    outer = Table([[title_rows], [body]], colWidths=[96 * mm])
+    outer.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return outer
 
 
 def _section_2_notfall(d):
@@ -414,12 +414,89 @@ def _section_4_erstdiagnose(d):
     )
 
 
+def _vital_trend_table(d):
+    """Vergleicht Vitalwerte Erstbefund ↔ Übergabe nebeneinander, sodass
+    der Trend auf einen Blick erkennbar ist (RR, Puls, AF, SpO₂, etc.)."""
+    columns = [
+        ("Zeitpunkt", None, None, None),
+        ("Zeit",      "zeit_1",   "zeit_2",   None),
+        ("RR",        "rr_sys_1", "rr_sys_2", "_rr"),  # special
+        ("Puls",      "puls_1",   "puls_2",   "/min"),
+        ("AF",        "af_1",     "af_2",     "/min"),
+        ("HF",        "hf_1",     "hf_2",     "/min"),
+        ("SpO₂",      "spo2_1",   "spo2_2",   "%"),
+        ("etCO₂",     "etco2_1",  "etco2_2",  None),
+        ("BZ",        "bz_1",     "bz_2",     "mmol/l"),
+        ("Temp",      "temp_1",   "temp_2",   "°C"),
+        ("GCS",       "gcs_1",    "gcs_2",    None),
+        ("NRS",       "nrs_1",    "nrs_2",    None),
+    ]
+
+    def _cell(d, k1, k2, suffix, unit):
+        if k1 is None:
+            return ""
+        # Special-case RR: combine sys/dia
+        if unit == "_rr":
+            sys_v = _v(d.get(f"rr_sys_{suffix}"))
+            dia_v = _v(d.get(f"rr_dia_{suffix}"))
+            if not sys_v and not dia_v:
+                return "—"
+            return f"{sys_v or '?'}/{dia_v or '?'}"
+        v = _v(d.get(k1 if suffix == "1" else k2))
+        if not v:
+            return "—"
+        return v
+
+    header_cells = [_p(col[0], S_LABEL) for col in columns]
+
+    erst_cells = [_p("<b>Erstbefund</b>", S_TXT)]
+    ueber_cells = [_p("<b>Übergabe</b>", S_TXT)]
+    for label, k1, k2, unit in columns[1:]:
+        erst_cells.append(_p(_cell(d, k1, k2, "1", unit), S_TXT))
+        ueber_cells.append(_p(_cell(d, k1, k2, "2", unit), S_TXT))
+
+    rows = [header_cells, erst_cells, ueber_cells]
+
+    # Equal-ish widths over 186 mm
+    n = len(columns)
+    first_w = 22 * mm
+    rest_w = (186 * mm - first_w) / (n - 1)
+    col_widths = [first_w] + [rest_w] * (n - 1)
+
+    tbl = Table(rows, colWidths=col_widths, hAlign="LEFT")
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), SUB_BG),
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, LIGHT_BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+    ]))
+    return tbl
+
+
 def _section_5_verlauf(d):
-    return _bordered_table(
-        [[_label_value("5. Verlauf", d.get("verlauf"), min_h=22 * mm,
-                       value_style=S_TXT)]],
-        [186 * mm], padding=4,
-    )
+    """Section 5: Freitext-Verlauf + Vital-Trend-Tabelle."""
+    inner = Table([
+        [_label_value("5. Verlauf", d.get("verlauf"), min_h=20 * mm,
+                       value_style=S_TXT)],
+        [_p("<b>Verlauf der Vitalwerte</b>", S_SUBSEC)],
+        [_vital_trend_table(d)],
+    ], colWidths=[186 * mm])
+    inner.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.4, LIGHT_BORDER),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return inner
 
 
 def _section_6_massnahmen(d):
