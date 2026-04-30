@@ -36,6 +36,7 @@
       <select name="role">
         <option value="full">Voll (kann alles lesen + schreiben)</option>
         <option value="zentral_writer">Nur Zentrale Erste Hilfe schreiben</option>
+        <option value="triage_intake">Nur Anmeldung (Triage-Kiosk)</option>
       </select>
     </label>
     <label class="checkbox-row">
@@ -74,6 +75,8 @@
         <td>
           {% if u.role == 'zentral_writer' %}
             <span class="badge">Nur Zentral schreiben</span>
+          {% elif u.role == 'triage_intake' %}
+            <span class="badge">Anmelde-Kiosk</span>
           {% else %}
             <span class="muted">Voll (Lesen + Schreiben)</span>
           {% endif %}
@@ -106,6 +109,7 @@
               <select name="role" onchange="this.form.submit()">
                 <option value="full" {% if u.role == 'full' %}selected{% endif %}>Voll</option>
                 <option value="zentral_writer" {% if u.role == 'zentral_writer' %}selected{% endif %}>Nur Zentral</option>
+                <option value="triage_intake" {% if u.role == 'triage_intake' %}selected{% endif %}>Anmelde-Kiosk</option>
               </select>
             </form>
             <form method="post"

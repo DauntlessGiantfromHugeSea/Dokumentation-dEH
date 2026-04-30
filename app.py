@@ -51,7 +51,24 @@ def _qr_svg_for_uri(uri: str) -> str:
 
 def _login_landing(user) -> str:
     """Where a user lands right after a successful (full) login."""
-    return url_for("central_index") if user.is_zentral_only else url_for("index")
+    if user.is_triage_intake:
+        return url_for("triage_new")
+    if user.is_zentral_only:
+        return url_for("central_index")
+    return url_for("index")
+
+
+# Triage-intake users are restricted to the kiosk flow.
+TRIAGE_INTAKE_ALLOWED = (
+    "/triage/new", "/triage", "/account/password",
+    "/login", "/logout", "/setup-totp", "/two-factor",
+    "/static/", "/api/triage/",
+)
+
+
+def _is_path_allowed_for_intake(path: str) -> bool:
+    return any(path == p or path.startswith(p + "/") or path.startswith(p)
+               for p in TRIAGE_INTAKE_ALLOWED)
 
 
 def admin_required(view):
@@ -93,6 +110,18 @@ def create_app(test_config: dict | None = None) -> Flask:
     with app.app_context():
         models.init_db(Path(app.config["DB_PATH"]))
 
+    # Triage-Kiosk-Schutz: 'triage_intake' Konten dürfen nur den
+    # Anmelde-Flow nutzen — alle anderen URLs liefern 403.
+    @app.before_request
+    def _restrict_triage_intake():
+        if not current_user.is_authenticated:
+            return  # login_required handles auth
+        if not getattr(current_user, "is_triage_intake", False):
+            return
+        if _is_path_allowed_for_intake(request.path):
+            return
+        abort(403)
+
     # ----- Auth -----
     login_manager = LoginManager(app)
     login_manager.login_view = "login"
@@ -116,6 +145,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         @property
         def is_zentral_only(self) -> bool:
             return (not self.is_admin) and self.role == "zentral_writer"
+
+        @property
+        def is_triage_intake(self) -> bool:
+            """Kiosk-Account: darf nur Patienten anmelden, sonst nichts."""
+            return (not self.is_admin) and self.role == "triage_intake"
 
         @property
         def can_view_decentral(self) -> bool:
@@ -688,12 +722,18 @@ def create_app(test_config: dict | None = None) -> Flask:
         db = models.get_db()
         waiting = models.list_triage_waiting(db)
         active = models.list_triage_active(db, limit=20)
+        # Höchste vorhandene Triage-ID — als Anker fürs Polling
+        row = db.execute(
+            "SELECT COALESCE(MAX(id), 0) AS max_id FROM triage_entries"
+        ).fetchone()
+        max_triage_id = row["max_id"] if row else 0
         return render_template(
             "triage_list.html",
             waiting=waiting,
             active=active,
             indicator_lookup=models.PRIOR_INDICATOR_BY_KEY,
             format_dt=models.format_dt,
+            max_triage_id=max_triage_id,
         )
 
     @app.route("/triage/new", methods=["GET", "POST"])
@@ -705,18 +745,59 @@ def create_app(test_config: dict | None = None) -> Flask:
             name = (request.form.get("name") or "").strip()
             geburtsdatum = (request.form.get("geburtsdatum") or "").strip()
             notes = (request.form.get("notes") or "").strip()
+            # Schnell-Auswahl per Knopf — übersteuert die berechnete
+            # Kategorie (z. B. wenn der Aufnehmende ohne PRIOR-Klick
+            # direkt SK I rot meldet).
+            quick_cat = (request.form.get("quick_category") or "").strip()
             tid = models.create_triage_entry(
                 db, name=name, geburtsdatum=geburtsdatum,
                 indicators=indicators, notes=notes,
                 created_by=current_user.id,
             )
+            if quick_cat in ("SK1", "SK2", "SK3"):
+                db.execute(
+                    "UPDATE triage_entries SET category = ? WHERE id = ?",
+                    (quick_cat, tid),
+                )
             db.commit()
             flash(f"Triage-Eintrag #{tid} angelegt.", "success")
+            # Kiosk-Mode: nach dem Anlegen sofort zurück zum leeren Formular
+            if current_user.is_triage_intake:
+                return redirect(url_for("triage_new"))
             return redirect(url_for("triage_list"))
         return render_template(
             "triage_new.html",
             indicators=models.PRIOR_INDICATORS,
         )
+
+    @app.route("/api/triage/recent")
+    @login_required
+    def api_triage_recent():
+        """Polling-API: liefert Triage-Einträge mit id > since_id, damit der
+        Wartebereich live über neue Anmeldungen informieren kann."""
+        try:
+            since_id = int(request.args.get("since_id") or 0)
+        except (TypeError, ValueError):
+            since_id = 0
+        rows = models.get_db().execute(
+            """
+            SELECT id, category, name, arrival_at, status
+            FROM triage_entries
+            WHERE id > ?
+            ORDER BY id DESC
+            LIMIT 50
+            """,
+            (since_id,),
+        ).fetchall()
+        return {
+            "entries": [{
+                "id": r["id"],
+                "category": r["category"],
+                "name": r["name"],
+                "arrival_at": r["arrival_at"],
+                "status": r["status"],
+            } for r in rows]
+        }
 
     @app.route("/triage/<int:tid>/start", methods=["POST"])
     @login_required

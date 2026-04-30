@@ -9,8 +9,17 @@
       innerhalb gleicher Kategorie wartet die längste Person oben.
     </p>
   </div>
-  <a class="btn" href="{{ url_for('triage_new') }}">+ Patient anmelden</a>
+  <div class="btn-row">
+    <button id="triage-notify-btn" class="btn small secondary" type="button"
+            style="display:none;">🔔 Push-Mitteilungen aktivieren</button>
+    <a class="btn" href="{{ url_for('triage_new') }}">+ Patient anmelden</a>
+  </div>
 </div>
+
+<p id="triage-poll-status" class="muted"
+   style="font-size: 0.82rem; margin: -8px 0 14px;">
+  Aktualisiert sich automatisch alle 15 Sekunden.
+</p>
 
 {% if waiting %}
 <div class="triage-grid">
@@ -48,6 +57,7 @@
       {% if t.notes %}
         <p class="triage-notes">{{ t.notes }}</p>
       {% endif %}
+      {% if not current_user.is_triage_intake %}
       <div class="triage-actions">
         <form method="post" action="{{ url_for('triage_start', tid=t.id) }}"
               style="display: inline-block;">
@@ -59,6 +69,7 @@
           <button class="btn small secondary" type="submit">Abbrechen</button>
         </form>
       </div>
+      {% endif %}
     </div>
   {% endfor %}
 </div>
@@ -114,4 +125,124 @@
   </table>
 </div>
 {% endif %}
+
+<script>
+// Live-Polling: alle 15 Sekunden /api/triage/recent abfragen.
+// Bei neuen SK I/SK II-Eingängen Browser-Notification + Audio-Beep.
+(function () {
+  let lastSeenId = {{ max_triage_id|default(0) }};
+  const status = document.getElementById('triage-poll-status');
+  const btn = document.getElementById('triage-notify-btn');
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function playBeep(highPitch) {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = highPitch ? 880 : 660;
+      gain.gain.setValueAtTime(0.18, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+      if (highPitch) {
+        // zweiter Ton 200ms später für SK I — mehr Aufmerksamkeit
+        setTimeout(() => {
+          const o2 = ctx.createOscillator(); const g2 = ctx.createGain();
+          o2.connect(g2); g2.connect(ctx.destination);
+          o2.frequency.value = 1100;
+          g2.gain.setValueAtTime(0.18, ctx.currentTime);
+          g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+          o2.start(); o2.stop(ctx.currentTime + 0.5);
+        }, 220);
+      }
+    } catch (_) { /* kein Audio möglich */ }
+  }
+
+  function notifyArrival(entry) {
+    const isRed = entry.category === 'SK1';
+    const title = isRed
+      ? '🚨 SK I rot — sofort behandeln!'
+      : '⚠️ SK II gelb — dringend';
+    const body = (entry.name || 'Patient ohne Namen')
+      + ' ist im Wartebereich angekommen';
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(title, {
+          body: body,
+          icon: '/static/favicon.png',
+          tag: 'triage-' + entry.id,
+          requireInteraction: isRed,
+        });
+      } catch (_) { /* einige Browser werfen hier — egal */ }
+    }
+    playBeep(isRed);
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch(
+        '/api/triage/recent?since_id=' + lastSeenId,
+        { credentials: 'same-origin' }
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const entries = (data.entries || []).filter(e => e.id > lastSeenId);
+      if (!entries.length) {
+        if (status) status.textContent =
+          'Keine neuen Anmeldungen · letzte Aktualisierung: '
+          + new Date().toLocaleTimeString('de-DE');
+        return;
+      }
+      // Höchste gesehene ID merken
+      lastSeenId = Math.max(...entries.map(e => e.id), lastSeenId);
+      // Push für SK I + SK II
+      for (const e of entries) {
+        if (e.status === 'wartend'
+            && (e.category === 'SK1' || e.category === 'SK2')) {
+          notifyArrival(e);
+        }
+      }
+      // Liste neu laden, damit die neuen Karten erscheinen
+      location.reload();
+    } catch (_) { /* offline / network */ }
+  }
+
+  // Permission-Knopf
+  if ('Notification' in window && btn) {
+    function refreshBtn() {
+      if (Notification.permission === 'granted') {
+        btn.textContent = '🔔 Push-Mitteilungen aktiv';
+        btn.disabled = true;
+      } else if (Notification.permission === 'denied') {
+        btn.textContent = '🔕 Push gesperrt (Browser-Einstellungen)';
+        btn.disabled = true;
+      } else {
+        btn.textContent = '🔔 Push-Mitteilungen aktivieren';
+        btn.disabled = false;
+        btn.style.display = 'inline-flex';
+      }
+    }
+    btn.style.display = 'inline-flex';
+    refreshBtn();
+    btn.addEventListener('click', async () => {
+      try {
+        await Notification.requestPermission();
+      } catch (_) {}
+      refreshBtn();
+    });
+  }
+
+  // Polling-Loop
+  setInterval(poll, 15000);
+  // Beim Öffnen sofort einmal aktualisieren
+  setTimeout(poll, 800);
+})();
+</script>
 {% endblock %}

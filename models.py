@@ -325,7 +325,14 @@ def standalone_connection(db_path: Path) -> Iterator[sqlite3.Connection]:
 
 # ---------- Users ----------
 
-VALID_ROLES = ("full", "zentral_writer")
+VALID_ROLES = ("full", "zentral_writer", "triage_intake")
+
+
+ROLE_LABELS = {
+    "full": "Voll (Lesen + Schreiben)",
+    "zentral_writer": "Nur Zentrale Erste Hilfe schreiben",
+    "triage_intake": "Nur Anmeldung (Triage-Kiosk)",
+}
 
 
 def create_user(conn: sqlite3.Connection, username: str, password: str,

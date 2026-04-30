@@ -5,14 +5,42 @@
   <div>
     <h1>Patient anmelden</h1>
     <p class="tagline">
-      PRIOR-Erstsichtung. Indikatoren ankreuzen — die Sichtungskategorie
-      (SK I / II / III) wird automatisch ermittelt.
+      Schnellster Weg: Schnell-Kategorie wählen + speichern.
+      Optional PRIOR-Indikatoren ankreuzen für genauere Doku.
     </p>
   </div>
-  <a class="btn small secondary" href="{{ url_for('triage_list') }}">← Wartebereich</a>
+  {% if not current_user.is_triage_intake %}
+    <a class="btn small secondary" href="{{ url_for('triage_list') }}">← Wartebereich</a>
+  {% endif %}
 </div>
 
-<form method="post" class="stack">
+<form method="post" class="stack" id="triageForm">
+
+  <div class="card">
+    <div class="card-header">Schnell-Auswahl — Sichtungskategorie</div>
+    <div class="quick-cat">
+      <label class="quick-cat-btn cat-SK1">
+        <input type="radio" name="quick_category" value="SK1">
+        <span class="qc-tag">SK I</span>
+        <span class="qc-label">rot · sofort</span>
+      </label>
+      <label class="quick-cat-btn cat-SK2">
+        <input type="radio" name="quick_category" value="SK2">
+        <span class="qc-tag">SK II</span>
+        <span class="qc-label">gelb · dringend</span>
+      </label>
+      <label class="quick-cat-btn cat-SK3">
+        <input type="radio" name="quick_category" value="SK3" checked>
+        <span class="qc-tag">SK III</span>
+        <span class="qc-label">grün · kann warten</span>
+      </label>
+    </div>
+    <p class="muted" style="margin: 10px 0 0; font-size: 0.85rem;">
+      Standard ist SK&nbsp;III grün. Indikatoren unten können die Kategorie
+      automatisch auf SK&nbsp;I/II hochstufen.
+    </p>
+  </div>
+
   <div class="card">
     <div class="card-header">Person</div>
     <div class="row cols-2-1">
@@ -27,17 +55,27 @@
       </label>
     </div>
     <p class="muted" style="font-size: 0.85rem; margin: 0;">
-      Beide Felder sind optional — bei akuten Notfällen reicht das später.
-      Falls Name + Geburtsdatum bekannt, wird die Patientenakte
-      automatisch verknüpft.
+      Beide Felder optional. Bei akuten Notfällen reicht das später —
+      Hauptsache, der Patient ist im Wartebereich sichtbar.
     </p>
   </div>
 
   <div class="card">
-    <div class="card-header">PRIOR-Indikatoren</div>
-    <p class="muted" style="margin: 0 0 14px; font-size: 0.9rem;">
-      Mehrfachauswahl möglich. Erstes SK&nbsp;I-Match → SK&nbsp;I (rot),
-      sonst SK&nbsp;II falls liegend, sonst SK&nbsp;III (grün).
+    <div class="card-header">Notiz (optional)</div>
+    <label class="field">
+      Kurze Beschreibung
+      <textarea name="notes" rows="2"
+                placeholder="z. B. Sturz vom Klettergerüst, ist ansprechbar"></textarea>
+    </label>
+  </div>
+
+  <details class="card prior-details">
+    <summary class="card-header" style="cursor: pointer;">
+      PRIOR-Indikatoren (optional, für genauere Doku)
+    </summary>
+    <p class="muted" style="margin: 12px 0 14px; font-size: 0.9rem;">
+      Mehrfachauswahl möglich. Erstes SK&nbsp;I-Match → Kategorie wird
+      automatisch auf SK&nbsp;I gesetzt (übersteuert die Schnell-Auswahl).
     </p>
 
     <div class="prior-group">
@@ -94,51 +132,62 @@
       </label>
       {% endfor %}
     </div>
+  </details>
 
-    <div id="prior-result" class="prior-result"></div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">Notiz (optional)</div>
-    <label class="field">
-      Kurze Beschreibung
-      <textarea name="notes" rows="2"
-                placeholder="z. B. Sturz vom Klettergerüst, ist ansprechbar"></textarea>
-    </label>
-  </div>
+  <div id="prior-result" class="prior-result"></div>
 
   <div class="btn-row">
-    <button class="btn" type="submit">Eintragen → Wartebereich</button>
-    <a class="btn secondary" href="{{ url_for('triage_list') }}">Abbrechen</a>
+    <button class="btn" type="submit" style="font-size: 1.05rem; padding: 12px 24px;">
+      Eintragen
+    </button>
+    {% if not current_user.is_triage_intake %}
+      <a class="btn secondary" href="{{ url_for('triage_list') }}">Abbrechen</a>
+    {% else %}
+      <button type="reset" class="btn secondary">Zurücksetzen</button>
+    {% endif %}
   </div>
 </form>
 
 <script>
-// Live-Vorschau der Sichtungskategorie
+// Live-Vorschau: Schnell-Auswahl + PRIOR-Indikatoren → effektive Kategorie
 (function () {
   const result = document.getElementById('prior-result');
+
   function compute() {
+    // Indikator-Kategorien sammeln
     const checked = Array.from(
       document.querySelectorAll('input[name="indicators"]:checked'));
     const cats = new Set();
     for (const cb of checked) {
       const badge = cb.parentElement.querySelector('.badge');
-      if (badge && badge.textContent) {
+      if (badge) {
         const t = badge.textContent.trim().replace(/\s+/g, '');
         if (t.startsWith('SK1')) cats.add('SK1');
         else if (t.startsWith('SK2')) cats.add('SK2');
         else if (t.startsWith('SK3')) cats.add('SK3');
       }
     }
-    let cat, label, cls;
-    if (cats.has('SK1')) { cat = 'SK1'; label = 'SK I · rot — sofort'; cls = 'cat-SK1'; }
-    else if (cats.has('SK2')) { cat = 'SK2'; label = 'SK II · gelb — dringend'; cls = 'cat-SK2'; }
-    else { cat = 'SK3'; label = 'SK III · grün — kann warten'; cls = 'cat-SK3'; }
-    result.className = 'prior-result ' + cls;
-    result.innerHTML = '<strong>Voraussichtliche Sichtungskategorie:</strong> ' + label;
+    // Schnell-Auswahl
+    const quick = (document.querySelector('input[name="quick_category"]:checked') || {}).value;
+
+    let cat;
+    if (cats.has('SK1')) cat = 'SK1';
+    else if (quick === 'SK1') cat = 'SK1';
+    else if (cats.has('SK2') || quick === 'SK2') cat = 'SK2';
+    else cat = 'SK3';
+
+    const labels = {
+      SK1: 'SK I · rot — sofort',
+      SK2: 'SK II · gelb — dringend',
+      SK3: 'SK III · grün — kann warten',
+    };
+    result.className = 'prior-result cat-' + cat;
+    result.innerHTML = '<strong>Sichtungskategorie:</strong> ' + labels[cat];
   }
-  document.querySelectorAll('input[name="indicators"]').forEach(
-    cb => cb.addEventListener('change', compute));
+
+  document.querySelectorAll(
+    'input[name="indicators"], input[name="quick_category"]'
+  ).forEach(el => el.addEventListener('change', compute));
   compute();
 })();
 </script>

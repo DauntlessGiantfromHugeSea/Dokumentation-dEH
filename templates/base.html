@@ -12,27 +12,38 @@
   {% if current_user.is_authenticated %}
   <header class="topbar">
     <span class="brand">Erste Hilfe</span>
-    <nav>
-      {% if current_user.can_view_decentral %}
-        <a href="{{ url_for('dashboard') }}">Dashboard</a>
-        <a href="{{ url_for('index') }}">Berichte</a>
-      {% endif %}
-      <a href="{{ url_for('triage_list') }}">Triage</a>
-      <a href="{{ url_for('central_index') }}">Zentral</a>
-      {% if current_user.can_view_decentral %}
-        <a href="{{ url_for('protocol_new_chooser') }}">Neuer Bericht</a>
-        <a href="{{ url_for('patient_list') }}">Personen</a>
-        <a href="{{ url_for('export_form') }}">Export</a>
-      {% endif %}
-      {% if current_user.is_admin %}
-        <a href="{{ url_for('admin_users') }}">Benutzer</a>
-      {% endif %}
-      <a href="{{ url_for('docs_index') }}">Hilfe</a>
-    </nav>
-    <span class="user">
-      <a href="{{ url_for('account_password') }}">{{ current_user.full_name or current_user.username }}</a>
-      <a href="{{ url_for('logout') }}">Abmelden</a>
-    </span>
+    {% if current_user.is_triage_intake %}
+      {# Kiosk-Mode: nur Anmelden + Logout #}
+      <nav>
+        <a href="{{ url_for('triage_new') }}">+ Anmelden</a>
+      </nav>
+      <span class="user">
+        <span class="muted" style="color: rgba(255,255,255,0.85);">Anmelde-Kiosk</span>
+        <a href="{{ url_for('logout') }}">Abmelden</a>
+      </span>
+    {% else %}
+      <nav>
+        {% if current_user.can_view_decentral %}
+          <a href="{{ url_for('dashboard') }}">Dashboard</a>
+          <a href="{{ url_for('index') }}">Berichte</a>
+        {% endif %}
+        <a href="{{ url_for('triage_list') }}">Triage</a>
+        <a href="{{ url_for('central_index') }}">Zentral</a>
+        {% if current_user.can_view_decentral %}
+          <a href="{{ url_for('protocol_new_chooser') }}">Neuer Bericht</a>
+          <a href="{{ url_for('patient_list') }}">Personen</a>
+          <a href="{{ url_for('export_form') }}">Export</a>
+        {% endif %}
+        {% if current_user.is_admin %}
+          <a href="{{ url_for('admin_users') }}">Benutzer</a>
+        {% endif %}
+        <a href="{{ url_for('docs_index') }}">Hilfe</a>
+      </nav>
+      <span class="user">
+        <a href="{{ url_for('account_password') }}">{{ current_user.full_name or current_user.username }}</a>
+        <a href="{{ url_for('logout') }}">Abmelden</a>
+      </span>
+    {% endif %}
   </header>
   {% endif %}
 
