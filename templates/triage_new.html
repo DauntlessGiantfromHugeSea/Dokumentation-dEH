@@ -46,14 +46,15 @@
     <div class="row cols-2-1">
       <label class="field">
         Name (Vorname Nachname, falls bekannt)
-        <input name="name" autofocus autocomplete="off"
+        <input name="name" id="triageName" autofocus autocomplete="off"
                placeholder="z. B. Anna Müller">
       </label>
       <label class="field">
         Geburtsdatum
-        <input name="geburtsdatum" type="date">
+        <input name="geburtsdatum" id="triageDob" type="date">
       </label>
     </div>
+    <div id="triageLookup" class="lookup-hint" style="display: none;"></div>
     <p class="muted" style="font-size: 0.85rem; margin: 0;">
       Beide Felder optional. Bei akuten Notfällen reicht das später —
       Hauptsache, der Patient ist im Wartebereich sichtbar.
@@ -189,6 +190,100 @@
     'input[name="indicators"], input[name="quick_category"]'
   ).forEach(el => el.addEventListener('change', compute));
   compute();
+})();
+</script>
+
+<script>
+// Personenabgleich: sobald Name oder Geburtsdatum getippt wird,
+// /api/triage/lookup abfragen und Treffer im Hint-Container anzeigen.
+(function () {
+  const nameEl = document.getElementById('triageName');
+  const dobEl = document.getElementById('triageDob');
+  const hint = document.getElementById('triageLookup');
+  if (!nameEl || !dobEl || !hint) return;
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function renderMatches(matches) {
+    if (!matches.length) {
+      hint.style.display = 'none';
+      hint.innerHTML = '';
+      hint.classList.remove('visible');
+      return;
+    }
+    const single = matches.length === 1 ? matches[0] : null;
+    let html = '';
+    if (single) {
+      const total = (single.previous_decentral || 0)
+                  + (single.previous_central || 0);
+      html += '<strong>Bekannte Person:</strong> '
+            + escapeHtml(single.name || '—');
+      if (single.geburtsdatum) {
+        html += ' · geb. ' + escapeHtml(single.geburtsdatum);
+      }
+      if (single.stammnummer) {
+        html += ' · <span class="badge">' + escapeHtml(single.stammnummer)
+              + '</span>';
+      }
+      html += '<br>';
+      html += 'Bisher <strong>' + total + '</strong> Behandlung(en) — '
+            + (single.previous_decentral || 0) + ' dezentral, '
+            + (single.previous_central || 0) + ' zentral.';
+      if (single.last_treatment && single.last_treatment.created_at) {
+        html += ' Letzte: ' + escapeHtml(single.last_treatment.created_at);
+      }
+    } else {
+      html += '<strong>' + matches.length
+            + ' mögliche Personen gefunden:</strong><ul style="margin:6px 0 0;'
+            + 'padding-left:18px;">';
+      for (const m of matches.slice(0, 5)) {
+        const total = (m.previous_decentral || 0) + (m.previous_central || 0);
+        html += '<li>' + escapeHtml(m.name || '—')
+              + (m.geburtsdatum ? ' · geb. ' + escapeHtml(m.geburtsdatum) : '')
+              + (m.stammnummer ? ' · ' + escapeHtml(m.stammnummer) : '')
+              + ' (' + total + ' Vorbehandlung' + (total === 1 ? '' : 'en')
+              + ')</li>';
+      }
+      html += '</ul><p class="muted" style="margin:6px 0 0;font-size:0.8rem;">'
+            + 'Tipp: Geburtsdatum eingeben, um eindeutig zu identifizieren.'
+            + '</p>';
+    }
+    hint.innerHTML = html;
+    hint.style.display = 'block';
+    hint.classList.add('visible');
+  }
+
+  async function check() {
+    const name = nameEl.value.trim();
+    const dob = dobEl.value.trim();
+    if (!name && !dob) {
+      hint.style.display = 'none';
+      hint.innerHTML = '';
+      hint.classList.remove('visible');
+      return;
+    }
+    try {
+      const url = new URL('/api/triage/lookup', window.location.origin);
+      if (name) url.searchParams.set('name', name);
+      if (dob) url.searchParams.set('geburtsdatum', dob);
+      const res = await fetch(url.toString(), { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const data = await res.json();
+      renderMatches(data.matches || []);
+    } catch (_) { /* offline */ }
+  }
+
+  let timer = null;
+  function debounced() {
+    clearTimeout(timer);
+    timer = setTimeout(check, 250);
+  }
+  nameEl.addEventListener('input', debounced);
+  dobEl.addEventListener('change', check);
+  check();
 })();
 </script>
 {% endblock %}

@@ -82,15 +82,17 @@
 
 {% if active %}
 <div class="card" style="margin-top: 24px;">
-  <div class="card-header">In Behandlung / abgeschlossen</div>
+  <div class="card-header">In Behandlung</div>
   <table class="data">
     <thead>
       <tr>
         <th>Ankunft</th>
         <th>SK</th>
         <th>Name</th>
-        <th>Status</th>
         <th>Bericht</th>
+        {% if not current_user.is_triage_intake %}
+          <th class="right">Aktion</th>
+        {% endif %}
       </tr>
     </thead>
     <tbody>
@@ -106,19 +108,21 @@
         </td>
         <td>{{ t.patient_name_resolved or t.name or '—' }}</td>
         <td>
-          {% if t.status == 'in_behandlung' %}
-            <span class="badge totp-on">in Behandlung</span>
-          {% elif t.status == 'abgeschlossen' %}
-            <span class="badge">abgeschlossen</span>
-          {% endif %}
-        </td>
-        <td>
           {% if t.protocol_laufende_nr %}
             <a href="{{ url_for('central_detail', pid=t.treatment_protocol_id) }}">
               {{ t.protocol_laufende_nr }}
             </a>
           {% else %}—{% endif %}
         </td>
+        {% if not current_user.is_triage_intake %}
+        <td class="right">
+          <form method="post" action="{{ url_for('triage_finish', tid=t.id) }}"
+                style="display: inline-block;"
+                onsubmit="return confirm('Behandlung von „{{ t.patient_name_resolved or t.name or 'Patient' }}“ wirklich abschließen?');">
+            <button class="btn small" type="submit">Behandlung abschließen</button>
+          </form>
+        </td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>

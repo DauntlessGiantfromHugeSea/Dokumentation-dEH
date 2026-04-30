@@ -799,6 +799,34 @@ def create_app(test_config: dict | None = None) -> Flask:
             } for r in rows]
         }
 
+    @app.route("/api/triage/lookup")
+    @login_required
+    def api_triage_lookup():
+        """Personenabgleich für /triage/new — erreichbar auch für den
+        Anmelde-Kiosk (`triage_intake`) wegen /api/triage/-Prefix."""
+        db = models.get_db()
+        name = (request.args.get("name") or "").strip()
+        geburtsdatum = (request.args.get("geburtsdatum") or "").strip()
+        if not name and not geburtsdatum:
+            return {"matches": []}
+        rows = models.search_patients(
+            db, name_query=name, geburtsdatum=geburtsdatum
+        )
+        matches = []
+        for r in rows[:10]:
+            counts = models.patient_protocol_counts(db, r["id"])
+            last = models.patient_last_treatment(db, r["id"])
+            matches.append({
+                "patient_id": r["id"],
+                "name": r["name"],
+                "geburtsdatum": r["geburtsdatum"],
+                "stammnummer": r["stammnummer"] or "",
+                "previous_decentral": counts["decentral"],
+                "previous_central": counts["central"],
+                "last_treatment": last,
+            })
+        return {"matches": matches}
+
     @app.route("/triage/<int:tid>/start", methods=["POST"])
     @login_required
     def triage_start(tid: int):
@@ -834,6 +862,22 @@ def create_app(test_config: dict | None = None) -> Flask:
         else:
             db.commit()
             flash(f"Triage-Eintrag #{tid} abgebrochen.", "success")
+        return redirect(url_for("triage_list"))
+
+    @app.route("/triage/<int:tid>/finish", methods=["POST"])
+    @login_required
+    def triage_finish(tid: int):
+        db = models.get_db()
+        entry = models.get_triage_entry(db, tid)
+        if not entry:
+            abort(404)
+        if not models.finish_triage_treatment(db, tid):
+            flash("Behandlung konnte nicht abgeschlossen werden "
+                  "(eventuell schon abgeschlossen).", "error")
+        else:
+            db.commit()
+            who = entry.get("name") or "Patient"
+            flash(f"Behandlung von „{who}“ abgeschlossen.", "success")
         return redirect(url_for("triage_list"))
 
     # ----- Central first-aid (Notfallprotokoll) -----

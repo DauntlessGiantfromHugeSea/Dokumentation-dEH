@@ -157,6 +157,7 @@ CREATE TABLE IF NOT EXISTS triage_entries (
     status                   TEXT NOT NULL DEFAULT 'wartend',
                               -- 'wartend' | 'in_behandlung' | 'abgeschlossen' | 'abgebrochen'
     treatment_started_at     TEXT,
+    treatment_finished_at    TEXT,
     treatment_protocol_id    INTEGER REFERENCES central_protocols(id)
                               ON DELETE SET NULL,
     created_by               INTEGER REFERENCES users(id),
@@ -252,6 +253,15 @@ def init_db(db_path: Path) -> None:
             conn.execute("ALTER TABLE central_protocols ADD COLUMN global_id INTEGER")
         if "laufende_nr" not in cent_cols:
             conn.execute("ALTER TABLE central_protocols ADD COLUMN laufende_nr TEXT")
+
+        # Migration: triage treatment_finished_at column.
+        triage_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(triage_entries)")
+        }
+        if "treatment_finished_at" not in triage_cols:
+            conn.execute(
+                "ALTER TABLE triage_entries ADD COLUMN treatment_finished_at TEXT"
+            )
 
         # Backfill global_id (and matching laufende_nr) for any rows that
         # don't have one yet — chronologically, oldest first.
@@ -1437,7 +1447,7 @@ def list_triage_waiting(conn) -> list[sqlite3.Row]:
 
 
 def list_triage_active(conn, limit: int = 50) -> list[sqlite3.Row]:
-    """Aktive (in_behandlung) Triage-Einträge — für die History-Übersicht."""
+    """Aktuell in Behandlung — abgeschlossene Einträge tauchen hier nicht mehr auf."""
     return conn.execute(
         """
         SELECT t.*, p.name AS patient_name_resolved,
@@ -1445,12 +1455,26 @@ def list_triage_active(conn, limit: int = 50) -> list[sqlite3.Row]:
         FROM triage_entries t
         LEFT JOIN patients p ON p.id = t.patient_id
         LEFT JOIN central_protocols cp ON cp.id = t.treatment_protocol_id
-        WHERE t.status IN ('in_behandlung', 'abgeschlossen')
+        WHERE t.status = 'in_behandlung'
         ORDER BY datetime(t.arrival_at) DESC
         LIMIT ?
         """,
         (limit,),
     ).fetchall()
+
+
+def finish_triage_treatment(conn, tid: int) -> bool:
+    """Behandlung abschließen — Eintrag verschwindet aus Triage-Listen."""
+    cur = conn.execute(
+        """
+        UPDATE triage_entries
+        SET status = 'abgeschlossen',
+            treatment_finished_at = datetime('now')
+        WHERE id = ? AND status = 'in_behandlung'
+        """,
+        (tid,),
+    )
+    return cur.rowcount > 0
 
 
 def start_triage_treatment(conn, tid: int,
