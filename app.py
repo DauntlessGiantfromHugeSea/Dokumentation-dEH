@@ -680,6 +680,81 @@ def create_app(test_config: dict | None = None) -> Flask:
     def api_responders():
         return {"responders": models.list_decentral_responders(models.get_db())}
 
+    # ----- PRIOR-Triage (Anmeldung) -----
+
+    @app.route("/triage")
+    @login_required
+    def triage_list():
+        db = models.get_db()
+        waiting = models.list_triage_waiting(db)
+        active = models.list_triage_active(db, limit=20)
+        return render_template(
+            "triage_list.html",
+            waiting=waiting,
+            active=active,
+            indicator_lookup=models.PRIOR_INDICATOR_BY_KEY,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/triage/new", methods=["GET", "POST"])
+    @login_required
+    def triage_new():
+        db = models.get_db()
+        if request.method == "POST":
+            indicators = request.form.getlist("indicators")
+            name = (request.form.get("name") or "").strip()
+            geburtsdatum = (request.form.get("geburtsdatum") or "").strip()
+            notes = (request.form.get("notes") or "").strip()
+            tid = models.create_triage_entry(
+                db, name=name, geburtsdatum=geburtsdatum,
+                indicators=indicators, notes=notes,
+                created_by=current_user.id,
+            )
+            db.commit()
+            flash(f"Triage-Eintrag #{tid} angelegt.", "success")
+            return redirect(url_for("triage_list"))
+        return render_template(
+            "triage_new.html",
+            indicators=models.PRIOR_INDICATORS,
+        )
+
+    @app.route("/triage/<int:tid>/start", methods=["POST"])
+    @login_required
+    def triage_start(tid: int):
+        db = models.get_db()
+        entry = models.get_triage_entry(db, tid)
+        if not entry:
+            abort(404)
+        # Status auf in_behandlung setzen
+        models.start_triage_treatment(db, tid)
+        db.commit()
+        # Zur SPA mit Pre-fill der Identifikations-Felder
+        vorname = ""
+        nachname = ""
+        full = (entry.get("name") or "").strip()
+        if full:
+            parts = full.split(" ", 1)
+            vorname = parts[0]
+            nachname = parts[1] if len(parts) > 1 else ""
+        return redirect(url_for(
+            "central_index",
+            vorname=vorname,
+            nachname=nachname,
+            geburtsdatum=entry.get("geburtsdatum") or "",
+            triage_id=tid,
+        ))
+
+    @app.route("/triage/<int:tid>/cancel", methods=["POST"])
+    @login_required
+    def triage_cancel(tid: int):
+        db = models.get_db()
+        if not models.cancel_triage_entry(db, tid):
+            flash("Eintrag konnte nicht abgebrochen werden.", "error")
+        else:
+            db.commit()
+            flash(f"Triage-Eintrag #{tid} abgebrochen.", "success")
+        return redirect(url_for("triage_list"))
+
     # ----- Central first-aid (Notfallprotokoll) -----
 
     @app.route("/central/new", methods=["GET", "POST"])
@@ -868,6 +943,14 @@ def create_app(test_config: dict | None = None) -> Flask:
         # POST
         data = request.get_json(silent=True) or {}
         new_id = models.create_central_protocol(db, data, current_user.id)
+        # Falls die SPA mit ?triage_id=... aufgerufen wurde, das Protokoll
+        # mit dem Triage-Eintrag verknüpfen.
+        try:
+            tid = int(request.args.get("triage_id") or 0)
+        except (ValueError, TypeError):
+            tid = 0
+        if tid:
+            models.link_triage_to_central_protocol(db, tid, new_id)
         db.commit()
         return {"id": new_id}, 201
 

@@ -17,6 +17,7 @@
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
         <a href="{{ url_for('index') }}">Berichte</a>
       {% endif %}
+      <a href="{{ url_for('triage_list') }}">Triage</a>
       <a href="{{ url_for('central_index') }}">Zentral</a>
       {% if current_user.can_view_decentral %}
         <a href="{{ url_for('protocol_new_chooser') }}">Neuer Bericht</a>

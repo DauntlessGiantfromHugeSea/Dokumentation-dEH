@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Patient anmelden — PRIOR{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Patient anmelden</h1>
+    <p class="tagline">
+      PRIOR-Erstsichtung. Indikatoren ankreuzen — die Sichtungskategorie
+      (SK I / II / III) wird automatisch ermittelt.
+    </p>
+  </div>
+  <a class="btn small secondary" href="{{ url_for('triage_list') }}">← Wartebereich</a>
+</div>
+
+<form method="post" class="stack">
+  <div class="card">
+    <div class="card-header">Person</div>
+    <div class="row cols-2-1">
+      <label class="field">
+        Name (Vorname Nachname, falls bekannt)
+        <input name="name" autofocus autocomplete="off"
+               placeholder="z. B. Anna Müller">
+      </label>
+      <label class="field">
+        Geburtsdatum
+        <input name="geburtsdatum" type="date">
+      </label>
+    </div>
+    <p class="muted" style="font-size: 0.85rem; margin: 0;">
+      Beide Felder sind optional — bei akuten Notfällen reicht das später.
+      Falls Name + Geburtsdatum bekannt, wird die Patientenakte
+      automatisch verknüpft.
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="card-header">PRIOR-Indikatoren</div>
+    <p class="muted" style="margin: 0 0 14px; font-size: 0.9rem;">
+      Mehrfachauswahl möglich. Erstes SK&nbsp;I-Match → SK&nbsp;I (rot),
+      sonst SK&nbsp;II falls liegend, sonst SK&nbsp;III (grün).
+    </p>
+
+    <div class="prior-group">
+      <h3>Eigenschutz / MANV</h3>
+      {% for k, label, cat, group in indicators if group == "manv" %}
+      <label class="prior-row">
+        <input type="checkbox" name="indicators" value="{{ k }}">
+        <span>{{ label }}</span>
+        <span class="badge cat-badge-{{ cat }}">{{ cat[:2] }} {{ cat[2:] }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="prior-group">
+      <h3>Leitsymptom</h3>
+      {% for k, label, cat, group in indicators if group == "leitsymptom" %}
+      <label class="prior-row">
+        <input type="checkbox" name="indicators" value="{{ k }}">
+        <span>{{ label }}</span>
+        <span class="badge cat-badge-{{ cat }}">{{ cat[:2] }} {{ cat[2:] }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="prior-group">
+      <h3>ABCDE-Check</h3>
+      {% for k, label, cat, group in indicators if group == "abcde" %}
+      <label class="prior-row">
+        <input type="checkbox" name="indicators" value="{{ k }}">
+        <span>{{ label }}</span>
+        <span class="badge cat-badge-{{ cat }}">{{ cat[:2] }} {{ cat[2:] }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="prior-group">
+      <h3>Mobilität</h3>
+      {% for k, label, cat, group in indicators if group == "mobilitaet" %}
+      <label class="prior-row">
+        <input type="checkbox" name="indicators" value="{{ k }}">
+        <span>{{ label }}</span>
+        <span class="badge cat-badge-{{ cat }}">{{ cat[:2] }} {{ cat[2:] }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="prior-group">
+      <h3>Zusatz bei Kindern</h3>
+      {% for k, label, cat, group in indicators if group == "kind" %}
+      <label class="prior-row">
+        <input type="checkbox" name="indicators" value="{{ k }}">
+        <span>{{ label }}</span>
+        <span class="badge cat-badge-{{ cat }}">{{ cat[:2] }} {{ cat[2:] }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div id="prior-result" class="prior-result"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Notiz (optional)</div>
+    <label class="field">
+      Kurze Beschreibung
+      <textarea name="notes" rows="2"
+                placeholder="z. B. Sturz vom Klettergerüst, ist ansprechbar"></textarea>
+    </label>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn" type="submit">Eintragen → Wartebereich</button>
+    <a class="btn secondary" href="{{ url_for('triage_list') }}">Abbrechen</a>
+  </div>
+</form>
+
+<script>
+// Live-Vorschau der Sichtungskategorie
+(function () {
+  const result = document.getElementById('prior-result');
+  function compute() {
+    const checked = Array.from(
+      document.querySelectorAll('input[name="indicators"]:checked'));
+    const cats = new Set();
+    for (const cb of checked) {
+      const badge = cb.parentElement.querySelector('.badge');
+      if (badge && badge.textContent) {
+        const t = badge.textContent.trim().replace(/\s+/g, '');
+        if (t.startsWith('SK1')) cats.add('SK1');
+        else if (t.startsWith('SK2')) cats.add('SK2');
+        else if (t.startsWith('SK3')) cats.add('SK3');
+      }
+    }
+    let cat, label, cls;
+    if (cats.has('SK1')) { cat = 'SK1'; label = 'SK I · rot — sofort'; cls = 'cat-SK1'; }
+    else if (cats.has('SK2')) { cat = 'SK2'; label = 'SK II · gelb — dringend'; cls = 'cat-SK2'; }
+    else { cat = 'SK3'; label = 'SK III · grün — kann warten'; cls = 'cat-SK3'; }
+    result.className = 'prior-result ' + cls;
+    result.innerHTML = '<strong>Voraussichtliche Sichtungskategorie:</strong> ' + label;
+  }
+  document.querySelectorAll('input[name="indicators"]').forEach(
+    cb => cb.addEventListener('change', compute));
+  compute();
+})();
+</script>
+{% endblock %}

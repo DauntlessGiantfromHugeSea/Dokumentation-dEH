@@ -552,6 +552,7 @@
       <a href="/dashboard">Dashboard</a>
       <a href="/">Berichte</a>
     {% endif %}
+    <a href="/triage">Triage</a>
     <a href="/central" class="active">Zentral</a>
     {% if current_user.can_view_decentral %}
       <a href="/protocols/new">Neuer Bericht</a>
@@ -1110,7 +1111,15 @@
   async function apiList()         { return (await fetch('/api/central/protokolle')).json(); }
   async function apiGet(id)        { return (await fetch('/api/central/protokolle/' + id)).json(); }
   async function apiCreate(data)   {
-    return (await fetch('/api/central/protokolle', {
+    // Falls die SPA aus dem Triage-Wartebereich gestartet wurde, hängen
+    // wir die triage_id beim ersten POST an, damit der neue Bericht
+    // automatisch mit dem Triage-Eintrag verknüpft wird.
+    const params = new URLSearchParams(window.location.search);
+    const triageId = params.get('triage_id');
+    const url = triageId
+      ? '/api/central/protokolle?triage_id=' + encodeURIComponent(triageId)
+      : '/api/central/protokolle';
+    return (await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     })).json();

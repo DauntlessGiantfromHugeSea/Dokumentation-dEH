@@ -141,6 +141,30 @@ CREATE TABLE IF NOT EXISTS protocol_sequence (
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(source_type, source_id)
 );
+
+-- PRIOR-Triage-Eingang (Anmeldung). Patienten werden bei Ankunft kurz
+-- eingestuft (SK I rot / SK II gelb / SK III grün) und tauchen dann in
+-- der Wartebereich-Liste auf, sortiert nach Akutität + Wartezeit.
+CREATE TABLE IF NOT EXISTS triage_entries (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id               INTEGER REFERENCES patients(id) ON DELETE SET NULL,
+    name                     TEXT,
+    geburtsdatum             TEXT,
+    arrival_at               TEXT NOT NULL DEFAULT (datetime('now')),
+    category                 TEXT NOT NULL,    -- 'SK1' | 'SK2' | 'SK3'
+    indicators               TEXT,             -- JSON-Array der Schlüssel
+    notes                    TEXT,
+    status                   TEXT NOT NULL DEFAULT 'wartend',
+                              -- 'wartend' | 'in_behandlung' | 'abgeschlossen' | 'abgebrochen'
+    treatment_started_at     TEXT,
+    treatment_protocol_id    INTEGER REFERENCES central_protocols(id)
+                              ON DELETE SET NULL,
+    created_by               INTEGER REFERENCES users(id),
+    created_at               TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_triage_status ON triage_entries(status);
+CREATE INDEX IF NOT EXISTS idx_triage_category ON triage_entries(category);
 """
 
 
@@ -1301,3 +1325,161 @@ def reset_all_protocols(conn: sqlite3.Connection) -> dict:
         "comments": n_comments,
         "central_comments": n_central_comments,
     }
+
+
+# ---------- PRIOR-Triage (Anmeldung) ----------
+
+# Indikatoren mit ihrer SK-Zuordnung. Reihenfolge = Priorität: erstes
+# Match gewinnt (SK1 schlägt SK2 schlägt SK3).
+PRIOR_INDICATORS = [
+    # key,                label,                                    category, group
+    ("blutung",           "Lebensbedrohliche Blutung (z. B. innere Blutung)", "SK1", "leitsymptom"),
+    ("a_bewusstlos",      "Bewusstlos / drohende Atemwegsverlegung", "SK1", "abcde"),
+    ("b_atmung",          "Atemstörung (Atemstillstand, krankhaftes Atemgeräusch)", "SK1", "abcde"),
+    ("c_kreislauf",       "Kreislaufstörung (fehlender Puls, verzögerte Nagelbettfüllung)", "SK1", "abcde"),
+    ("d_bewusstsein",     "Bewusstseinsstörung (desorientiert, somnolent)", "SK1", "abcde"),
+    ("e_schmerz",         "Starke Schmerzen am Körperstamm (Thorax/Abdomen/Becken)", "SK1", "abcde"),
+    ("k_zyanose",         "Kind: Zyanose",                          "SK1", "kind"),
+    ("k_nasenfluegeln",   "Kind: Nasenflügeln",                     "SK1", "kind"),
+    ("k_blasse",          "Kind: Blässe",                           "SK1", "kind"),
+    ("k_lethargie",       "Kind: Lethargie",                        "SK1", "kind"),
+    ("k_haut",            "Kind: punktförmige Hauteinblutungen",    "SK1", "kind"),
+    ("liegend",           "Liegend, kann nicht ohne Hilfe gehen",   "SK2", "mobilitaet"),
+    ("anschlag_manv",     "ANSCHLAG-MANV (Eigenschutz erforderlich)", "SK1", "manv"),
+    ("cbrn_manv",         "CBRN-MANV (Eigenschutz erforderlich)",   "SK1", "manv"),
+]
+
+PRIOR_INDICATOR_BY_KEY = {k: (label, cat, group)
+                          for k, label, cat, group in PRIOR_INDICATORS}
+
+
+def classify_prior(indicator_keys: list[str]) -> str:
+    """Wendet die PRIOR-Logik an: erstes SK1-Match → SK1, sonst erstes
+    SK2 → SK2, sonst SK3."""
+    cats = {PRIOR_INDICATOR_BY_KEY.get(k, (None, None, None))[1]
+            for k in (indicator_keys or [])
+            if k in PRIOR_INDICATOR_BY_KEY}
+    if "SK1" in cats:
+        return "SK1"
+    if "SK2" in cats:
+        return "SK2"
+    return "SK3"
+
+
+def create_triage_entry(conn, *, name=None, geburtsdatum=None,
+                         indicators=None, notes=None,
+                         created_by=None) -> int:
+    indicators = indicators or []
+    category = classify_prior(indicators)
+    # Patienten matchen, falls Name + Geburtsdatum ausreichend sind
+    patient_id = None
+    if name and geburtsdatum:
+        patient_id = upsert_patient(conn, name, geburtsdatum, None)
+    cur = conn.execute(
+        """
+        INSERT INTO triage_entries
+          (patient_id, name, geburtsdatum, category, indicators, notes,
+           created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (patient_id, (name or "").strip() or None,
+         (geburtsdatum or "").strip() or None,
+         category, _json.dumps(indicators), (notes or "").strip() or None,
+         created_by),
+    )
+    return cur.lastrowid
+
+
+def get_triage_entry(conn, tid: int) -> Optional[dict]:
+    row = conn.execute(
+        "SELECT * FROM triage_entries WHERE id = ?", (tid,)
+    ).fetchone()
+    if not row:
+        return None
+    rec = dict(row)
+    try:
+        rec["indicators"] = _json.loads(rec.get("indicators") or "[]")
+    except Exception:
+        rec["indicators"] = []
+    return rec
+
+
+def list_triage_waiting(conn) -> list[sqlite3.Row]:
+    """Patient*innen, die noch warten — sortiert nach SK-Akutität (SK1
+    zuerst), innerhalb gleicher Kategorie nach Ankunftszeit (älteste oben).
+    """
+    return conn.execute(
+        """
+        SELECT t.*,
+               p.name AS patient_name_resolved,
+               p.geburtsdatum AS patient_geburtsdatum_resolved,
+               p.stammnummer AS patient_stammnummer
+        FROM triage_entries t
+        LEFT JOIN patients p ON p.id = t.patient_id
+        WHERE t.status = 'wartend'
+        ORDER BY
+            CASE t.category
+                WHEN 'SK1' THEN 1
+                WHEN 'SK2' THEN 2
+                WHEN 'SK3' THEN 3
+                ELSE 4
+            END ASC,
+            datetime(t.arrival_at) ASC
+        """
+    ).fetchall()
+
+
+def list_triage_active(conn, limit: int = 50) -> list[sqlite3.Row]:
+    """Aktive (in_behandlung) Triage-Einträge — für die History-Übersicht."""
+    return conn.execute(
+        """
+        SELECT t.*, p.name AS patient_name_resolved,
+               cp.laufende_nr AS protocol_laufende_nr
+        FROM triage_entries t
+        LEFT JOIN patients p ON p.id = t.patient_id
+        LEFT JOIN central_protocols cp ON cp.id = t.treatment_protocol_id
+        WHERE t.status IN ('in_behandlung', 'abgeschlossen')
+        ORDER BY datetime(t.arrival_at) DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
+def start_triage_treatment(conn, tid: int,
+                            protocol_id: Optional[int] = None) -> bool:
+    cur = conn.execute(
+        """
+        UPDATE triage_entries
+        SET status = 'in_behandlung',
+            treatment_started_at = datetime('now'),
+            treatment_protocol_id = COALESCE(?, treatment_protocol_id)
+        WHERE id = ? AND status = 'wartend'
+        """,
+        (protocol_id, tid),
+    )
+    return cur.rowcount > 0
+
+
+def link_triage_to_central_protocol(conn, tid: int, protocol_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE triage_entries
+        SET treatment_protocol_id = ?,
+            status = CASE WHEN status = 'wartend'
+                          THEN 'in_behandlung' ELSE status END,
+            treatment_started_at = COALESCE(treatment_started_at,
+                                             datetime('now'))
+        WHERE id = ?
+        """,
+        (protocol_id, tid),
+    )
+
+
+def cancel_triage_entry(conn, tid: int) -> bool:
+    cur = conn.execute(
+        "UPDATE triage_entries SET status = 'abgebrochen' "
+        "WHERE id = ? AND status = 'wartend'",
+        (tid,),
+    )
+    return cur.rowcount > 0

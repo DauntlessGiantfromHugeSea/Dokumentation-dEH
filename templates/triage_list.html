@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Triage — Wartebereich{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Triage — Wartebereich</h1>
+    <p class="tagline">
+      Patienten sind nach PRIOR-Akutität priorisiert (SK I rot zuerst),
+      innerhalb gleicher Kategorie wartet die längste Person oben.
+    </p>
+  </div>
+  <a class="btn" href="{{ url_for('triage_new') }}">+ Patient anmelden</a>
+</div>
+
+{% if waiting %}
+<div class="triage-grid">
+  {% for t in waiting %}
+    <div class="triage-card cat-{{ t.category }}">
+      <div class="triage-card-top">
+        <span class="triage-cat cat-badge-{{ t.category }}">
+          {% if t.category == 'SK1' %}SK I · rot
+          {% elif t.category == 'SK2' %}SK II · gelb
+          {% else %}SK III · grün{% endif %}
+        </span>
+        <span class="triage-wait" title="Ankunft: {{ format_dt(t.arrival_at) }}">
+          wartet seit {{ format_dt(t.arrival_at) }}
+        </span>
+      </div>
+      <div class="triage-name">
+        {{ t.patient_name_resolved or t.name or '— Name unbekannt —' }}
+        {% if t.geburtsdatum %}
+          <span class="muted">· geb. {{ format_dt(t.geburtsdatum) }}</span>
+        {% endif %}
+        {% if t.patient_stammnummer %}
+          <span class="badge">{{ t.patient_stammnummer }}</span>
+        {% endif %}
+      </div>
+      {% if t.indicators %}
+        <div class="triage-indicators">
+          {% for k in t.indicators %}
+            {% set lookup = indicator_lookup.get(k) %}
+            {% if lookup %}
+              <span class="badge type-z">{{ lookup[0] }}</span>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if t.notes %}
+        <p class="triage-notes">{{ t.notes }}</p>
+      {% endif %}
+      <div class="triage-actions">
+        <form method="post" action="{{ url_for('triage_start', tid=t.id) }}"
+              style="display: inline-block;">
+          <button class="btn" type="submit">Behandlung starten →</button>
+        </form>
+        <form method="post" action="{{ url_for('triage_cancel', tid=t.id) }}"
+              style="display: inline-block;"
+              onsubmit="return confirm('Eintrag wirklich abbrechen?');">
+          <button class="btn small secondary" type="submit">Abbrechen</button>
+        </form>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">
+  Aktuell wartet niemand. Neue Patienten über
+  „<a href="{{ url_for('triage_new') }}">+ Patient anmelden</a>" erfassen.
+</div>
+{% endif %}
+
+{% if active %}
+<div class="card" style="margin-top: 24px;">
+  <div class="card-header">In Behandlung / abgeschlossen</div>
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Ankunft</th>
+        <th>SK</th>
+        <th>Name</th>
+        <th>Status</th>
+        <th>Bericht</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in active %}
+      <tr>
+        <td>{{ format_dt(t.arrival_at) }}</td>
+        <td>
+          <span class="badge cat-badge-{{ t.category }}">
+            {% if t.category == 'SK1' %}SK I
+            {% elif t.category == 'SK2' %}SK II
+            {% else %}SK III{% endif %}
+          </span>
+        </td>
+        <td>{{ t.patient_name_resolved or t.name or '—' }}</td>
+        <td>
+          {% if t.status == 'in_behandlung' %}
+            <span class="badge totp-on">in Behandlung</span>
+          {% elif t.status == 'abgeschlossen' %}
+            <span class="badge">abgeschlossen</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if t.protocol_laufende_nr %}
+            <a href="{{ url_for('central_detail', pid=t.treatment_protocol_id) }}">
+              {{ t.protocol_laufende_nr }}
+            </a>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
