@@ -214,46 +214,51 @@
       hint.classList.remove('visible');
       return;
     }
-    const single = matches.length === 1 ? matches[0] : null;
-    let html = '';
-    if (single) {
-      const total = (single.previous_decentral || 0)
-                  + (single.previous_central || 0);
-      html += '<strong>Bekannte Person:</strong> '
-            + escapeHtml(single.name || '—');
-      if (single.geburtsdatum) {
-        html += ' · geb. ' + escapeHtml(single.geburtsdatum);
-      }
-      if (single.stammnummer) {
-        html += ' · <span class="badge">' + escapeHtml(single.stammnummer)
-              + '</span>';
-      }
-      html += '<br>';
-      html += 'Bisher <strong>' + total + '</strong> Behandlung(en) — '
-            + (single.previous_decentral || 0) + ' dezentral, '
-            + (single.previous_central || 0) + ' zentral.';
-      if (single.last_treatment && single.last_treatment.created_at) {
-        html += ' Letzte: ' + escapeHtml(single.last_treatment.created_at);
-      }
-    } else {
-      html += '<strong>' + matches.length
-            + ' mögliche Personen gefunden:</strong><ul style="margin:6px 0 0;'
-            + 'padding-left:18px;">';
-      for (const m of matches.slice(0, 5)) {
-        const total = (m.previous_decentral || 0) + (m.previous_central || 0);
-        html += '<li>' + escapeHtml(m.name || '—')
-              + (m.geburtsdatum ? ' · geb. ' + escapeHtml(m.geburtsdatum) : '')
-              + (m.stammnummer ? ' · ' + escapeHtml(m.stammnummer) : '')
-              + ' (' + total + ' Vorbehandlung' + (total === 1 ? '' : 'en')
-              + ')</li>';
-      }
-      html += '</ul><p class="muted" style="margin:6px 0 0;font-size:0.8rem;">'
-            + 'Tipp: Geburtsdatum eingeben, um eindeutig zu identifizieren.'
+    const intro = matches.length === 1
+      ? '<strong>Bekannte Person — ein Treffer:</strong>'
+      : '<strong>' + matches.length + ' mögliche Personen — bitte auswählen:</strong>';
+    let html = intro + '<ul class="lookup-match-list">';
+    for (const m of matches.slice(0, 8)) {
+      const total = (m.previous_decentral || 0) + (m.previous_central || 0);
+      html += '<li>'
+            + '<button type="button" class="lookup-match-btn" '
+            + 'data-name="' + escapeHtml(m.name || '') + '" '
+            + 'data-dob="' + escapeHtml(m.geburtsdatum || '') + '">'
+            + '<span class="lm-name">' + escapeHtml(m.name || '—') + '</span>'
+            + (m.geburtsdatum
+                ? ' <span class="muted">· geb. ' + escapeHtml(m.geburtsdatum) + '</span>'
+                : '')
+            + (m.stammnummer
+                ? ' <span class="badge">' + escapeHtml(m.stammnummer) + '</span>'
+                : '')
+            + ' <span class="muted">· ' + total + ' Vorbehandlung'
+            + (total === 1 ? '' : 'en') + '</span>'
+            + '</button></li>';
+    }
+    html += '</ul>';
+    if (matches.length > 1) {
+      html += '<p class="muted" style="margin:6px 0 0;font-size:0.8rem;">'
+            + 'Tipp: Person anklicken, um Name + Geburtsdatum zu übernehmen.'
             + '</p>';
     }
     hint.innerHTML = html;
     hint.style.display = 'block';
     hint.classList.add('visible');
+
+    hint.querySelectorAll('.lookup-match-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const n = btn.getAttribute('data-name') || '';
+        const d = btn.getAttribute('data-dob') || '';
+        if (n) nameEl.value = n;
+        if (d) dobEl.value = d;
+        // Visuell markieren, dass übernommen wurde
+        hint.querySelectorAll('.lookup-match-btn').forEach(
+          b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        // Direkt erneut prüfen, damit der Hint die Auswahl bestätigt.
+        check();
+      });
+    });
   }
 
   async function check() {

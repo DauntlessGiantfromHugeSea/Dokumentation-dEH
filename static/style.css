@@ -393,6 +393,41 @@ label.field .req { color: var(--accent); font-weight: 600; }
 }
 .lookup-hint.visible { display: block; }
 
+.lookup-match-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lookup-match-btn {
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast),
+              box-shadow var(--t-fast);
+}
+.lookup-match-btn:hover,
+.lookup-match-btn:focus-visible {
+  background: var(--surface-soft);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-xs);
+  outline: none;
+}
+.lookup-match-btn.selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+.lookup-match-btn .lm-name { font-weight: 600; }
+
 .comment {
   padding: 12px 14px;
   border-left: 3px solid var(--accent);
