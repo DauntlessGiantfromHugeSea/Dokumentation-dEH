@@ -1689,21 +1689,34 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
     check();
   }
 
-  // Delegated click handler for action buttons rendered into the sidebar
-  sidebarBody.addEventListener('click', (e) => {
+  // Delegated click handler — auf document-Ebene, damit es auch dann
+  // greift, wenn die Buttons nach erneutem Render in einem anderen
+  // Sidebar-Pane landen (vh-history-pane / vh-emergency-pane).
+  document.addEventListener('click', (e) => {
+    // 1) Modal schließen (Backdrop oder ×-Button)
+    if (e.target.closest('[data-vh-modal-close]')) {
+      closeDetailModal();
+      return;
+    }
+    // 2) Sidebar-Action
     const tgt = e.target.closest('[data-vh-action]');
     if (!tgt) return;
-    e.preventDefault();
     const action = tgt.dataset.vhAction;
     if (action === 'pick') {
+      e.preventDefault();
       pickPatient(tgt.dataset.patientName || '',
                   tgt.dataset.geburtsdatum || '');
     } else if (action === 'unlock') {
+      e.preventDefault();
       unlockEmergency(Number(tgt.dataset.pid));
     } else if (action === 'open-detail') {
+      e.preventDefault();
       openDetailModal(tgt.dataset.href || tgt.getAttribute('href'),
                       tgt.dataset.title || '');
     }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeDetailModal();
   });
 
   // Vorbehandlungs-Detail im Modal (kein neuer Tab).
@@ -1712,7 +1725,11 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
     const m = document.getElementById('vh-detail-modal');
     const f = document.getElementById('vh-detail-frame');
     const h = document.getElementById('vh-detail-title');
-    if (!m || !f || !h) { window.open(href, '_blank'); return; }
+    if (!m || !f || !h) {
+      console.warn('vh-detail-modal not found, falling back to new tab');
+      window.open(href, '_blank');
+      return;
+    }
     h.textContent = title || 'Vorbehandlung';
     f.src = href;
     m.classList.add('open');
@@ -1723,12 +1740,6 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
     if (m) m.classList.remove('open');
     if (f) f.src = 'about:blank';
   }
-  document.addEventListener('click', (e) => {
-    if (e.target.closest('[data-vh-modal-close]')) closeDetailModal();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeDetailModal();
-  });
 
   function renderHistoryRows(history) {
     if (!history || !history.length) {
@@ -2075,8 +2086,9 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
 })();
 </script>
 
-<div class="modal-backdrop" id="vh-detail-modal" data-vh-modal-close>
-  <div class="modal-window wide" onclick="event.stopPropagation()">
+<div class="modal-backdrop" id="vh-detail-modal"
+     onclick="if(event.target===this){this.classList.remove('open');var f=document.getElementById('vh-detail-frame');if(f)f.src='about:blank';}">
+  <div class="modal-window wide">
     <div class="modal-header">
       <h3 id="vh-detail-title">Vorbehandlung</h3>
       <button type="button" class="modal-close" data-vh-modal-close
