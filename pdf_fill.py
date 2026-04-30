@@ -365,9 +365,9 @@ def _messwerte_para(d, suffix):
     if af_hf:
         lines.append("<b>" + " &middot; ".join(af_hf) + "</b>")
     if _v(d.get(f"spo2_{suffix}")):
-        lines.append(f"<b>SpO₂:</b> {_v(d.get(f'spo2_{suffix}'))}%")
+        lines.append(f"<b>SpO2:</b> {_v(d.get(f'spo2_{suffix}'))}%")
     if _v(d.get(f"etco2_{suffix}")):
-        lines.append(f"<b>etCO₂:</b> {_v(d.get(f'etco2_{suffix}'))}")
+        lines.append(f"<b>etCO2:</b> {_v(d.get(f'etco2_{suffix}'))}")
     if _v(d.get(f"bz_{suffix}")):
         lines.append(f"<b>BZ:</b> {_v(d.get(f'bz_{suffix}'))} mmol/l")
     if _v(d.get(f"temp_{suffix}")):
@@ -437,7 +437,7 @@ def _section_4_erstdiagnose(d):
 
 def _vital_trend_table(d):
     """Vergleicht Vitalwerte Erstbefund ↔ Übergabe nebeneinander, sodass
-    der Trend auf einen Blick erkennbar ist (RR, Puls, AF, SpO₂, etc.)."""
+    der Trend auf einen Blick erkennbar ist (RR, Puls, AF, SpO2, etc.)."""
     columns = [
         ("Zeitpunkt", None, None, None),
         ("Zeit",      "zeit_1",   "zeit_2",   None),
@@ -445,8 +445,8 @@ def _vital_trend_table(d):
         ("Puls",      "puls_1",   "puls_2",   "/min"),
         ("AF",        "af_1",     "af_2",     "/min"),
         ("HF",        "hf_1",     "hf_2",     "/min"),
-        ("SpO₂",      "spo2_1",   "spo2_2",   "%"),
-        ("etCO₂",     "etco2_1",  "etco2_2",  None),
+        ("SpO2",      "spo2_1",   "spo2_2",   "%"),
+        ("etCO2",     "etco2_1",  "etco2_2",  None),
         ("BZ",        "bz_1",     "bz_2",     "mmol/l"),
         ("Temp",      "temp_1",   "temp_2",   "°C"),
         ("GCS",       "gcs_1",    "gcs_2",    None),
