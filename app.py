@@ -722,6 +722,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         db = models.get_db()
         waiting = models.list_triage_waiting(db)
         active = models.list_triage_active(db, limit=20)
+        recently_finished = models.list_triage_recently_finished(db, limit=10)
         # Höchste vorhandene Triage-ID — als Anker fürs Polling
         row = db.execute(
             "SELECT COALESCE(MAX(id), 0) AS max_id FROM triage_entries"
@@ -731,6 +732,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             "triage_list.html",
             waiting=waiting,
             active=active,
+            recently_finished=recently_finished,
             indicator_lookup=models.PRIOR_INDICATOR_BY_KEY,
             format_dt=models.format_dt,
             max_triage_id=max_triage_id,
@@ -878,6 +880,23 @@ def create_app(test_config: dict | None = None) -> Flask:
             db.commit()
             who = entry.get("name") or "Patient"
             flash(f"Behandlung von „{who}“ abgeschlossen.", "success")
+        return redirect(url_for("triage_list"))
+
+    @app.route("/triage/<int:tid>/reopen", methods=["POST"])
+    @login_required
+    def triage_reopen(tid: int):
+        db = models.get_db()
+        entry = models.get_triage_entry(db, tid)
+        if not entry:
+            abort(404)
+        if not models.reopen_triage_treatment(db, tid):
+            flash("Behandlung konnte nicht wieder geöffnet werden "
+                  "(nur abgeschlossene Einträge sind reaktivierbar).",
+                  "error")
+        else:
+            db.commit()
+            who = entry.get("name") or "Patient"
+            flash(f"Behandlung von „{who}“ wieder geöffnet.", "success")
         return redirect(url_for("triage_list"))
 
     # ----- Central first-aid (Notfallprotokoll) -----

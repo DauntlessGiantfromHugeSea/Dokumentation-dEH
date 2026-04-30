@@ -1477,6 +1477,37 @@ def finish_triage_treatment(conn, tid: int) -> bool:
     return cur.rowcount > 0
 
 
+def reopen_triage_treatment(conn, tid: int) -> bool:
+    """Versehentlich abgeschlossene Behandlung wieder öffnen."""
+    cur = conn.execute(
+        """
+        UPDATE triage_entries
+        SET status = 'in_behandlung',
+            treatment_finished_at = NULL
+        WHERE id = ? AND status = 'abgeschlossen'
+        """,
+        (tid,),
+    )
+    return cur.rowcount > 0
+
+
+def list_triage_recently_finished(conn, limit: int = 10) -> list[sqlite3.Row]:
+    """Zuletzt abgeschlossene Behandlungen — für die "Wieder öffnen"-Liste."""
+    return conn.execute(
+        """
+        SELECT t.*, p.name AS patient_name_resolved,
+               cp.laufende_nr AS protocol_laufende_nr
+        FROM triage_entries t
+        LEFT JOIN patients p ON p.id = t.patient_id
+        LEFT JOIN central_protocols cp ON cp.id = t.treatment_protocol_id
+        WHERE t.status = 'abgeschlossen'
+        ORDER BY datetime(COALESCE(t.treatment_finished_at, t.arrival_at)) DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+
 def start_triage_treatment(conn, tid: int,
                             protocol_id: Optional[int] = None) -> bool:
     cur = conn.execute(

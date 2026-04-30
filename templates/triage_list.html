@@ -130,6 +130,55 @@
 </div>
 {% endif %}
 
+{% if recently_finished and not current_user.is_triage_intake %}
+<details class="card" style="margin-top: 18px;">
+  <summary class="card-header" style="cursor: pointer;">
+    Kürzlich abgeschlossen ({{ recently_finished|length }}) —
+    <span class="muted" style="font-weight: 400;">versehentlich? hier wieder öffnen</span>
+  </summary>
+  <table class="data" style="margin-top: 10px;">
+    <thead>
+      <tr>
+        <th>Abgeschlossen</th>
+        <th>SK</th>
+        <th>Name</th>
+        <th>Bericht</th>
+        <th class="right">Aktion</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in recently_finished %}
+      <tr>
+        <td>{{ format_dt(t.treatment_finished_at or t.arrival_at) }}</td>
+        <td>
+          <span class="badge cat-badge-{{ t.category }}">
+            {% if t.category == 'SK1' %}SK I
+            {% elif t.category == 'SK2' %}SK II
+            {% else %}SK III{% endif %}
+          </span>
+        </td>
+        <td>{{ t.patient_name_resolved or t.name or '—' }}</td>
+        <td>
+          {% if t.protocol_laufende_nr %}
+            <a href="{{ url_for('central_detail', pid=t.treatment_protocol_id) }}">
+              {{ t.protocol_laufende_nr }}
+            </a>
+          {% else %}—{% endif %}
+        </td>
+        <td class="right">
+          <form method="post" action="{{ url_for('triage_reopen', tid=t.id) }}"
+                style="display: inline-block;"
+                onsubmit="return confirm('Behandlung von „{{ t.patient_name_resolved or t.name or 'Patient' }}“ wieder öffnen?');">
+            <button class="btn small secondary" type="submit">Wieder öffnen</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+
 <script>
 // Live-Polling: alle 15 Sekunden /api/triage/recent abfragen.
 // Bei neuen SK I/SK II-Eingängen Browser-Notification + Audio-Beep.
