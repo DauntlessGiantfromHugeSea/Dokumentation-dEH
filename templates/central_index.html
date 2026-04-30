@@ -1700,7 +1700,34 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
                   tgt.dataset.geburtsdatum || '');
     } else if (action === 'unlock') {
       unlockEmergency(Number(tgt.dataset.pid));
+    } else if (action === 'open-detail') {
+      openDetailModal(tgt.dataset.href || tgt.getAttribute('href'),
+                      tgt.dataset.title || '');
     }
+  });
+
+  // Vorbehandlungs-Detail im Modal (kein neuer Tab).
+  function openDetailModal(href, title) {
+    if (!href) return;
+    const m = document.getElementById('vh-detail-modal');
+    const f = document.getElementById('vh-detail-frame');
+    const h = document.getElementById('vh-detail-title');
+    if (!m || !f || !h) { window.open(href, '_blank'); return; }
+    h.textContent = title || 'Vorbehandlung';
+    f.src = href;
+    m.classList.add('open');
+  }
+  function closeDetailModal() {
+    const m = document.getElementById('vh-detail-modal');
+    const f = document.getElementById('vh-detail-frame');
+    if (m) m.classList.remove('open');
+    if (f) f.src = 'about:blank';
+  }
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-vh-modal-close]')) closeDetailModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeDetailModal();
   });
 
   function renderHistoryRows(history) {
@@ -1721,7 +1748,9 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
           <div class="vh-history-date">${escapeHtml(fmtDate(h.event_date))}</div>
         </div>
         <div class="vh-history-link">
-          <a href="${target}" target="_blank">öffnen</a>
+          <a href="${target}" data-vh-action="open-detail"
+             data-href="${target}?embed=1"
+             data-title="${escapeHtml(h.laufende_nr || '')}">öffnen</a>
         </div>
       </div>`;
     }
@@ -1752,7 +1781,11 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
     // sieht im Sidebar dafür Indikatoren + Entschlüsseln-Button.
     const showAkteLink = m.patient_id && !IS_ZENTRAL_ONLY;
     const akteLink = showAkteLink
-      ? `<a href="/patients/${m.patient_id}" target="_blank" style="font-size:0.78rem;text-decoration:none;color:var(--primary,#d32f2f);">vollständige Akte →</a>`
+      ? `<a href="/patients/${m.patient_id}"
+            data-vh-action="open-detail"
+            data-href="/patients/${m.patient_id}?embed=1"
+            data-title="Patientenakte"
+            style="font-size:0.78rem;text-decoration:none;color:var(--primary,#d32f2f);">vollständige Akte →</a>`
       : '';
     const pickBtn = !fullData
       ? `<button type="button" class="btn primary sm"
@@ -2041,5 +2074,19 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
   setTimeout(check, 400);
 })();
 </script>
+
+<div class="modal-backdrop" id="vh-detail-modal" data-vh-modal-close>
+  <div class="modal-window wide" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="vh-detail-title">Vorbehandlung</h3>
+      <button type="button" class="modal-close" data-vh-modal-close
+              aria-label="Schließen">×</button>
+    </div>
+    <div class="modal-body flush">
+      <iframe id="vh-detail-frame" class="modal-iframe"
+              src="about:blank" title="Vorbehandlung"></iframe>
+    </div>
+  </div>
+</div>
 </body>
 </html>

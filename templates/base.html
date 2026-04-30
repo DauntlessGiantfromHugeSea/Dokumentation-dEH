@@ -8,8 +8,8 @@
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-  {% if current_user.is_authenticated %}
+<body{% if request.args.get('embed') %} class="embed-mode"{% endif %}>
+  {% if current_user.is_authenticated and not request.args.get('embed') %}
   <header class="topbar">
     <span class="brand">Erste Hilfe</span>
     {% if current_user.is_triage_intake %}
