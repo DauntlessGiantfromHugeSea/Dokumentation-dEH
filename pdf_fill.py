@@ -224,7 +224,9 @@ def _kasse_strip(d):
                            valign="MIDDLE")
 
 
-def _patient_block(d):
+def _patient_inner(d):
+    """Inneres Patient-Layout (ohne äußere Box — wird vom Combined-Container
+    umrahmt)."""
     name_addr = ", ".join(p for p in [
         " ".join(p for p in [_v(d.get("vorname")), _v(d.get("nachname"))] if p),
         _v(d.get("strasse")),
@@ -233,43 +235,39 @@ def _patient_block(d):
     rows = [
         [_kasse_strip(d)],
         [_label_value("Krankenkasse bzw. Kostenträger", d.get("krankenkasse"))],
-        [_label_value(
-            "Name, Vorname, Adressdaten des Versicherten",
-            name_addr, min_h=18 * mm,
-        )],
+        [_label_value("Name, Vorname, Adressdaten des Versicherten",
+                      name_addr)],
         [_bordered_table(
             [[_label_value("Geschlecht", d.get("geschlecht")),
               _label_value("Geb. am", _fmt_date(d.get("geburtsdatum")))]],
-            [44 * mm, 44 * mm], padding=3,
+            [42 * mm, 42 * mm], padding=3,
         )],
         [_bordered_table(
             [[_label_value("Kassen-Nr.", ""),
               _label_value("Versicherten-Nr.", ""),
               _label_value("Status", "")]],
-            [29.3 * mm, 29.3 * mm, 29.4 * mm], padding=3,
+            [28 * mm, 28 * mm, 28 * mm], padding=3,
         )],
         [_label_value("Telefonnummer", d.get("telefon"))],
     ]
-    tbl = Table(rows, colWidths=[88 * mm])
+    tbl = Table(rows, colWidths=[84 * mm])
     tbl.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
-        ("LINEBELOW", (0, 0), (-1, -2), 0.4, BORDER),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.4, LIGHT_BORDER),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
     return tbl
 
 
-def _einsatz_block(d):
-    """Rechter Block: Rettungs-Einsatzprotokoll-Daten als flache 2-Spalten-
-    Tabelle (kein verschachtelter Stack, damit die Zellen kompakt bleiben)."""
+def _einsatz_inner(d):
+    """Inneres Einsatz-Layout (ohne äußere Box)."""
     title_rows = Table([
         [_p("Rettungs-Einsatzprotokoll", S_PATIENT)],
-        [_subsection("1. Rettungstechnische Daten", width=96 * mm)],
-    ], colWidths=[96 * mm])
+        [_subsection("1. Rettungstechnische Daten", width=92 * mm)],
+    ], colWidths=[92 * mm])
     title_rows.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -289,11 +287,11 @@ def _einsatz_block(d):
          _label_value("Einsatzende", d.get("einsatzende"))],
         [_label_value("Übergabezeit", d.get("uebergabezeit")),
          _label_value("Begleitung RTM", d.get("begleitung"))],
-    ], colWidths=[52 * mm, 44 * mm])
+    ], colWidths=[50 * mm, 42 * mm])
     body.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
         ("INNERGRID", (0, 0), (-1, -1), 0.4, LIGHT_BORDER),
-        ("SPAN", (0, 0), (1, 0)),  # Einsatznummer spans both cols
+        ("LINEABOVE", (0, 0), (-1, 0), 0.4, LIGHT_BORDER),
+        ("SPAN", (0, 0), (1, 0)),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 4),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
@@ -301,7 +299,7 @@ def _einsatz_block(d):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
     ]))
 
-    outer = Table([[title_rows], [body]], colWidths=[96 * mm])
+    outer = Table([[title_rows], [body]], colWidths=[92 * mm])
     outer.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -309,6 +307,29 @@ def _einsatz_block(d):
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     return outer
+
+
+def _top_combined(d):
+    """Patient links, Einsatz rechts — gemeinsame äußere Box mit
+    vertikaler Trennlinie. Beide Hälften enden auf derselben Y-Achse."""
+    pat = _patient_inner(d)
+    ein = _einsatz_inner(d)
+    tbl = Table([[pat, ein]], colWidths=[88 * mm, 96 * mm])
+    tbl.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+        ("LINEAFTER", (0, 0), (0, 0), 0.5, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    return tbl
+
+
+# Alte Funktionen als Aliase behalten, falls noch verwendet
+def _patient_block(d): return _patient_inner(d)
+def _einsatz_block(d): return _einsatz_inner(d)
 
 
 def _section_2_notfall(d):
@@ -403,7 +424,7 @@ def _section_3_erstbefund(d):
             _label_value("3.6 EKG", d.get("ekg_1")),
             "", _label_value("3.10 Sonstiges", d.get("erstbefund_sonstiges")),
         ],
-    ], [62 * mm, 32 * mm, 92 * mm], padding=4, min_row_h=14 * mm)
+    ], [62 * mm, 32 * mm, 92 * mm], padding=4)
 
 
 def _section_4_erstdiagnose(d):
@@ -541,7 +562,7 @@ def _section_7_uebergabe(d):
             _label_value("7.6 EKG", d.get("ekg_2")),
             "",
         ],
-    ], [93 * mm, 93 * mm], padding=4, min_row_h=11 * mm)
+    ], [93 * mm, 93 * mm], padding=4)
 
 
 def _section_8_9(d):
@@ -747,20 +768,8 @@ def render_pdf(data, exporter_label=None):
     story.append(_top_header(data))
     story.append(Spacer(1, 4))
 
-    # Top-Block: Patient + Einsatz nebeneinander
-    top = Table(
-        [[_patient_block(data), _einsatz_block(data)]],
-        colWidths=[88 * mm, 96 * mm],
-    )
-    top.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING", (0, 0), (0, 0), 2),
-        ("RIGHTPADDING", (1, 0), (1, 0), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
-    story.append(top)
+    # Top-Block: Patient + Einsatz in gemeinsamer Box
+    story.append(_top_combined(data))
     story.append(Spacer(1, 6))
 
     # 2. Notfallgeschehen
