@@ -518,6 +518,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             rec = models.get_central_protocol(db, c["id"])
             rec["comments"] = [dict(cm) for cm in
                                models.list_central_comments(db, c["id"])]
+            rec["triage"] = models.get_triage_for_protocol(db, c["id"])
+            # Behandler-Name auflösen (created_by → user)
+            if rec.get("created_by"):
+                u = models.get_user_by_id(db, rec["created_by"])
+                if u:
+                    rec["author_full_name"] = u["full_name"]
+                    rec["author_username"] = u["username"]
             central.append(rec)
         change_log = [dict(r) for r in models.list_patient_changes(db, patient_id)]
         # Sensitive Daten landen nur dann im PDF, wenn der Exporter
@@ -597,6 +604,30 @@ def create_app(test_config: dict | None = None) -> Flask:
         return render_template("patient_edit.html", patient=patient,
                                can_edit_sensitive=current_user.is_admin,
                                format_dt=models.format_dt)
+
+    @app.route("/patients/<int:patient_id>/delete", methods=["POST"])
+    @login_required
+    def patient_delete(patient_id: int):
+        # Patient-Löschen ist Admin-only — geht durch Stammdaten +
+        # alle dezentralen Berichte. Zentrale Berichte bleiben erhalten,
+        # verlieren aber die Verknüpfung (patient_id=NULL).
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        patient = models.get_patient(db, patient_id)
+        if not patient:
+            abort(404)
+        # Passwort-Bestätigung gegen den eingeloggten User
+        password = request.form.get("password", "")
+        user_row = models.get_user_by_id(db, current_user.id)
+        if not user_row or not models.verify_password(user_row, password):
+            flash("Passwort falsch — Patient wurde nicht gelöscht.", "error")
+            return redirect(url_for("patient_detail", patient_id=patient_id))
+        name = patient["name"]
+        models.delete_patient(db, patient_id)
+        db.commit()
+        flash(f"Patient „{name}“ wurde gelöscht.", "success")
+        return redirect(url_for("patient_list"))
 
     # ----- Lookup for the new-protocol form (so the UI can announce
     # "Folgebehandlung" before submit) -----
@@ -1004,12 +1035,15 @@ def create_app(test_config: dict | None = None) -> Flask:
                     db, patient_id=rec["patient_id"]
                 ) if r["id"] != pid
             ]
+        triage = models.get_triage_for_protocol(db, pid)
         return render_template(
             "central_detail.html",
             protocol=rec,
             comments=comments,
             decentral_siblings=decentral_siblings,
             central_siblings=central_siblings,
+            triage=triage,
+            indicator_lookup=models.PRIOR_INDICATOR_BY_KEY,
             format_dt=models.format_dt,
         )
 
@@ -1161,11 +1195,29 @@ def create_app(test_config: dict | None = None) -> Flask:
         pdf_data = rec["data"]
         if not current_user.can_view_contact:
             pdf_data = models.strip_central_contact(pdf_data)
+        # Patient-Medizinische Infos (Allergien, Medikamente, Notfallkontakt)
+        # — landen nur dann im PDF, wenn der Exporter Adresse sehen darf
+        # (gleiches Sensitivitäts-Niveau wie Telefon/Krankenkasse).
+        medical_info = None
+        if current_user.can_view_contact and rec.get("patient_id"):
+            patient = models.get_patient(db, rec["patient_id"])
+            if patient:
+                medical_info = {
+                    "has_allergies": patient["has_allergies"],
+                    "allergies_text": patient["allergies_text"],
+                    "has_medications": patient["has_medications"],
+                    "medications_text": patient["medications_text"],
+                    "emergency_contact_name": patient["emergency_contact_name"],
+                    "emergency_contact_phone": patient["emergency_contact_phone"],
+                    "emergency_contact_relation":
+                        patient["emergency_contact_relation"],
+                }
         try:
             pdf_bytes = render_central_pdf(
                 pdf_data,
                 exporter_label=(current_user.full_name
                                 or current_user.username),
+                medical_info=medical_info,
             )
         except FileNotFoundError as e:
             return {"error": str(e)}, 500
@@ -1254,6 +1306,23 @@ def create_app(test_config: dict | None = None) -> Flask:
             },
             "history": models.patient_history(db, pid),
         }
+
+    @app.route("/api/protocol-summary")
+    @login_required
+    def api_protocol_summary():
+        """Kompakte Zusammenfassung eines Berichts für das Vorbehandlungs-
+        Popup im SPA. source ∈ {central, decentral}."""
+        source = (request.args.get("source") or "").strip()
+        try:
+            pid = int(request.args.get("id") or 0)
+        except ValueError:
+            return {"error": "invalid id"}, 400
+        if source not in ("central", "decentral") or not pid:
+            return {"error": "source/id required"}, 400
+        summary = models.protocol_summary(models.get_db(), source, pid)
+        if not summary:
+            return {"error": "not found"}, 404
+        return summary
 
     # ----- Account (any logged-in user) -----
 

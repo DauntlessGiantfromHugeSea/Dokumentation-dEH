@@ -36,6 +36,16 @@
     <p class="tagline">Zentrale Erste Hilfe — Notfallprotokoll</p>
   </div>
   <div class="btn-row">
+    {% if triage and triage.status == 'in_behandlung' %}
+      <form method="post"
+            action="{{ url_for('triage_finish', tid=triage.id) }}"
+            style="display:inline-block;"
+            onsubmit="return confirm('Behandlung wirklich abschließen? Der Eintrag verschwindet damit aus der Triage-Liste.');">
+        <button class="btn" type="submit" style="font-weight: 600;">
+          ✓ Behandlung beenden
+        </button>
+      </form>
+    {% endif %}
     {% if is_owner or not current_user.is_zentral_only %}
       <a class="btn secondary small"
          href="{{ url_for('central_index') }}#{{ protocol.id }}">Bearbeiten</a>
@@ -210,6 +220,62 @@
     </p>
   {% endif %}
 </div>
+
+{# ---------- Triage / Workflow ---------- #}
+{% if triage %}
+<div class="card" style="border-left: 4px solid var(--accent);">
+  <div class="card-header">
+    Triage-Workflow
+    {% if triage.status == 'in_behandlung' %}
+      <span class="badge totp-on" style="margin-left:8px;">in Behandlung</span>
+    {% elif triage.status == 'abgeschlossen' %}
+      <span class="badge" style="margin-left:8px;">abgeschlossen</span>
+    {% endif %}
+  </div>
+  <div class="protocol-meta">
+    {{ kv("Sichtungskategorie",
+          ('SK I · rot — sofort' if triage.category == 'SK1' else
+           'SK II · gelb — dringend' if triage.category == 'SK2' else
+           'SK III · grün — kann warten')) }}
+    {{ kv("Anmeldung", format_dt(triage.arrival_at)) }}
+    {{ kv("Angemeldet von",
+          triage.anmelder_full_name or triage.anmelder_username or '—') }}
+    {{ kv("Behandlung gestartet", format_dt(triage.treatment_started_at)) }}
+    {{ kv("Behandelt von",
+          triage.behandler_full_name or triage.behandler_username
+          or triage.behandler_name_summary or '—') }}
+    {% if triage.treatment_finished_at %}
+      {{ kv("Behandlung beendet", format_dt(triage.treatment_finished_at)) }}
+    {% endif %}
+  </div>
+  {% if triage.indicators %}
+    <div class="kv">
+      <div class="label">PRIOR-Indikatoren</div>
+      <div class="value">
+        {% for k in triage.indicators %}
+          {% set lookup = indicator_lookup.get(k) %}
+          {% if lookup %}
+            <span class="badge type-z">{{ lookup[0] }}</span>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+  {% if triage.notes %}
+    <div class="kv">
+      <div class="label">Anmelde-Notiz</div>
+      <div class="value" style="white-space: pre-wrap;">{{ triage.notes }}</div>
+    </div>
+  {% endif %}
+  {% if triage.status == 'in_behandlung' %}
+    <p class="muted" style="margin: 12px 0 0; font-size: 0.85rem;">
+      <strong>Tipp:</strong> Wenn die Behandlung fertig ist, oben auf
+      „✓ Behandlung beenden" klicken — der Patient verschwindet damit
+      automatisch aus der Triage-Liste.
+    </p>
+  {% endif %}
+</div>
+{% endif %}
 
 {# ---------- Einsatz ---------- #}
 <div class="card">

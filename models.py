@@ -710,9 +710,12 @@ def list_central_protocols(conn: sqlite3.Connection, *,
                cp.name_summary, cp.global_id, cp.laufende_nr,
                cp.created_by, cp.created_at, cp.updated_at,
                p.name AS patient_name, p.geburtsdatum AS patient_geburtsdatum,
-               p.stammnummer AS patient_stammnummer
+               p.stammnummer AS patient_stammnummer,
+               u.username  AS author_username,
+               u.full_name AS author_full_name
         FROM central_protocols cp
         LEFT JOIN patients p ON p.id = cp.patient_id
+        LEFT JOIN users u ON u.id = cp.created_by
         WHERE 1=1
         """
     ]
@@ -872,6 +875,16 @@ def update_central_protocol(conn: sqlite3.Connection, pid: int,
 
 def delete_central_protocol(conn: sqlite3.Connection, pid: int) -> bool:
     cur = conn.execute("DELETE FROM central_protocols WHERE id = ?", (pid,))
+    return cur.rowcount > 0
+
+
+def delete_patient(conn: sqlite3.Connection, patient_id: int) -> bool:
+    """Patient löschen — entfernt damit auch alle dEH-Berichte
+    (CASCADE), die zentralen Berichte und Triage-Einträge bleiben mit
+    patient_id=NULL erhalten (ON DELETE SET NULL).
+    Audit-Log + Notfall-Unlocks fallen ebenfalls weg (CASCADE).
+    """
+    cur = conn.execute("DELETE FROM patients WHERE id = ?", (patient_id,))
     return cur.rowcount > 0
 
 
@@ -1419,6 +1432,109 @@ def get_triage_entry(conn, tid: int) -> Optional[dict]:
     except Exception:
         rec["indicators"] = []
     return rec
+
+
+def get_triage_for_protocol(conn, protocol_id: int) -> Optional[dict]:
+    """Triage-Eintrag, der zu einem zentralen Bericht verlinkt ist —
+    plus aufgelöste Anmelder-/Behandler-Namen für die Akte."""
+    row = conn.execute(
+        """
+        SELECT t.*,
+               u_anm.username     AS anmelder_username,
+               u_anm.full_name    AS anmelder_full_name,
+               cp.created_by      AS protocol_created_by,
+               u_beh.username     AS behandler_username,
+               u_beh.full_name    AS behandler_full_name,
+               cp.name_summary    AS behandler_name_summary
+        FROM triage_entries t
+        LEFT JOIN users u_anm           ON u_anm.id = t.created_by
+        LEFT JOIN central_protocols cp  ON cp.id = t.treatment_protocol_id
+        LEFT JOIN users u_beh           ON u_beh.id = cp.created_by
+        WHERE t.treatment_protocol_id = ?
+        ORDER BY datetime(t.arrival_at) DESC
+        LIMIT 1
+        """,
+        (protocol_id,),
+    ).fetchone()
+    if not row:
+        return None
+    rec = dict(row)
+    try:
+        rec["indicators"] = _json.loads(rec.get("indicators") or "[]")
+    except Exception:
+        rec["indicators"] = []
+    return rec
+
+
+def protocol_summary(conn: sqlite3.Connection, source: str,
+                     pid: int) -> Optional[dict]:
+    """Kompakte Zusammenfassung eines Berichts für das Vorbehandlungs-Popup.
+    Liefert Datum, Was, Maßnahmen, Ausgang, Behandler — ohne die kompletten
+    Felder. Wird per /api/protocol-summary ausgeliefert."""
+    if source == "central":
+        rec = get_central_protocol(conn, pid)
+        if not rec:
+            return None
+        d = rec.get("data") or {}
+        # Was: notfallsituation > notfallart > verletzung
+        was = (d.get("notfallsituation") or d.get("notfallart")
+               or d.get("verletzung") or "").strip()
+        if d.get("notfallart_sonstige"):
+            was = (was + " · " + d["notfallart_sonstige"]).strip(" ·")
+        # Maßnahmen: massnahme + massnahmen_sonstiges
+        massn_raw = d.get("massnahme")
+        if isinstance(massn_raw, list):
+            massn = ", ".join(str(x) for x in massn_raw if x)
+        else:
+            massn = (massn_raw or "").strip()
+        if d.get("massnahmen_sonstiges"):
+            massn = (massn + " · " + d["massnahmen_sonstiges"]).strip(" ·")
+        # Ausgang: uebergabe_an + ergebnis
+        aus_parts = []
+        if d.get("uebergabe_an"):
+            aus_parts.append(f"Übergabe an {d['uebergabe_an']}")
+        if d.get("ergebnis"):
+            aus_parts.append(str(d["ergebnis"]))
+        if d.get("uebergabezeit"):
+            aus_parts.append(f"um {d['uebergabezeit']}")
+        ausgang = " · ".join(aus_parts)
+        # Behandler: einsatzkraft1 / einsatzkraft2 oder name_summary
+        behandler_parts = [
+            x for x in (d.get("einsatzkraft1"), d.get("einsatzkraft2")) if x
+        ]
+        behandler = ", ".join(behandler_parts) or rec.get("name_summary") or ""
+        # Diagnose
+        diagnose = (d.get("erstdiagnose") or "").strip()
+        return {
+            "source": "central",
+            "id": pid,
+            "laufende_nr": rec.get("laufende_nr") or f"#zEH{pid}",
+            "type_label": "Zentrale Erste Hilfe",
+            "event_date": d.get("datum") or rec.get("created_at"),
+            "what": was,
+            "diagnose": diagnose,
+            "massnahmen": massn,
+            "ausgang": ausgang,
+            "behandler": behandler,
+            "detail_url": f"/central/{pid}",
+        }
+    rec = get_protocol(conn, pid)
+    if not rec:
+        return None
+    return {
+        "source": "decentral",
+        "id": pid,
+        "laufende_nr": rec["laufende_nr"] or f"#dEH{pid}",
+        "type_label": "Dezentrale Erste Hilfe (DGUV-1)",
+        "event_date": rec["eh_datum_uhrzeit"] or rec["unfall_datum_uhrzeit"]
+                      or rec["created_at"],
+        "what": (rec["unfallhergang"] or rec["art_umfang_verletzung"] or "").strip(),
+        "diagnose": (rec["art_umfang_verletzung"] or "").strip(),
+        "massnahmen": (rec["art_weise_massnahmen"] or "").strip(),
+        "ausgang": (rec["verbrauchtes_material"] or "").strip(),
+        "behandler": (rec["name_ersthelfer"] or "").strip(),
+        "detail_url": f"/protocols/{pid}",
+    }
 
 
 def list_triage_waiting(conn) -> list[sqlite3.Row]:

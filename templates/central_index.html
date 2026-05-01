@@ -1719,26 +1719,69 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
     if (e.key === 'Escape') closeDetailModal();
   });
 
-  // Vorbehandlungs-Detail im Modal (kein neuer Tab).
-  function openDetailModal(href, title) {
+  // Vorbehandlungs-Zusammenfassung im Modal (kein neuer Tab, kein iframe).
+  // Lädt /api/protocol-summary?source=...&id=... und rendert Datum, Was,
+  // Maßnahmen, Ausgang. Vollansicht via "Vollständigen Bericht öffnen"-Link.
+  async function openDetailModal(href, title) {
     if (!href) return;
     const m = document.getElementById('vh-detail-modal');
-    const f = document.getElementById('vh-detail-frame');
+    const body = document.getElementById('vh-detail-body');
     const h = document.getElementById('vh-detail-title');
-    if (!m || !f || !h) {
+    if (!m || !body || !h) {
       console.warn('vh-detail-modal not found, falling back to new tab');
       window.open(href, '_blank');
       return;
     }
     h.textContent = title || 'Vorbehandlung';
-    f.src = href;
+    body.innerHTML = '<p class="muted">Lade Zusammenfassung …</p>';
     m.classList.add('open');
+    // href sieht aus wie "/protocols/123" oder "/central/456"
+    const dec = href.match(/\/protocols\/(\d+)/);
+    const cen = href.match(/\/central\/(\d+)/);
+    let url;
+    if (cen) url = '/api/protocol-summary?source=central&id=' + cen[1];
+    else if (dec) url = '/api/protocol-summary?source=decentral&id=' + dec[1];
+    else { body.innerHTML = '<p class="flash error">Unbekannter Bericht.</p>'; return; }
+    try {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) {
+        body.innerHTML = '<p class="flash error">Konnte Zusammenfassung nicht laden.</p>';
+        return;
+      }
+      const s = await res.json();
+      body.innerHTML = renderSummary(s);
+    } catch (_) {
+      body.innerHTML = '<p class="flash error">Netzwerkfehler.</p>';
+    }
+  }
+  function renderSummary(s) {
+    const row = (label, value) => value
+      ? `<div class="kv"><div class="label">${escapeHtml(label)}</div>`
+        + `<div class="value" style="white-space:pre-wrap;">${escapeHtml(value)}</div></div>`
+      : '';
+    const dateStr = s.event_date ? fmtDate(s.event_date) : '—';
+    return `
+      <div class="summary-head">
+        <div class="summary-id">${escapeHtml(s.laufende_nr || '')}</div>
+        <span class="badge type-${s.source === 'central' ? 'z' : 'd'}">${escapeHtml(s.type_label || '')}</span>
+        <span class="muted">· ${escapeHtml(dateStr)}</span>
+      </div>
+      <div class="summary-grid">
+        ${row('Was', s.what)}
+        ${row('Erstdiagnose', s.diagnose)}
+        ${row('Maßnahmen', s.massnahmen)}
+        ${row('Ausgang', s.ausgang)}
+        ${row('Behandler', s.behandler)}
+      </div>
+      <p class="muted" style="margin-top:14px;font-size:0.85rem;">
+        <a href="${escapeHtml(s.detail_url)}">Vollständigen Bericht öffnen →</a>
+      </p>`;
   }
   function closeDetailModal() {
     const m = document.getElementById('vh-detail-modal');
-    const f = document.getElementById('vh-detail-frame');
     if (m) m.classList.remove('open');
-    if (f) f.src = 'about:blank';
+    const body = document.getElementById('vh-detail-body');
+    if (body) body.innerHTML = '';
   }
 
   function renderHistoryRows(history) {
@@ -2087,16 +2130,15 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
 </script>
 
 <div class="modal-backdrop" id="vh-detail-modal"
-     onclick="if(event.target===this){this.classList.remove('open');var f=document.getElementById('vh-detail-frame');if(f)f.src='about:blank';}">
-  <div class="modal-window wide">
+     onclick="if(event.target===this){this.classList.remove('open');var b=document.getElementById('vh-detail-body');if(b)b.innerHTML='';}">
+  <div class="modal-window">
     <div class="modal-header">
       <h3 id="vh-detail-title">Vorbehandlung</h3>
       <button type="button" class="modal-close" data-vh-modal-close
               aria-label="Schließen">×</button>
     </div>
-    <div class="modal-body flush">
-      <iframe id="vh-detail-frame" class="modal-iframe"
-              src="about:blank" title="Vorbehandlung"></iframe>
+    <div class="modal-body" id="vh-detail-body">
+      <p class="muted">Lade Zusammenfassung …</p>
     </div>
   </div>
 </div>

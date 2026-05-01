@@ -332,6 +332,39 @@ def _patient_block(d): return _patient_inner(d)
 def _einsatz_block(d): return _einsatz_inner(d)
 
 
+def _section_medical(medical_info):
+    """Notfallrelevante medizinische Vorinfos für den Rettungsdienst —
+    Allergien, Dauer-Medikation, Notfallkontakt. Wird über der
+    Notfallgeschehen-Sektion gerendert, damit der Rettungsdienst sie
+    sofort sieht."""
+    m = medical_info or {}
+    has_allergies = bool(m.get("has_allergies"))
+    has_meds = bool(m.get("has_medications"))
+    allergies = (m.get("allergies_text") or "").strip()
+    meds = (m.get("medications_text") or "").strip()
+    nk_name = (m.get("emergency_contact_name") or "").strip()
+    nk_phone = (m.get("emergency_contact_phone") or "").strip()
+    nk_rel = (m.get("emergency_contact_relation") or "").strip()
+    nk_parts = []
+    if nk_name: nk_parts.append(nk_name)
+    if nk_rel: nk_parts.append(f"({nk_rel})")
+    if nk_phone: nk_parts.append(f"Tel. {nk_phone}")
+    nk = " ".join(nk_parts) or "— nicht hinterlegt —"
+    allergies_str = (allergies or ("ja — Details nicht hinterlegt"
+                     if has_allergies else "keine bekannt"))
+    meds_str = (meds or ("ja — Details nicht hinterlegt"
+                if has_meds else "keine"))
+    rows = [
+        [_label_value("Allergien", allergies_str,
+                      min_h=10 * mm, value_style=S_TXT)],
+        [_label_value("Dauer-Medikation", meds_str,
+                      min_h=10 * mm, value_style=S_TXT)],
+        [_label_value("Notfallkontakt (Angehörige/Eltern)", nk,
+                      min_h=8 * mm, value_style=S_TXT)],
+    ]
+    return _bordered_table(rows, [186 * mm], padding=4)
+
+
 def _section_2_notfall(d):
     notfallart = _combine(d.get("notfallart"), d.get("notfallart_sonstige"))
     rows = [
@@ -748,12 +781,16 @@ def _make_page_footer(data, exporter_label=None):
 
 # ============================ Main ==============================
 
-def render_pdf(data, exporter_label=None):
+def render_pdf(data, exporter_label=None, medical_info=None):
     """Rendert das Notfallprotokoll auf 2 A4-Seiten + ggf. Unterschriften.
 
     Erwartet das `data`-Dict eines zentralen Berichts (so wie es in
     central_protocols.data steht). `exporter_label` erscheint im Fuß
     jeder Seite zusammen mit Unterschriften-Status und Zeitstempel.
+
+    `medical_info` (optional) enthält Allergien, Medikamente und
+    Notfallkontakt aus der Patientenakte — wird oberhalb von Sektion 2
+    eingefügt, damit der Rettungsdienst die Infos sofort sieht.
     """
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -771,6 +808,15 @@ def render_pdf(data, exporter_label=None):
     # Top-Block: Patient + Einsatz in gemeinsamer Box
     story.append(_top_combined(data))
     story.append(Spacer(1, 6))
+
+    # Medizinische Vorinfos (Allergien / Medikamente / Notfallkontakt)
+    # — direkt sichtbar für den Rettungsdienst.
+    if medical_info:
+        story.append(_section_bar(
+            "Wichtig für den Rettungsdienst — Vorinfos aus der Patientenakte"
+        ))
+        story.append(_section_medical(medical_info))
+        story.append(Spacer(1, 6))
 
     # 2. Notfallgeschehen
     story.append(_section_bar("2. Notfallgeschehen / Anamnese / Erstbefund"))

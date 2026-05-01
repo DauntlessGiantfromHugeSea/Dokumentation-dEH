@@ -33,6 +33,20 @@
                         geburtsdatum=patient.geburtsdatum) }}">
        + Zentral
     </a>
+    {% if current_user.is_admin %}
+      <details class="inline-action">
+        <summary class="btn small danger">Patient löschen</summary>
+        <form method="post"
+              action="{{ url_for('patient_delete', patient_id=patient.id) }}"
+              class="inline-form"
+              onsubmit="return confirm('Patient „{{ patient.name }}“ wirklich endgültig löschen? Alle dezentralen Berichte werden mitgelöscht; zentrale Berichte bleiben erhalten, verlieren aber die Patient-Verknüpfung.');">
+          <input name="password" type="password" required
+                 placeholder="Dein Passwort"
+                 autocomplete="current-password">
+          <button class="btn small danger" type="submit">Endgültig löschen</button>
+        </form>
+      </details>
+    {% endif %}
   </div>
 </div>
 

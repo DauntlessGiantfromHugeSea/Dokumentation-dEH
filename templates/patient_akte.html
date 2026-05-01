@@ -97,7 +97,7 @@
           <td class="id">{{ c.laufende_nr or '#zEH' ~ c.id }}</td>
           <td><span class="badge type-z">zEH</span></td>
           <td>{{ format_dt(c.datum) or format_dt(c.created_at) }}</td>
-          <td>—</td>
+          <td>{{ c.author_full_name or c.author_username or c.name_summary or '—' }}</td>
         </tr>
         {% endfor %}
       </tbody>

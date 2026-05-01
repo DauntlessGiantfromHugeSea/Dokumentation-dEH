@@ -288,6 +288,34 @@ def _central_block(rec: dict, styles) -> list:
     laufende = rec.get("laufende_nr") or f"#zEH{rec['id']}"
     elements: list = [
         Paragraph(f"Bericht {laufende}", styles["h3"]),
+    ]
+    # Behandler-Block — wer hat behandelt + Triage-Workflow
+    behandler = (rec.get("author_full_name") or rec.get("author_username")
+                 or rec.get("name_summary") or "")
+    if behandler:
+        elements.append(_kv_full("Behandelt von", behandler, styles))
+    triage = rec.get("triage")
+    if triage:
+        cat = triage.get("category")
+        cat_label = ("SK I rot — sofort" if cat == "SK1"
+                     else "SK II gelb — dringend" if cat == "SK2"
+                     else "SK III grün — kann warten")
+        elements.append(_kv_grid([
+            ("Triage-Kategorie", cat_label),
+            ("Anmeldung", format_dt(triage.get("arrival_at"))),
+            ("Angemeldet von",
+             triage.get("anmelder_full_name")
+             or triage.get("anmelder_username") or "—"),
+        ], styles, col_widths=[64 * mm, 53 * mm, 53 * mm]))
+        if triage.get("treatment_started_at") or triage.get("treatment_finished_at"):
+            elements.append(_kv_grid([
+                ("Behandlungsstart", format_dt(triage.get("treatment_started_at"))),
+                ("Behandlungsende", format_dt(triage.get("treatment_finished_at")) or "—"),
+            ], styles, col_widths=[85 * mm, 85 * mm]))
+        if triage.get("notes"):
+            elements.append(_kv_full("Anmelde-Notiz", triage.get("notes"), styles))
+        elements.append(Spacer(1, 4))
+    elements += [
         _kv_grid([
             ("Einsatznummer", d.get("einsatznummer")),
             ("Datum", format_dt(d.get("datum"))),
