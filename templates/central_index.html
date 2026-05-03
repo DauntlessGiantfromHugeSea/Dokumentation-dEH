@@ -972,6 +972,22 @@
             <div class="label">Zusammenfassung</div>
             <div class="summary" id="summary"></div>
           </div>
+
+          <div class="section finish-section" id="finish-section"
+               style="display: none;">
+            <h3 style="margin: 0 0 8px;">Behandlung abschließen</h3>
+            <p style="margin: 0 0 12px; font-size: 0.92rem;">
+              Wenn die Behandlung vollständig dokumentiert ist, hier
+              klicken — der Patient wird aus der Triage-Liste entfernt.
+              Der Bericht bleibt erhalten und kann bei Bedarf später
+              bearbeitet werden.
+            </p>
+            <div id="finish-status" class="finish-status"></div>
+            <button class="btn primary lg" id="btn-finish-treatment"
+                    type="button" style="margin-top: 8px;">
+              ✓ Behandlung abschließen
+            </button>
+          </div>
         </section>
       </form>
 
@@ -1217,7 +1233,10 @@
     document.getElementById('progress').style.width = `${(num / TOTAL_PAGES) * 100}%`;
     document.getElementById('btn-prev').disabled = num === 1;
     document.getElementById('btn-next').disabled = num === TOTAL_PAGES;
-    if (num === TOTAL_PAGES) renderSummary();
+    if (num === TOTAL_PAGES) {
+      renderSummary();
+      refreshFinishSection();
+    }
     updateCompletion();
     document.querySelector('.main').scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -1375,6 +1394,83 @@
   const btnPrint = document.getElementById('btn-print');
   if (btnPrint) btnPrint.addEventListener('click', () => window.print());
   document.getElementById('btn-sidebar').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
+
+  // ============ Behandlung abschließen ============
+  // Sichtbar, sobald der Bericht gespeichert ist UND ein Triage-Eintrag
+  // verlinkt ist. Refresh nach jedem Save / Page-Wechsel.
+  const finishSection = document.getElementById('finish-section');
+  const finishStatus = document.getElementById('finish-status');
+  const btnFinish = document.getElementById('btn-finish-treatment');
+
+  async function refreshFinishSection() {
+    if (!finishSection) return;
+    if (currentId == null) {
+      finishSection.style.display = 'none';
+      return;
+    }
+    try {
+      const res = await fetch(
+        '/api/central/protokolle/' + currentId + '/triage-status',
+        { credentials: 'same-origin' }
+      );
+      if (!res.ok) { finishSection.style.display = 'none'; return; }
+      const data = await res.json();
+      if (!data.has_triage) {
+        finishSection.style.display = 'none';
+        return;
+      }
+      finishSection.style.display = 'block';
+      if (data.status === 'abgeschlossen') {
+        finishSection.classList.add('finished');
+        finishStatus.innerHTML =
+          '<span class="badge totp-on">Behandlung abgeschlossen</span> '
+          + '<span class="muted">am ' + escapeHtml(data.finished_at_label || '') + '</span>';
+        if (btnFinish) {
+          btnFinish.disabled = true;
+          btnFinish.textContent = '✓ Bereits abgeschlossen';
+        }
+      } else {
+        finishSection.classList.remove('finished');
+        finishStatus.innerHTML =
+          '<span class="badge totp-off">Triage-Status: ' + escapeHtml(data.status || '') + '</span>';
+        if (btnFinish) {
+          btnFinish.disabled = false;
+          btnFinish.textContent = '✓ Behandlung abschließen';
+        }
+      }
+    } catch (_) {
+      finishSection.style.display = 'none';
+    }
+  }
+
+  if (btnFinish) {
+    btnFinish.addEventListener('click', async () => {
+      if (currentId == null) {
+        toast('Bitte erst Bericht speichern');
+        return;
+      }
+      if (!confirm('Behandlung wirklich abschließen? Der Patient '
+                   + 'verschwindet damit aus der Triage-Liste.')) return;
+      btnFinish.disabled = true;
+      try {
+        const res = await fetch(
+          '/api/central/protokolle/' + currentId + '/finish-treatment',
+          { method: 'POST', credentials: 'same-origin' }
+        );
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          toast('Fehler: ' + (data.error || res.status));
+          btnFinish.disabled = false;
+          return;
+        }
+        toast('Behandlung abgeschlossen — Patient ist aus der Triage entfernt.');
+        await refreshFinishSection();
+      } catch (_) {
+        toast('Netzwerkfehler');
+        btnFinish.disabled = false;
+      }
+    });
+  }
 
   // ============ Summary ============
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }

@@ -69,11 +69,47 @@
     <div class="kv"><div class="label">Stammnummer</div>
       <div class="value">{{ patient.stammnummer or '—' }}</div></div>
   </div>
+  <div class="akte-stats">
+    <div class="akte-stat">
+      <div class="num">{{ decentral|length + central|length }}</div>
+      <div class="lbl">Behandlungen gesamt</div>
+    </div>
+    <div class="akte-stat">
+      <div class="num">{{ decentral|length }}</div>
+      <div class="lbl">dezentrale (DGUV-1)</div>
+    </div>
+    <div class="akte-stat">
+      <div class="num">{{ central|length }}</div>
+      <div class="lbl">zentrale (Notfallprotokoll)</div>
+    </div>
+  </div>
 </div>
 
 <div class="card">
   <div class="card-header">Behandlungs-Historie ({{ decentral|length + central|length }})</div>
-  {% if decentral or central %}
+  {% set merged = [] %}
+  {% for p in decentral %}
+    {% set _ = merged.append({
+      'kind': 'd',
+      'id': p.id,
+      'laufende_nr': p.laufende_nr or '#dEH' ~ p.id,
+      'date': p.eh_datum_uhrzeit or p.created_at,
+      'author': p.author_full_name or p.author_username or '—',
+      'url': url_for('protocol_detail', protocol_id=p.id),
+    }) %}
+  {% endfor %}
+  {% for c in central %}
+    {% set _ = merged.append({
+      'kind': 'z',
+      'id': c.id,
+      'laufende_nr': c.laufende_nr or '#zEH' ~ c.id,
+      'date': c.datum or c.created_at,
+      'author': c.author_full_name or c.author_username or c.name_summary or '—',
+      'url': url_for('central_detail', pid=c.id),
+    }) %}
+  {% endfor %}
+  {% set merged_sorted = merged | sort(attribute='date', reverse=true) %}
+  {% if merged_sorted %}
     <table class="data">
       <thead>
         <tr>
@@ -81,23 +117,22 @@
           <th>Typ</th>
           <th>Datum</th>
           <th>Eingetragen von</th>
+          <th class="right"></th>
         </tr>
       </thead>
       <tbody>
-        {% for p in decentral %}
+        {% for r in merged_sorted %}
         <tr>
-          <td class="id">{{ p.laufende_nr or '#dEH' ~ p.id }}</td>
-          <td><span class="badge type-d">dEH</span></td>
-          <td>{{ format_dt(p.eh_datum_uhrzeit) or format_dt(p.created_at) }}</td>
-          <td>{{ p.author_full_name or p.author_username or '—' }}</td>
-        </tr>
-        {% endfor %}
-        {% for c in central %}
-        <tr>
-          <td class="id">{{ c.laufende_nr or '#zEH' ~ c.id }}</td>
-          <td><span class="badge type-z">zEH</span></td>
-          <td>{{ format_dt(c.datum) or format_dt(c.created_at) }}</td>
-          <td>{{ c.author_full_name or c.author_username or c.name_summary or '—' }}</td>
+          <td class="id">{{ r.laufende_nr }}</td>
+          <td>
+            {% if r.kind == 'd' %}<span class="badge type-d">dEH</span>
+            {% else %}<span class="badge type-z">zEH</span>{% endif %}
+          </td>
+          <td>{{ format_dt(r.date) }}</td>
+          <td>{{ r.author }}</td>
+          <td class="right">
+            <a class="btn small secondary" href="{{ r.url }}">Öffnen</a>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

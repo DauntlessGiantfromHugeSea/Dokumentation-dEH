@@ -930,6 +930,55 @@ def create_app(test_config: dict | None = None) -> Flask:
             flash(f"Behandlung von „{who}“ wieder geöffnet.", "success")
         return redirect(url_for("triage_list"))
 
+    @app.route("/api/central/protokolle/<int:pid>/triage-status")
+    @login_required
+    def api_central_triage_status(pid: int):
+        """Liefert den Triage-Status, der zu diesem zentralen Bericht
+        gehört — Datenquelle für den „Behandlung abschließen"-Button
+        am Ende der SPA."""
+        db = models.get_db()
+        rec = models.get_central_protocol(db, pid)
+        if not rec:
+            return {"error": "not found"}, 404
+        triage = models.get_triage_for_protocol(db, pid)
+        if not triage:
+            return {"has_triage": False}
+        finished_at = triage.get("treatment_finished_at")
+        return {
+            "has_triage": True,
+            "triage_id": triage["id"],
+            "status": triage.get("status"),
+            "category": triage.get("category"),
+            "started_at": triage.get("treatment_started_at"),
+            "finished_at": finished_at,
+            "finished_at_label": models.format_dt(finished_at) if finished_at else "",
+        }
+
+    @app.route("/api/central/protokolle/<int:pid>/finish-treatment",
+               methods=["POST"])
+    @login_required
+    def api_central_finish_treatment(pid: int):
+        """Schließt aus dem zentralen Bericht heraus den verlinkten Triage-
+        Eintrag ab — der Patient verschwindet damit aus der Triage-Liste.
+        Wird vom „Behandlung abschließen"-Button am Ende der SPA aufgerufen.
+        """
+        db = models.get_db()
+        rec = models.get_central_protocol(db, pid)
+        if not rec:
+            return {"error": "not found"}, 404
+        triage = models.get_triage_for_protocol(db, pid)
+        if not triage:
+            return {"error": "no triage entry linked"}, 400
+        if triage.get("status") == "abgeschlossen":
+            return {"ok": True, "already_finished": True,
+                    "triage_id": triage["id"]}
+        ok = models.finish_triage_treatment(db, triage["id"])
+        if not ok:
+            return {"error": "could not finish (status: "
+                    + triage.get("status", "?") + ")"}, 400
+        db.commit()
+        return {"ok": True, "triage_id": triage["id"]}
+
     # ----- Central first-aid (Notfallprotokoll) -----
 
     @app.route("/central/new", methods=["GET", "POST"])
