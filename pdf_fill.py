@@ -109,6 +109,8 @@ SECTION_BG = colors.HexColor("#E8E8E8")
 SUB_BG = colors.HexColor("#F4F4F4")
 BORDER = colors.HexColor("#888888")
 LIGHT_BORDER = colors.HexColor("#BBBBBB")
+CONTENT_W = 186 * mm
+INSET_CONTENT_W = 178 * mm
 
 S_TITLE = ParagraphStyle("Title", fontName="Helvetica-Bold", fontSize=14,
                          leading=17, textColor=colors.black)
@@ -160,7 +162,7 @@ def _label_value(label, value, value_style=S_VAL, min_h=None):
 
 def _section_bar(title, width=None):
     """Graue Sektionsleiste mit fetter Schrift."""
-    tbl = Table([[_p(title, S_SECTION)]], colWidths=[width or 186 * mm])
+    tbl = Table([[_p(title, S_SECTION)]], colWidths=[width or CONTENT_W])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), SECTION_BG),
         ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
@@ -174,7 +176,7 @@ def _section_bar(title, width=None):
 
 def _subsection(title, width=None, bg=SUB_BG):
     """Hellgraue Unter-Sektionsleiste."""
-    tbl = Table([[_p(title, S_SUBSEC)]], colWidths=[width or 186 * mm])
+    tbl = Table([[_p(title, S_SUBSEC)]], colWidths=[width or CONTENT_W])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), bg),
         ("BOX", (0, 0), (-1, -1), 0.4, BORDER),
@@ -314,7 +316,7 @@ def _top_combined(d):
     vertikaler Trennlinie. Beide Hälften enden auf derselben Y-Achse."""
     pat = _patient_inner(d)
     ein = _einsatz_inner(d)
-    tbl = Table([[pat, ein]], colWidths=[88 * mm, 96 * mm])
+    tbl = Table([[pat, ein]], colWidths=[88 * mm, 98 * mm])
     tbl.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
         ("LINEAFTER", (0, 0), (0, 0), 0.5, BORDER),
@@ -468,7 +470,7 @@ def _section_4_erstdiagnose(d):
     )
 
 
-def _vital_trend_table(d):
+def _vital_trend_table(d, width=CONTENT_W):
     """Vergleicht Vitalwerte Erstbefund ↔ Übergabe nebeneinander, sodass
     der Trend auf einen Blick erkennbar ist (RR, Puls, AF, SpO2, etc.)."""
     columns = [
@@ -511,10 +513,11 @@ def _vital_trend_table(d):
 
     rows = [header_cells, erst_cells, ueber_cells]
 
-    # Equal-ish widths over 186 mm
+    # Equal-ish widths inside the available box width. Do not use the full
+    # page width when nested in a padded cell, otherwise the table spills out.
     n = len(columns)
-    first_w = 22 * mm
-    rest_w = (186 * mm - first_w) / (n - 1)
+    first_w = 20 * mm
+    rest_w = (width - first_w) / (n - 1)
     col_widths = [first_w] + [rest_w] * (n - 1)
 
     tbl = Table(rows, colWidths=col_widths, hAlign="LEFT")
@@ -524,11 +527,11 @@ def _vital_trend_table(d):
         ("INNERGRID", (0, 0), (-1, -1), 0.4, LIGHT_BORDER),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (1, 0), (-1, -1), "CENTER"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
         ("TOPPADDING", (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
     ]))
     return tbl
 
@@ -539,8 +542,8 @@ def _section_5_verlauf(d):
         [_label_value("5. Verlauf", d.get("verlauf"), min_h=20 * mm,
                        value_style=S_TXT)],
         [_p("<b>Verlauf der Vitalwerte</b>", S_SUBSEC)],
-        [_vital_trend_table(d)],
-    ], colWidths=[186 * mm])
+        [_vital_trend_table(d, width=INSET_CONTENT_W)],
+    ], colWidths=[CONTENT_W])
     inner.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
         ("LINEBELOW", (0, 0), (-1, 0), 0.4, LIGHT_BORDER),

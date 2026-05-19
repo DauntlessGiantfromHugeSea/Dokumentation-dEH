@@ -47,29 +47,39 @@
   body { min-height: 100vh; }
 
   /* ============ Layout ============ */
-  .layout { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 50px); }
+  .layout {
+    display: grid;
+    grid-template-columns: 310px minmax(0, 1fr);
+    gap: 24px;
+    min-height: calc(100vh - 58px);
+    padding: 24px;
+    background: linear-gradient(180deg, #fbfaf9 0%, var(--bg) 100%);
+  }
   @media (max-width: 900px) {
-    .layout { grid-template-columns: 1fr; }
+    .layout { grid-template-columns: 1fr; padding: 14px; gap: 14px; }
     .vh-sidebar { max-height: none !important; position: relative !important; }
   }
   /* Vorbehandlungs-Sidebar — ersetzt die alte Protokoll-Liste */
   .vh-sidebar {
-    background: #fafbfc;
-    border-right: 1px solid var(--border);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
-    max-height: calc(100vh - 50px);
+    max-height: calc(100vh - 106px);
     position: sticky;
-    top: 0;
+    top: 82px;
     overflow-y: auto;
   }
   .vh-sidebar-header {
-    padding: 14px 16px;
+    padding: 16px 18px;
     border-bottom: 1px solid var(--border);
-    background: #fff;
+    background: var(--card);
     position: sticky;
     top: 0;
     z-index: 1;
+    border-radius: var(--r) var(--r) 0 0;
   }
   .vh-sidebar-header h2 {
     margin: 0;
@@ -79,7 +89,7 @@
     color: var(--primary, #d32f2f);
   }
   .vh-sidebar-header .vh-sub { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
-  .vh-sidebar-body { padding: 12px 14px; flex: 1; }
+  .vh-sidebar-body { padding: 14px; flex: 1; }
   .vh-empty {
     color: var(--muted);
     font-size: 0.88rem;
@@ -101,8 +111,8 @@
   .vh-state-pill.new { background: #fff3cd; color: #7a5d00; }
   .vh-state-pill.multi { background: #fce8e6; color: #b3261e; }
   .vh-patient-card {
-    padding: 10px 12px;
-    background: #fff;
+    padding: 12px;
+    background: var(--bg-alt);
     border: 1px solid var(--border);
     border-radius: 6px;
     margin-bottom: 12px;
@@ -161,7 +171,7 @@
   .vh-emergency {
     margin-top: 16px;
     padding: 12px;
-    background: #fff;
+    background: var(--bg-alt);
     border: 1px solid var(--border);
     border-radius: 6px;
   }
@@ -296,16 +306,22 @@
   .protocol-item .meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
   .sidebar-empty { padding: 24px 12px; text-align: center; color: var(--muted); font-size: 12px; }
 
-  .main { overflow-y: auto; max-height: 100vh; }
-  .app { max-width: 980px; margin: 0 auto; padding: 18px 20px 100px; }
+  .main { overflow: visible; min-width: 0; }
+  .app {
+    max-width: 1260px;
+    margin: 0 auto;
+    padding: 0 0 96px;
+  }
 
   /* ============ Top header ============ */
   header.top {
     display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 14px; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 18px; gap: 12px; flex-wrap: wrap;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
   }
-  header.top h1 { margin: 0; font-size: 18px; font-weight: 600; }
-  header.top .meta { font-size: 12px; color: var(--muted); }
+  header.top h1 { margin: 0; font-size: 1.8rem; font-weight: 700; letter-spacing: 0; }
+  header.top .meta { font-size: 0.96rem; color: var(--muted); }
   .status-pill {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 4px 10px; border-radius: 999px;
@@ -323,15 +339,19 @@
 
   /* ============ Stepper ============ */
   .stepper {
-    display: flex; overflow-x: auto; gap: 4px;
-    padding: 8px 0 14px; margin-bottom: 12px;
-    border-bottom: 1px solid var(--border);
+    display: flex; overflow-x: auto; gap: 6px;
+    padding: 10px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    background: var(--card);
+    box-shadow: var(--shadow);
     scrollbar-width: thin;
   }
   .stepper button {
     flex: 0 0 auto; background: transparent;
     border: 1px solid var(--border); border-radius: 999px;
-    padding: 6px 12px; font-size: 12px;
+    padding: 8px 13px; font-size: 12px;
     color: var(--muted); cursor: pointer; white-space: nowrap;
     font-weight: 500; transition: all 0.12s;
   }
@@ -341,23 +361,23 @@
     background: #ecfdf5; color: var(--success); border-color: #a7f3d0;
   }
   .stepper .step-num { display: inline-block; margin-right: 6px; font-weight: 700; }
-  .progress-bar { height: 3px; background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 18px; }
+  .progress-bar { height: 3px; background: var(--border); border-radius: 999px; overflow: hidden; margin-bottom: 22px; }
   .progress-bar > div { height: 100%; background: var(--primary); transition: width 0.3s; }
 
   /* ============ Page card ============ */
   .page {
     display: none;
     background: var(--card);
-    border: 1px solid var(--border); border-radius: 12px;
-    padding: 20px 22px; box-shadow: var(--shadow);
+    border: 1px solid var(--border); border-radius: var(--r);
+    padding: 24px; box-shadow: var(--shadow);
     animation: fadeIn 0.18s ease;
   }
   .page.active { display: block; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
-  .page h2 { margin: 0 0 18px; font-size: 17px; font-weight: 600; color: var(--primary-dark); }
+  .page h2 { margin: 0 0 18px; font-size: 1.18rem; font-weight: 700; color: var(--primary-dark); }
 
   /* ============ Section ============ */
-  .section { margin: 0 0 22px; }
+  .section { margin: 0 0 24px; }
   .section:last-child { margin-bottom: 0; }
   .section > .label {
     display: flex; align-items: baseline; justify-content: space-between;
@@ -368,7 +388,7 @@
   .section > .label .hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); }
 
   /* ============ Inputs ============ */
-  .grid { display: grid; gap: 10px 12px; }
+  .grid { display: grid; gap: 14px; }
   .grid.cols-2 { grid-template-columns: 1fr 1fr; }
   .grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
   .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
@@ -376,7 +396,7 @@
     .grid.cols-2, .grid.cols-3, .grid.cols-4 { grid-template-columns: 1fr; }
   }
   .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .field > label { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .field > label { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
   .field.full { grid-column: 1 / -1; }
   .with-now { position: relative; }
   .with-now > input { padding-right: 56px; }
@@ -390,7 +410,7 @@
 
   input[type=text], input[type=number], input[type=date], input[type=time], input[type=tel],
   select, textarea {
-    width: 100%; padding: 9px 11px;
+    width: 100%; padding: 10px 12px;
     border: 1px solid var(--border-strong); border-radius: var(--r);
     background: white; font-size: 14px; font-family: inherit; color: var(--text);
     transition: border-color 0.12s, box-shadow 0.12s;
@@ -434,16 +454,16 @@
 
   /* ============ Vital signs ============ */
   .vitals {
-    display: grid; gap: 8px;
-    grid-template-columns: repeat(4, 1fr);
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   }
   .vitals .field {
-    background: var(--bg-alt); padding: 8px 10px;
+    background: var(--bg-alt); padding: 10px;
     border: 1px solid var(--border); border-radius: var(--r); gap: 2px;
   }
   .vitals .field > label { font-size: 10px; font-weight: 700; color: var(--primary-dark); text-transform: uppercase; letter-spacing: 0.04em; }
   .vitals input, .vitals select { padding: 6px 8px; font-size: 14px; font-weight: 500; }
-  @media (max-width: 800px) { .vitals { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 800px) { .vitals { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
   .pain-scale { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
   .pain-scale input[type=range] { flex: 1; accent-color: var(--primary); height: 4px; }
@@ -478,7 +498,7 @@
     position: sticky; bottom: 12px;
     margin-top: 18px; padding: 10px 14px;
     background: var(--card);
-    border: 1px solid var(--border); border-radius: 12px;
+    border: 1px solid var(--border); border-radius: var(--r);
     box-shadow: 0 4px 12px rgba(0,0,0,0.06);
     display: flex; justify-content: space-between; align-items: center;
     gap: 10px; flex-wrap: wrap;
