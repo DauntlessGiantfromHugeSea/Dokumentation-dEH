@@ -1,10 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Benutzer-Verwaltung{% endblock %}
+{% block title %}Einstellungen{% endblock %}
 {% block content %}
 <div class="page-header">
   <div>
-    <h1>Benutzer-Verwaltung</h1>
-    <p class="tagline">Konten anlegen, Passwörter zurücksetzen, Admin-Rechte vergeben.</p>
+    <h1>Einstellungen</h1>
+    <p class="tagline">
+      Veranstaltungen, Nummern-Präfixe, Benutzer und Berechtigungen verwalten.
+    </p>
   </div>
   <div class="btn-row">
     <a class="btn small secondary" href="{{ url_for('account_pin') }}">Mein Admin-PIN</a>

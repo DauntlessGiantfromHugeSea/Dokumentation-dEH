@@ -26,7 +26,7 @@
 
 <div class="card">
   <div class="card-header">2. Benutzer verwalten</div>
-  <p>Topnav → <strong>Benutzer</strong> (<code>/admin/users</code>).</p>
+  <p>Topnav rechts → <strong>Zahnrad</strong> (<code>/admin/users</code>).</p>
   <h3 style="font-size: 1rem;">Anlegen</h3>
   <ul class="docs-list">
     <li><strong>Benutzername</strong> + <strong>Voller Name</strong> + <strong>Passwort</strong>
@@ -62,7 +62,30 @@
 </div>
 
 <div class="card">
-  <div class="card-header">3. Admin-PIN &amp; Daten-Freigabe</div>
+  <div class="card-header">3. Veranstaltungen verwalten</div>
+  <p>Topnav rechts → <strong>Zahnrad</strong> → Abschnitt <strong>Veranstaltungen</strong>.</p>
+  <ol class="docs-list">
+    <li><strong>Name</strong> vergeben, z. B. „Camp 2026". Dieser Name erscheint im Dashboard,
+      in Protokollen und in der Aktenansicht.</li>
+    <li><strong>Präfix laufende Nr.</strong> vergeben, z. B. <code>C26</code>. Neue Berichte
+      bekommen dann laufende Nummern wie <code>#C261</code>, <code>#C262</code>.</li>
+    <li><strong>Beginn</strong> und <strong>Ende</strong> eintragen, damit die Veranstaltung
+      später sauber zugeordnet werden kann.</li>
+    <li>Bestehende Veranstaltungen kannst du direkt darunter bearbeiten:
+      Name, Präfix, Datum und <strong>aktiv</strong> speichern.</li>
+    <li>Pro User unter <strong>Veranstaltungen</strong> festlegen:
+      <strong>sehen</strong> bedeutet, dass die Person das Dashboard und die Berichte
+      dieser Veranstaltung sehen darf. <strong>neu anlegen</strong> erlaubt zusätzlich
+      neue Triage-Einträge und Protokolle in dieser Veranstaltung.</li>
+  </ol>
+  <p class="muted" style="font-size: 0.9rem;">
+    Admins sehen automatisch alle Veranstaltungen und dürfen überall anlegen.
+    Oben in der Topbar kann zwischen den erlaubten Veranstaltungen gewechselt werden.
+  </p>
+</div>
+
+<div class="card">
+  <div class="card-header">4. Admin-PIN &amp; Daten-Freigabe</div>
   <p>Sensible Daten sind admin-only:</p>
   <ul class="docs-list">
     <li><strong>Notfallkontakt</strong> + <strong>Allergien-Details</strong> + <strong>Medikamente-Details</strong>
@@ -87,7 +110,7 @@
 </div>
 
 <div class="card">
-  <div class="card-header">4. Akten-Export</div>
+  <div class="card-header">5. Akten-Export</div>
   <ol class="docs-list">
     <li>Patientenakte öffnen (<code>/patients/&lt;ID&gt;</code>).</li>
     <li>Button <strong>Akte exportieren</strong> oben rechts.</li>
@@ -113,7 +136,7 @@
 </div>
 
 <div class="card">
-  <div class="card-header">5. Berichte verwalten</div>
+  <div class="card-header">6. Berichte verwalten</div>
   <ul class="docs-list">
     <li><strong>Bearbeiten</strong>: jeder Voll-User kann eigene und fremde dezentrale
       Berichte bearbeiten. Zentrale Berichte sind eigentumsbasiert
@@ -126,7 +149,7 @@
 </div>
 
 <div class="card">
-  <div class="card-header">6. Server-Betrieb</div>
+  <div class="card-header">7. Server-Betrieb</div>
   <h3 style="font-size: 1rem;">Aktualisieren</h3>
   <pre style="background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem;">cd ~/Dokumentation-dEH/Dokumentation-dEH &amp;&amp; git pull
 docker stop camp-doku &amp;&amp; docker rm camp-doku
@@ -146,7 +169,7 @@ docker exec -it camp-doku flask create-user lisa --role zentral_writer --full-na
 </div>
 
 <div class="card">
-  <div class="card-header">7. Sicherheit / DSGVO</div>
+  <div class="card-header">8. Sicherheit / DSGVO</div>
   <ul class="docs-list">
     <li><strong>HTTPS</strong> ist Pflicht für echten Betrieb — über HTTP gehen
       Passwort + 2FA-Code im Klartext durchs Netz. Caddy + Subdomain
@@ -163,7 +186,7 @@ docker exec -it camp-doku flask create-user lisa --role zentral_writer --full-na
 </div>
 
 <div class="card">
-  <div class="card-header">8. Troubleshooting</div>
+  <div class="card-header">9. Troubleshooting</div>
   <dl class="docs-faq">
     <dt>„kein Admin mit PIN" im Entschlüsseln-Dialog</dt>
     <dd>Mindestens ein Admin muss auf <code>/account/pin</code> einen PIN setzen.</dd>

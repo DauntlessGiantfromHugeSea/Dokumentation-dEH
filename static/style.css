@@ -135,7 +135,8 @@ header.topbar {
   padding: 12px 28px;
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 18px;
+  flex-wrap: nowrap;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
               0 6px 24px rgba(122, 31, 43, 0.22);
   position: sticky;
@@ -153,6 +154,8 @@ header.topbar .brand {
   font-style: italic;
   white-space: nowrap;
   padding-right: 6px;
+  color: #fff;
+  text-decoration: none;
 }
 header.topbar .brand::before {
   content: "";
@@ -165,14 +168,16 @@ header.topbar .brand::before {
 }
 header.topbar nav {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex: 1;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
 }
 header.topbar nav a {
   color: rgba(255, 255, 255, 0.82);
-  font-size: 0.92rem;
-  padding: 7px 13px;
+  font-size: 0.9rem;
+  padding: 7px 10px;
   border-radius: var(--radius-pill);
   position: relative;
   font-weight: 500;
@@ -188,10 +193,12 @@ header.topbar nav a.active {
   background: rgba(255, 255, 255, 0.18);
 }
 header.topbar .user {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 header.topbar .event-switch { margin: 0; }
 header.topbar .event-switch select,
@@ -206,7 +213,7 @@ header.topbar .event-pill {
 header.topbar .event-switch select option { color: #222; }
 header.topbar .user a {
   color: rgba(255, 255, 255, 0.85);
-  padding: 6px 12px;
+  padding: 6px 9px;
   border-radius: var(--radius-pill);
   transition: background var(--t-fast), color var(--t-fast);
 }
@@ -214,6 +221,19 @@ header.topbar .user a:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.12);
   text-decoration: none;
+}
+
+header.topbar .topbar-icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* Theme-Toggle (Sonne/Hochkontrast) */
@@ -224,7 +244,7 @@ header.topbar .user a:hover {
   color: #fff;
   font: inherit;
   font-size: 0.85rem;
-  padding: 6px 12px;
+  padding: 6px 10px;
   border-radius: var(--radius-pill);
   cursor: pointer;
   display: inline-flex;
@@ -1078,10 +1098,10 @@ details.inline-action:not([open]) .inline-form { display: none; }
 /* Tablet */
 @media (max-width: 900px) {
   main { padding: 0 14px; margin: 16px auto; }
-  header.topbar { padding: 10px 14px; gap: 14px; flex-wrap: wrap; }
-  header.topbar nav { gap: 12px; flex-wrap: wrap; }
+  header.topbar { padding: 10px 14px; gap: 10px; overflow-x: auto; }
+  header.topbar nav { gap: 4px; flex-wrap: nowrap; }
   header.topbar nav a { font-size: 0.88rem; }
-  header.topbar .user { font-size: 0.82rem; flex-basis: 100%; text-align: right; }
+  header.topbar .user { font-size: 0.82rem; }
   .toolbar { gap: 8px; padding: 10px 12px; }
   .toolbar label.field { min-width: 0; flex: 1 1 140px; }
   .protocol-meta { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
@@ -1099,10 +1119,9 @@ details.inline-action:not([open]) .inline-form { display: none; }
     gap: 8px;
   }
   header.topbar .brand { font-size: 1rem; }
-  header.topbar nav { gap: 8px; row-gap: 6px; flex-basis: 100%; order: 2; }
-  header.topbar nav a { font-size: 0.85rem; padding: 2px 0; }
-  header.topbar .user { order: 3; flex-basis: 100%; text-align: left; }
-  header.topbar .user a { margin-left: 0; margin-right: 12px; }
+  header.topbar nav { gap: 4px; }
+  header.topbar nav a { font-size: 0.85rem; padding: 5px 8px; }
+  header.topbar .user a { margin-left: 0; }
 
   form.stack .row,
   form.stack .row.three,

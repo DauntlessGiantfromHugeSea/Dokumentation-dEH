@@ -20,7 +20,7 @@
 <body{% if request.args.get('embed') %} class="embed-mode"{% endif %}>
   {% if current_user.is_authenticated and not request.args.get('embed') %}
   <header class="topbar">
-    <span class="brand">Erste Hilfe</span>
+    <a class="brand" href="{% if current_user.is_triage_intake %}{{ url_for('triage_new') }}{% elif current_user.can_view_decentral %}{{ url_for('dashboard') }}{% else %}{{ url_for('central_index') }}{% endif %}">Erste Hilfe</a>
     {% if current_user.is_triage_intake %}
       {# Kiosk-Mode: nur Anmelden + Logout #}
       <nav>
@@ -44,6 +44,8 @@
         <span class="muted" style="color: rgba(255,255,255,0.85);">Anmelde-Kiosk</span>
         <button type="button" class="theme-toggle" id="themeToggle"
                 title="Hochkontrast umschalten">☀ Kontrast</button>
+        <a class="topbar-icon" href="{{ url_for('docs_index') }}"
+           title="Hilfe" aria-label="Hilfe">?</a>
         <a href="{{ url_for('logout') }}">Abmelden</a>
       </span>
     {% else %}
@@ -59,10 +61,6 @@
           <a href="{{ url_for('patient_list') }}">Personen</a>
           <a href="{{ url_for('export_form') }}">Export</a>
         {% endif %}
-        {% if current_user.is_admin %}
-          <a href="{{ url_for('admin_users') }}">Benutzer</a>
-        {% endif %}
-        <a href="{{ url_for('docs_index') }}">Hilfe</a>
       </nav>
       <span class="user">
         {% if available_events|length > 1 %}
@@ -82,6 +80,12 @@
         <button type="button" class="theme-toggle" id="themeToggle"
                 title="Hochkontrast umschalten">☀ Kontrast</button>
         <a href="{{ url_for('account_password') }}">{{ current_user.full_name or current_user.username }}</a>
+        {% if current_user.is_admin %}
+          <a class="topbar-icon" href="{{ url_for('admin_users') }}"
+             title="Einstellungen" aria-label="Einstellungen">⚙</a>
+        {% endif %}
+        <a class="topbar-icon" href="{{ url_for('docs_index') }}"
+           title="Hilfe" aria-label="Hilfe">?</a>
         <a href="{{ url_for('logout') }}">Abmelden</a>
       </span>
     {% endif %}

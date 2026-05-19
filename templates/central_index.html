@@ -24,6 +24,18 @@
     --shadow: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.04);
     --r: 8px;
   }
+  html[data-theme="hc"] {
+    --primary: #ff3b3b;
+    --primary-dark: #ff6b6b;
+    --primary-light: #2a0f12;
+    --border: #6b7280;
+    --border-strong: #d1d5db;
+    --bg: #050505;
+    --bg-alt: #111827;
+    --text: #ffffff;
+    --muted: #d1d5db;
+    --card: #0b0f19;
+  }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0;
@@ -504,7 +516,7 @@
 
   /* Top app-bar — visuell identisch zu base.html/.topbar */
   .app-bar {
-    display: flex; align-items: center; gap: 24px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: nowrap;
     padding: 12px 24px;
     background: #7a1f2b; color: #fff;
     font-size: 14px;
@@ -513,27 +525,65 @@
   .app-bar .brand {
     font-weight: 700; font-size: 1.15rem;
     letter-spacing: 0.3px; font-style: italic;
+    color: #fff; text-decoration: none; white-space: nowrap;
   }
-  .app-bar nav { display: flex; gap: 18px; flex: 1; }
+  .app-bar nav { display: flex; gap: 4px; flex: 1; min-width: 0; white-space: nowrap; }
   .app-bar nav a {
     color: rgba(255,255,255,0.92);
-    font-size: 0.95rem;
-    padding: 4px 0;
-    border-bottom: 2px solid transparent;
+    font-size: 0.9rem;
+    padding: 7px 10px;
+    border-radius: 999px;
     text-decoration: none;
     font-weight: 500;
   }
   .app-bar nav a:hover {
     color: #fff;
-    border-bottom-color: rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.12);
   }
   .app-bar nav a.active {
-    border-bottom-color: rgba(255,255,255,0.95);
+    background: rgba(255,255,255,0.18);
     font-weight: 600;
   }
-  .app-bar-user { font-size: 0.9rem; opacity: 0.9; }
-  .app-bar-user a { color: rgba(255,255,255,0.85); margin-left: 12px; text-decoration: none; }
-  .app-bar-user a:hover { text-decoration: underline; color: #fff; }
+  .app-bar-user { display:flex; align-items:center; gap:8px; font-size:0.88rem; white-space:nowrap; }
+  .app-bar-user a,
+  .app-bar-user button,
+  .app-bar-user select,
+  .app-bar-event {
+    color: rgba(255,255,255,0.9);
+    text-decoration: none;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: transparent;
+    font: inherit;
+  }
+  .app-bar-user a { padding: 6px 9px; }
+  .app-bar-user a:hover,
+  .app-bar-user button:hover {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+  }
+  .app-bar-user form { margin:0; }
+  .app-bar-user select,
+  .app-bar-event {
+    max-width: 220px;
+    padding: 5px 8px;
+    border-color: rgba(255,255,255,0.32);
+    background: rgba(255,255,255,0.10);
+  }
+  .app-bar-user select option { color: #222; }
+  .app-bar-icon {
+    width: 34px;
+    height: 34px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border-color: rgba(255,255,255,0.24) !important;
+    font-weight:700;
+  }
+  .theme-toggle {
+    padding: 6px 10px;
+    cursor:pointer;
+  }
   .app-bar-banner {
     padding: 10px 16px;
     background: #fff3cd; color: #7a5d00;
@@ -546,7 +596,7 @@
 </head>
 <body>
 <header class="app-bar">
-  <span class="brand">Erste Hilfe</span>
+  <a class="brand" href="{% if current_user.can_view_decentral %}/dashboard{% else %}/central{% endif %}">Erste Hilfe</a>
   <nav>
     {% if current_user.can_view_decentral %}
       <a href="/dashboard">Dashboard</a>
@@ -559,17 +609,60 @@
       <a href="/patients">Personen</a>
       <a href="/export">Export</a>
     {% endif %}
-    {% if current_user.is_admin %}
-      <a href="/admin/users">Benutzer</a>
-    {% endif %}
-    <a href="/docs">Hilfe</a>
   </nav>
   <span class="app-bar-user">
-    {% if current_event %}<span>{{ current_event.name }}</span>{% endif %}
+    {% if available_events|length > 1 %}
+      <form method="post" action="{{ url_for('event_switch') }}">
+        <input type="hidden" name="next" value="{{ request.full_path }}">
+        <select name="event_id" onchange="this.form.submit()" title="Veranstaltung wechseln">
+          {% for e in available_events %}
+            <option value="{{ e.id }}" {% if current_event and e.id == current_event.id %}selected{% endif %}>
+              {{ e.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </form>
+    {% elif current_event %}
+      <span class="app-bar-event">{{ current_event.name }}</span>
+    {% endif %}
+    <button type="button" class="theme-toggle" id="themeToggle"
+            title="Hochkontrast umschalten">☀ Kontrast</button>
     <a href="/account/password">{{ current_user_label }}</a>
+    {% if current_user.is_admin %}
+      <a class="app-bar-icon" href="/admin/users" title="Einstellungen" aria-label="Einstellungen">⚙</a>
+    {% endif %}
+    <a class="app-bar-icon" href="/docs" title="Hilfe" aria-label="Hilfe">?</a>
     <a href="/logout">Abmelden</a>
   </span>
 </header>
+<script>
+(function () {
+  try {
+    if (localStorage.getItem('theme') === 'hc') {
+      document.documentElement.setAttribute('data-theme', 'hc');
+    }
+  } catch (_) {}
+  var btn = document.getElementById('themeToggle');
+  if (!btn) return;
+  function refresh() {
+    btn.textContent = document.documentElement.getAttribute('data-theme') === 'hc'
+      ? '☾ Standard'
+      : '☀ Kontrast';
+  }
+  refresh();
+  btn.addEventListener('click', function () {
+    var hc = document.documentElement.getAttribute('data-theme') === 'hc';
+    if (hc) {
+      document.documentElement.removeAttribute('data-theme');
+      try { localStorage.setItem('theme', 'default'); } catch (_) {}
+    } else {
+      document.documentElement.setAttribute('data-theme', 'hc');
+      try { localStorage.setItem('theme', 'hc'); } catch (_) {}
+    }
+    refresh();
+  });
+})();
+</script>
 <div class="layout">
 
   <aside class="vh-sidebar" id="vh-sidebar">
