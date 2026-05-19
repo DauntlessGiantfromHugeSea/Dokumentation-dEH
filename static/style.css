@@ -104,6 +104,7 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  min-height: 100%;
 }
 html, body {
   margin: 0;
@@ -116,6 +117,11 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  min-height: 100%;
+}
+body {
+  min-height: 100svh;
+  overflow-x: hidden;
 }
 
 ::selection { background: var(--accent-light); color: var(--accent-dark); }
@@ -320,6 +326,14 @@ h3 {
   transition: box-shadow var(--t-base), transform var(--t-base);
 }
 
+.helper-rows {
+  display: grid;
+  gap: 8px;
+}
+.report-form .row.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .card-header {
   background: linear-gradient(135deg, var(--accent-dark) 0%, var(--accent) 100%);
   color: #fff;
@@ -431,6 +445,7 @@ table.data .id { font-variant-numeric: tabular-nums; color: var(--muted); }
 form.stack { display: grid; gap: 14px; }
 form.stack .row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
 form.stack .row.three { grid-template-columns: 1fr 1fr 1fr; }
+form.stack .row.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 form.stack .row.cols-2-1 { grid-template-columns: 2fr 1fr; }
 
 label.field {
@@ -1097,8 +1112,21 @@ details.inline-action:not([open]) .inline-form { display: none; }
 
 /* Tablet */
 @media (max-width: 900px) {
-  main { padding: 0 14px; margin: 16px auto; }
-  header.topbar { padding: 10px 14px; gap: 10px; overflow-x: auto; }
+  main {
+    width: 100%;
+    max-width: none;
+    padding: 0 14px calc(18px + env(safe-area-inset-bottom));
+    margin: 16px auto;
+  }
+  header.topbar {
+    padding: 10px 14px;
+    gap: 10px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  header.topbar::-webkit-scrollbar { display: none; }
+  header.topbar .brand { position: sticky; left: 0; z-index: 2; }
   header.topbar nav { gap: 4px; flex-wrap: nowrap; }
   header.topbar nav a { font-size: 0.88rem; }
   header.topbar .user { font-size: 0.82rem; }
@@ -1107,6 +1135,20 @@ details.inline-action:not([open]) .inline-form { display: none; }
   .protocol-meta { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
   .page-header { flex-direction: column; gap: 8px; }
   .page-header .btn-row { width: 100%; flex-wrap: wrap; }
+  .dash-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quick-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chart-wrap { overflow-x: auto; }
+  .chart-svg { min-width: 620px; }
+  table.data {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  table.data thead,
+  table.data tbody,
+  table.data tr { width: max-content; min-width: 100%; }
 }
 
 /* Phone */
@@ -1124,17 +1166,21 @@ details.inline-action:not([open]) .inline-form { display: none; }
   header.topbar .user a { margin-left: 0; }
 
   form.stack .row,
+  form.stack .row.two,
+  form.stack .row.four,
   form.stack .row.three,
   form.stack .row.cols-2-1 { grid-template-columns: 1fr; }
   .toolbar { flex-direction: column; align-items: stretch; }
   .toolbar label.field { flex: none; width: 100%; }
   .toolbar .btn-row { width: 100%; flex-wrap: wrap; }
 
-  .protocol-meta { grid-template-columns: 1fr 1fr; }
-  .card { padding: 14px; }
+  .protocol-meta { grid-template-columns: 1fr; }
+  .dash-stats,
+  .quick-links { grid-template-columns: 1fr; }
+  .card { padding: 14px; border-radius: var(--radius); }
   .card-header { margin: -14px -14px 12px -14px; padding: 8px 12px; }
 
-  table.data { display: block; overflow-x: auto; max-width: 100%; white-space: nowrap; }
+  table.data { white-space: nowrap; }
   table.data th, table.data td { padding: 7px 9px; font-size: 0.85rem; }
   table.data .right { white-space: nowrap; }
 
@@ -1144,12 +1190,15 @@ details.inline-action:not([open]) .inline-form { display: none; }
 
   .chooser-card { padding: 16px; }
   .chooser-grid { grid-template-columns: 1fr; gap: 12px; }
+  .login-wrap { margin: 18px 12px; }
 }
 
 /* Very narrow */
 @media (max-width: 420px) {
-  .protocol-meta { grid-template-columns: 1fr; }
   .card-header-badge { font-size: 0.72rem; padding: 1px 6px; }
+  header.topbar .event-switch select,
+  header.topbar .event-pill { max-width: 150px; }
+  .theme-toggle { max-width: 42px; overflow: hidden; }
 }
 
 /* Permissions form layout (admin user list) */

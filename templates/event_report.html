@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Veranstaltungs-Report{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Veranstaltungs-Report</h1>
+    <p class="tagline">
+      {{ event.name }} · reduzierter PDF-Export mit ergänzbaren Angaben.
+    </p>
+  </div>
+  <a class="btn small secondary" href="{{ url_for('dashboard') }}">Zurück</a>
+</div>
+
+<form method="post" class="card stack report-form">
+  <div class="card-header">Angaben für den Report</div>
+
+  <div class="row two">
+    <label class="field">
+      Titel
+      <input name="title" value="{{ defaults.title }}" required>
+    </label>
+    <label class="field">
+      Veranstaltungsname
+      <input name="event_name" value="{{ defaults.event_name }}" required>
+    </label>
+  </div>
+
+  <div class="row four">
+    <label class="field">
+      Beginn
+      <input name="start_date" type="date" value="{{ defaults.start_date }}">
+    </label>
+    <label class="field">
+      Ende
+      <input name="end_date" type="date" value="{{ defaults.end_date }}">
+    </label>
+    <label class="field">
+      Ort
+      <input name="location" placeholder="z. B. Hauptzelt / Gelände">
+    </label>
+    <label class="field">
+      Veranstalter
+      <input name="organizer" placeholder="z. B. Jugendverband">
+    </label>
+  </div>
+
+  <div class="row two">
+    <label class="field">
+      Sanitätsdienst-Leitung
+      <input name="medical_lead" list="helper-options"
+             placeholder="User wählen oder frei eintragen">
+    </label>
+    <label class="field">
+      Einsatz-/Veranstaltungsleitung
+      <input name="incident_lead" list="helper-options"
+             placeholder="User wählen oder frei eintragen">
+    </label>
+  </div>
+
+  <div class="field">
+    <span>Helfer</span>
+    <div id="helperRows" class="helper-rows">
+      <input name="helpers" list="helper-options"
+             placeholder="User wählen oder Namen frei eintragen">
+      <input name="helpers" list="helper-options"
+             placeholder="Weiterer Helfer">
+      <input name="helpers" list="helper-options"
+             placeholder="Weiterer Helfer">
+    </div>
+    <button class="btn small secondary" type="button" id="addHelper">
+      Helfer hinzufügen
+    </button>
+    <datalist id="helper-options">
+      {% for h in helper_options %}
+        <option value="{{ h }}"></option>
+      {% endfor %}
+    </datalist>
+  </div>
+
+  <label class="field">
+    Bemerkungen
+    <textarea name="notes" rows="5"
+              placeholder="Besonderheiten, Materiallage, Übergaben, Nachbereitung ..."></textarea>
+  </label>
+
+  <div class="btn-row">
+    <button class="btn" type="submit">Report als PDF exportieren</button>
+    <a class="btn secondary" href="{{ url_for('dashboard') }}">Abbrechen</a>
+  </div>
+</form>
+
+<script>
+(function () {
+  const rows = document.getElementById('helperRows');
+  const add = document.getElementById('addHelper');
+  add.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.name = 'helpers';
+    input.setAttribute('list', 'helper-options');
+    input.placeholder = 'Weiterer Helfer';
+    rows.appendChild(input);
+    input.focus();
+  });
+})();
+</script>
+{% endblock %}

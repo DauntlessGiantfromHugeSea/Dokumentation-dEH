@@ -6,6 +6,10 @@
   <title>{% block title %}Erste Hilfe — Camp-Dokumentation{% endblock %}</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <meta name="theme-color" content="#7a1f2b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Erste Hilfe">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script>
     // Theme früh anwenden, damit kein Flash beim ersten Render passiert.
@@ -113,6 +117,14 @@
   })();
   </script>
   {% endif %}
+  <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register("{{ url_for('static', filename='service-worker.js') }}")
+        .catch(function () {});
+    });
+  }
+  </script>
 
   <main>
     {% with messages = get_flashed_messages(with_categories=true) %}

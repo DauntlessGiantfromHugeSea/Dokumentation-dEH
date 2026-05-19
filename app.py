@@ -37,6 +37,7 @@ from flask_login import (
 import models
 from pdf_export import render_protocol_pdf
 from pdf_fill import render_pdf as render_central_pdf
+from event_report_pdf import render_event_report_pdf
 
 
 TOTP_ISSUER = "Erste-Hilfe-Camp"
@@ -805,6 +806,63 @@ def create_app(test_config: dict | None = None) -> Flask:
             headers={
                 "Content-Disposition": "attachment; filename=einsatzberichte.csv",
             },
+        )
+
+    @app.route("/events/report", methods=["GET", "POST"])
+    @decentral_view_required
+    def event_report():
+        if not current_user.can_export_akte:
+            abort(403)
+        db = models.get_db()
+        event_id = _require_event_view()
+        event = models.get_event(db, event_id)
+        if not event:
+            abort(404)
+        users = models.list_users(db)
+        helper_options = sorted({
+            (u["full_name"] or u["username"])
+            for u in users
+            if (u["full_name"] or u["username"])
+        }, key=str.casefold)
+        defaults = {
+            "title": f"Veranstaltungs-Report {event['name']}",
+            "event_name": event["name"],
+            "start_date": event["start_date"] or "",
+            "end_date": event["end_date"] or event["start_date"] or "",
+            "location": "",
+            "organizer": "",
+            "medical_lead": "",
+            "incident_lead": "",
+            "notes": "",
+        }
+        if request.method == "POST":
+            form = {k: (request.form.get(k) or "").strip()
+                    for k in defaults.keys()}
+            helpers = [
+                h.strip() for h in request.form.getlist("helpers")
+                if h and h.strip()
+            ]
+            stats = _event_report_stats(db, event_id)
+            pdf_bytes = render_event_report_pdf(
+                event=dict(event),
+                form=form,
+                helpers=helpers,
+                stats=stats,
+                exporter_label=current_user.full_name or current_user.username,
+                format_dt=models.format_dt,
+            )
+            safe_name = (event["name"] or "Veranstaltung").replace(" ", "_")
+            return send_file(
+                io.BytesIO(pdf_bytes),
+                mimetype="application/pdf",
+                as_attachment=True,
+                download_name=f"Veranstaltungsreport_{safe_name}.pdf",
+            )
+        return render_template(
+            "event_report.html",
+            event=event,
+            defaults=defaults,
+            helper_options=helper_options,
         )
 
     # ----- Dashboard -----
@@ -2023,6 +2081,45 @@ def _read_filters(args) -> dict:
         "date_to": (args.get("date_to") or "").strip() or None,
         "stammnummer": (args.get("stammnummer") or "").strip() or None,
         "name_query": (args.get("name") or "").strip() or None,
+    }
+
+
+def _event_report_stats(db, event_id: int) -> dict:
+    totals = db.execute(
+        """
+        SELECT
+          (SELECT COUNT(*) FROM protocols WHERE event_id = ?) AS decentral,
+          (SELECT COUNT(*) FROM central_protocols WHERE event_id = ?) AS central,
+          (SELECT COUNT(DISTINCT patient_id) FROM (
+             SELECT patient_id FROM protocols WHERE event_id = ?
+             UNION ALL
+             SELECT patient_id FROM central_protocols
+              WHERE event_id = ? AND patient_id IS NOT NULL
+           )) AS patients,
+          (SELECT COUNT(*) FROM triage_entries WHERE event_id = ?) AS triage_total,
+          (SELECT COUNT(*) FROM triage_entries
+            WHERE event_id = ? AND status = 'abgeschlossen') AS triage_finished
+        """,
+        (event_id, event_id, event_id, event_id, event_id, event_id),
+    ).fetchone()
+    categories = db.execute(
+        """
+        SELECT category, COUNT(*) AS n
+        FROM triage_entries
+        WHERE event_id = ?
+        GROUP BY category
+        ORDER BY category
+        """,
+        (event_id,),
+    ).fetchall()
+    top_responders = models.top_decentral_responders(
+        db, limit=8, event_id=event_id)
+    latest = models.list_unified_protocols(db, event_id=event_id)[:12]
+    return {
+        "totals": dict(totals) if totals else {},
+        "categories": [dict(r) for r in categories],
+        "top_responders": [dict(r) for r in top_responders],
+        "latest": [dict(r) for r in latest],
     }
 
 

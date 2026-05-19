@@ -6,6 +6,10 @@
 <title>Patientenprotokoll</title>
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+<meta name="theme-color" content="#7a1f2b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Erste Hilfe">
 <style>
   :root {
     --primary: #d32f2f;
@@ -45,6 +49,7 @@
     -webkit-tap-highlight-color: transparent;
   }
   body { min-height: 100vh; }
+  body { overflow-x: hidden; }
 
   /* ============ Layout ============ */
   .layout {
@@ -541,7 +546,10 @@
     background: #7a1f2b; color: #fff;
     font-size: 14px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  .app-bar::-webkit-scrollbar { display:none; }
   .app-bar .brand {
     font-weight: 700; font-size: 1.15rem;
     letter-spacing: 0.3px; font-style: italic;
@@ -603,6 +611,33 @@
   .theme-toggle {
     padding: 6px 10px;
     cursor:pointer;
+  }
+  @media (max-width: 900px) {
+    .app-bar { padding: 10px 12px; gap: 10px; }
+    .app-bar .brand { position: sticky; left: 0; z-index: 2; }
+    .app-bar nav a { font-size: 0.86rem; padding: 6px 8px; }
+    .app-bar-user { font-size: 0.82rem; }
+    .app { max-width: none; width: 100%; }
+    header.top h1 { font-size: 1.35rem; }
+    .page { padding: 16px; }
+    .stepper { padding: 8px; }
+    .vitals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .nav { bottom: 8px; }
+  }
+  @media (max-width: 520px) {
+    .layout { padding: 10px; }
+    .grid.cols-2,
+    .grid.cols-3,
+    .grid.cols-4,
+    .pair-grid,
+    .grid { grid-template-columns: 1fr !important; }
+    .vitals { grid-template-columns: 1fr; }
+    .page { padding: 14px; }
+    .btn-group { width: 100%; }
+    header.top > div:last-child { width: 100%; justify-content: space-between; }
+    .app-bar-user select,
+    .app-bar-event { max-width: 150px; }
+    .theme-toggle { max-width: 42px; overflow: hidden; }
   }
   .app-bar-banner {
     padding: 10px 16px;
@@ -682,6 +717,14 @@
     refresh();
   });
 })();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/static/service-worker.js')
+      .catch(function () {});
+  });
+}
 </script>
 <div class="layout">
 

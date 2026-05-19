@@ -108,6 +108,15 @@
         <div class="quick-sub">CSV gefiltert</div>
       </div>
     </a>
+    {% if current_user.can_export_akte %}
+    <a class="quick-link" href="{{ url_for('event_report') }}">
+      <div class="quick-icon">▣</div>
+      <div class="quick-text">
+        <div class="quick-title">Veranstaltungs-Report</div>
+        <div class="quick-sub">PDF mit Kennzahlen</div>
+      </div>
+    </a>
+    {% endif %}
   </div>
 </div>
 
