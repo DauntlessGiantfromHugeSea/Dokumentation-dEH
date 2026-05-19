@@ -490,12 +490,15 @@
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .btn.primary { background: var(--primary); color: white; border-color: var(--primary); }
   .btn.primary:hover:not(:disabled) { background: var(--primary-dark); border-color: var(--primary-dark); }
+  .btn.success { background: var(--success); color: white; border-color: var(--success); }
+  .btn.success:hover:not(:disabled) { background: #15803d; border-color: #15803d; }
   .btn.danger { background: white; color: var(--danger); border-color: var(--danger); }
   .btn.danger:hover:not(:disabled) { background: var(--danger); color: white; }
   .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
   .btn.ghost:hover:not(:disabled) { color: var(--primary); background: var(--primary-light); }
   .btn.sm { padding: 6px 10px; font-size: 12px; }
   .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .top-finish-btn[hidden] { display: none !important; }
   .sidebar-toggle { display: none; align-items: center; }
 
   /* ============ Bottom nav ============ */
@@ -757,6 +760,11 @@ if ('serviceWorker' in navigator) {
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <span class="status-pill" id="status"><span class="dot"></span><span class="label">Bereit</span></span>
           <div class="btn-group">
+            <button class="btn sm success top-finish-btn"
+                    id="btn-finish-treatment-top"
+                    type="button" hidden>
+              Behandlung Abschließen
+            </button>
             {% if current_user.can_export_pdf %}
               <button class="btn sm primary" id="btn-pdf">PDF</button>
               <button class="btn sm" id="btn-print">Drucken</button>
@@ -1167,6 +1175,8 @@ if ('serviceWorker' in navigator) {
   let currentId = null;
   let saveTimer = null;
   let dirty = false;
+  const initialParams = new URLSearchParams(window.location.search);
+  const pendingTriageId = initialParams.get('triage_id');
 
   const pages = [
     { num: 1, title: 'Patient' },
@@ -1291,10 +1301,8 @@ if ('serviceWorker' in navigator) {
     // Falls die SPA aus dem Triage-Wartebereich gestartet wurde, hängen
     // wir die triage_id beim ersten POST an, damit der neue Bericht
     // automatisch mit dem Triage-Eintrag verknüpft wird.
-    const params = new URLSearchParams(window.location.search);
-    const triageId = params.get('triage_id');
-    const url = triageId
-      ? '/api/central/protokolle?triage_id=' + encodeURIComponent(triageId)
+    const url = pendingTriageId
+      ? '/api/central/protokolle?triage_id=' + encodeURIComponent(pendingTriageId)
       : '/api/central/protokolle';
     return (await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1393,7 +1401,9 @@ if ('serviceWorker' in navigator) {
     document.getElementById('page-indicator').textContent = `Seite ${num} von ${TOTAL_PAGES}`;
     document.getElementById('progress').style.width = `${(num / TOTAL_PAGES) * 100}%`;
     document.getElementById('btn-prev').disabled = num === 1;
-    document.getElementById('btn-next').disabled = num === TOTAL_PAGES;
+    const btnNext = document.getElementById('btn-next');
+    btnNext.hidden = num === TOTAL_PAGES;
+    btnNext.disabled = num === TOTAL_PAGES;
     if (num === TOTAL_PAGES) {
       renderSummary();
       refreshFinishSection();
@@ -1490,6 +1500,7 @@ if ('serviceWorker' in navigator) {
     setStatus('', 'Bereit');
     goToPage(1); updateCompletion();
     await refreshList();
+    await refreshFinishSection();
   }
 
   async function loadProtocol(id) {
@@ -1504,6 +1515,7 @@ if ('serviceWorker' in navigator) {
       setStatus('saved', 'Geladen');
       goToPage(1); updateCompletion();
       await refreshList();
+      await refreshFinishSection();
       if (window.innerWidth <= 900) document.getElementById('sidebar').classList.remove('open');
     } catch (e) { console.error(e); toast('Fehler beim Laden'); }
   }
@@ -1562,11 +1574,26 @@ if ('serviceWorker' in navigator) {
   const finishSection = document.getElementById('finish-section');
   const finishStatus = document.getElementById('finish-status');
   const btnFinish = document.getElementById('btn-finish-treatment');
+  const btnFinishTop = document.getElementById('btn-finish-treatment-top');
+
+  function setFinishButtons({ visible, disabled, label }) {
+    [btnFinish, btnFinishTop].forEach((btn) => {
+      if (!btn) return;
+      btn.hidden = !visible;
+      btn.disabled = !!disabled;
+      btn.textContent = label;
+    });
+  }
 
   async function refreshFinishSection() {
     if (!finishSection) return;
     if (currentId == null) {
       finishSection.style.display = 'none';
+      setFinishButtons({
+        visible: !!pendingTriageId,
+        disabled: false,
+        label: 'Behandlung Abschließen',
+      });
       return;
     }
     try {
@@ -1574,10 +1601,23 @@ if ('serviceWorker' in navigator) {
         '/api/central/protokolle/' + currentId + '/triage-status',
         { credentials: 'same-origin' }
       );
-      if (!res.ok) { finishSection.style.display = 'none'; return; }
+      if (!res.ok) {
+        finishSection.style.display = 'none';
+        setFinishButtons({
+          visible: false,
+          disabled: true,
+          label: 'Behandlung Abschließen',
+        });
+        return;
+      }
       const data = await res.json();
       if (!data.has_triage) {
         finishSection.style.display = 'none';
+        setFinishButtons({
+          visible: false,
+          disabled: true,
+          label: 'Behandlung Abschließen',
+        });
         return;
       }
       finishSection.style.display = 'block';
@@ -1586,10 +1626,11 @@ if ('serviceWorker' in navigator) {
         finishStatus.innerHTML =
           '<span class="badge totp-on">Behandlung abgeschlossen</span> '
           + '<span class="muted">am ' + escapeHtml(data.finished_at_label || '') + '</span>';
-        if (btnFinish) {
-          btnFinish.disabled = true;
-          btnFinish.textContent = '✓ Bereits abgeschlossen';
-        }
+        setFinishButtons({
+          visible: true,
+          disabled: true,
+          label: 'Bereits abgeschlossen',
+        });
       } else {
         finishSection.classList.remove('finished');
         const activeBy = data.started_by
@@ -1601,25 +1642,44 @@ if ('serviceWorker' in navigator) {
         finishStatus.innerHTML =
           '<span class="badge totp-on">Aktiv</span> '
           + '<span class="muted">' + startedAt + activeBy + '</span>';
-        if (btnFinish) {
-          btnFinish.disabled = false;
-          btnFinish.textContent = 'Behandlung Abschließen';
-        }
+        setFinishButtons({
+          visible: true,
+          disabled: false,
+          label: 'Behandlung Abschließen',
+        });
       }
     } catch (_) {
       finishSection.style.display = 'none';
+      setFinishButtons({
+        visible: false,
+        disabled: true,
+        label: 'Behandlung Abschließen',
+      });
     }
   }
 
-  if (btnFinish) {
-    btnFinish.addEventListener('click', async () => {
+  async function finishTreatment() {
       if (currentId == null) {
-        toast('Bitte erst Bericht speichern');
-        return;
+        const res = await apiCreate(collectData());
+        if (res && res.id) {
+          currentId = res.id;
+          dirty = false;
+          history.replaceState(null, '', '#' + currentId);
+          setStatus('saved', 'Gespeichert');
+          await refreshList();
+        } else {
+          toast('Speichern fehlgeschlagen');
+          return;
+        }
       }
+      if (dirty) await performSave();
       if (!confirm('Behandlung wirklich abschließen? Der Patient '
                    + 'verschwindet damit aus der Triage-Liste.')) return;
-      btnFinish.disabled = true;
+      setFinishButtons({
+        visible: true,
+        disabled: true,
+        label: 'Schließt ab ...',
+      });
       try {
         const res = await fetch(
           '/api/central/protokolle/' + currentId + '/finish-treatment',
@@ -1628,22 +1688,32 @@ if ('serviceWorker' in navigator) {
         const data = await res.json();
         if (!res.ok || data.error) {
           toast('Fehler: ' + (data.error || res.status));
-          btnFinish.disabled = false;
+          setFinishButtons({
+            visible: true,
+            disabled: false,
+            label: 'Behandlung Abschließen',
+          });
           return;
         }
         toast('Behandlung abgeschlossen — Patient ist aus der Triage entfernt.');
         await refreshFinishSection();
       } catch (_) {
         toast('Netzwerkfehler');
-        btnFinish.disabled = false;
+        setFinishButtons({
+          visible: true,
+          disabled: false,
+          label: 'Behandlung Abschließen',
+        });
       }
-    });
   }
+
+  if (btnFinish) btnFinish.addEventListener('click', finishTreatment);
+  if (btnFinishTop) btnFinishTop.addEventListener('click', finishTreatment);
 
   // ============ Summary ============
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function v(x) { return x && String(x).trim() ? escapeHtml(String(x)) : '<span class="empty-val">—</span>'; }
-  function vList(x) { const arr = [].concat(x || []).filter(Boolean); return arr.length ? escapeHtml(arr.join(', ')) : '<span class="empty-val">—</span>'; }
+  function vList(x) { const arr = [].concat(x || []).filter(Boolean); return arr.length ? arr.join(', ') : ''; }
   function renderSummary() {
     const d = collectData();
     const blocks = [
