@@ -703,23 +703,24 @@ def _build_signature_page(data, exporter_label=None, page_num=3):
                  "Nachweis der durchgeführten Behandlung")
     c.setFillColor(colors.black)
 
-    block_h = 60 * mm
+    box_w = 105 * mm
+    box_h = 28 * mm
     top = height - 35 * mm
     for i, s in enumerate(sigs):
-        y_label = top - i * (block_h + 18 * mm)
+        y_label = top - i * (box_h + 18 * mm)
         c.setFont("Helvetica-Bold", 11)
         label = f"Einsatzkraft {s['n']}"
         if s["name"]:
             label += f" — {s['name']}"
         c.drawString(20 * mm, y_label, label)
-        img_y = y_label - block_h - 4 * mm
+        img_y = y_label - box_h - 4 * mm
         c.setStrokeColor(colors.lightgrey)
         c.setLineWidth(0.5)
-        c.rect(20 * mm, img_y, 150 * mm, block_h, stroke=1, fill=0)
+        c.rect(20 * mm, img_y, box_w, box_h, stroke=1, fill=0)
         try:
             img = ImageReader(io.BytesIO(s["img_bytes"]))
             c.drawImage(img, 21 * mm, img_y + 1 * mm,
-                        width=148 * mm, height=block_h - 2 * mm,
+                        width=box_w - 2 * mm, height=box_h - 2 * mm,
                         preserveAspectRatio=True, anchor="c", mask="auto")
         except Exception:
             pass

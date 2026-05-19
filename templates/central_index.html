@@ -1784,13 +1784,29 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
     const canvas = document.getElementById('sig-pad-' + n);
     if (!canvas) return null;
     const ctx = canvas.getContext('2d');
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#18202b';
     let drawing = false;
     let lastX = 0, lastY = 0;
     let hasInk = false;
+    let cssW = 0, cssH = 0;
+
+    function prepareCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      cssW = Math.max(1, rect.width);
+      cssH = Math.max(1, rect.height);
+      const nextW = Math.round(cssW * dpr);
+      const nextH = Math.round(cssH * dpr);
+      if (canvas.width !== nextW || canvas.height !== nextH) {
+        canvas.width = nextW;
+        canvas.height = nextH;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#18202b';
+    }
+    prepareCanvas();
 
     function getPos(e) {
       const rect = canvas.getBoundingClientRect();
@@ -1798,8 +1814,8 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
       const cx = t ? t.clientX : e.clientX;
       const cy = t ? t.clientY : e.clientY;
       return {
-        x: (cx - rect.left) * (canvas.width / rect.width),
-        y: (cy - rect.top) * (canvas.height / rect.height),
+        x: cx - rect.left,
+        y: cy - rect.top,
       };
     }
     function start(e) {
@@ -1856,7 +1872,7 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
       n,
       canvas, ctx,
       clear() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, cssW, cssH);
         hasInk = false;
         canvas.classList.remove('signed');
         const elSig = document.getElementById('signature_einsatzkraft' + n);
@@ -1870,10 +1886,11 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
       },
       restoreFromData(dataUrl, at, by) {
         if (!dataUrl) return;
+        prepareCanvas();
         const img = new Image();
         img.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          ctx.clearRect(0, 0, cssW, cssH);
+          ctx.drawImage(img, 0, 0, cssW, cssH);
           hasInk = true;
           canvas.classList.add('signed');
           const status = document.getElementById('sig-status-' + n);
@@ -1886,7 +1903,23 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
         };
         img.src = dataUrl;
       },
+      resizeFromStored() {
+        const sig = document.getElementById('signature_einsatzkraft' + n);
+        const at = document.getElementById('signature_einsatzkraft' + n + '_at');
+        const by = document.getElementById('signature_einsatzkraft' + n + '_by');
+        const dataUrl = sig && sig.value;
+        prepareCanvas();
+        if (dataUrl) this.restoreFromData(dataUrl, at && at.value, by && by.value);
+      },
     };
+  });
+
+  let sigResizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(sigResizeTimer);
+    sigResizeTimer = setTimeout(() => {
+      pads.forEach(pad => pad && pad.resizeFromStored());
+    }, 150);
   });
 
   document.querySelectorAll('[data-sig-clear]').forEach(btn => {
