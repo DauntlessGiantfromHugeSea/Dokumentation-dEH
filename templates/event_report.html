@@ -8,10 +8,11 @@
       {{ event.name }} · reduzierter PDF-Export mit ergänzbaren Angaben.
     </p>
   </div>
-  <a class="btn small secondary" href="{{ url_for('dashboard') }}">Zurück</a>
+  <a class="btn small secondary" href="{{ back_url }}">Zurück</a>
 </div>
 
-<form method="post" class="card stack report-form">
+<form method="post" action="{{ url_for('event_report', event_id=event.id, source=source) }}"
+      class="card stack report-form">
   <div class="card-header">Angaben für den Report</div>
 
   <div class="row two">
@@ -57,7 +58,7 @@
     </label>
   </div>
 
-  <div class="field">
+  <div class="report-helper-field">
     <span>Helfer</span>
     <div id="helperRows" class="helper-rows">
       <input name="helpers" list="helper-options"
@@ -85,7 +86,7 @@
 
   <div class="btn-row">
     <button class="btn" type="submit">Report als PDF exportieren</button>
-    <a class="btn secondary" href="{{ url_for('dashboard') }}">Abbrechen</a>
+    <a class="btn secondary" href="{{ back_url }}">Abbrechen</a>
   </div>
 </form>
 

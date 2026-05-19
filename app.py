@@ -814,10 +814,21 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not current_user.can_export_akte:
             abort(403)
         db = models.get_db()
-        event_id = _require_event_view()
+        requested_event = request.values.get("event_id")
+        try:
+            requested_event_id = int(requested_event) if requested_event else None
+        except (TypeError, ValueError):
+            requested_event_id = None
+        event_id = _require_event_view(requested_event_id)
         event = models.get_event(db, event_id)
         if not event:
             abort(404)
+        source = (request.values.get("source") or "").strip()
+        back_url = (
+            url_for("admin_users") + "#events"
+            if source == "settings" and current_user.is_admin
+            else url_for("dashboard")
+        )
         users = models.list_users(db)
         helper_options = sorted({
             (u["full_name"] or u["username"])
@@ -863,6 +874,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             event=event,
             defaults=defaults,
             helper_options=helper_options,
+            source=source,
+            back_url=back_url,
         )
 
     # ----- Dashboard -----
@@ -1626,7 +1639,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         prefix = (request.form.get("prefix") or "").strip()
         if not name:
             flash("Name der Veranstaltung ist Pflicht.", "error")
-            return redirect(url_for("admin_users"))
+            return redirect(_admin_settings_url("events"))
         event_id = models.create_event(
             db, name, prefix,
             (request.form.get("start_date") or "").strip() or None,
@@ -1639,7 +1652,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 db, u["id"], event_id, can_view=False, can_create=False)
         db.commit()
         flash(f"Veranstaltung '{name}' angelegt.", "success")
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("events"))
 
     @app.route("/admin/events/<int:event_id>/update", methods=["POST"])
     @admin_required
@@ -1650,7 +1663,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         name = (request.form.get("name") or "").strip()
         if not name:
             flash("Name der Veranstaltung ist Pflicht.", "error")
-            return redirect(url_for("admin_users"))
+            return redirect(_admin_settings_url("events"))
         models.update_event(
             db, event_id, name=name,
             prefix=(request.form.get("prefix") or "").strip(),
@@ -1660,7 +1673,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
         db.commit()
         flash("Veranstaltung aktualisiert.", "success")
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("events"))
 
     @app.route("/admin/users/create", methods=["POST"])
     @admin_required
@@ -1673,7 +1686,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         role = request.form.get("role") or "full"
         if role not in models.VALID_ROLES:
             flash(f"Unbekannte Rolle: {role}", "error")
-            return redirect(url_for("admin_users"))
+            return redirect(_admin_settings_url("new-user"))
         if not username or not password:
             flash("Benutzername und Passwort sind Pflicht.", "error")
         elif len(password) < 6:
@@ -1691,7 +1704,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                                             "triage_intake"))
             db.commit()
             flash(f"Benutzer '{username}' angelegt.", "success")
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("users"))
 
     @app.route("/admin/users/<int:user_id>/events", methods=["POST"])
     @admin_required
@@ -1702,7 +1715,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             abort(404)
         if row["is_admin"]:
             flash("Admins sehen alle Veranstaltungen und dürfen überall anlegen.", "info")
-            return redirect(url_for("admin_users"))
+            return redirect(_admin_settings_url("users"))
         for event in models.list_events(db):
             view = bool(request.form.get(f"event_{event['id']}_view"))
             create = bool(request.form.get(f"event_{event['id']}_create"))
@@ -1710,7 +1723,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 db, user_id, event["id"], can_view=view, can_create=create)
         db.commit()
         flash(f"Veranstaltungen für '{row['username']}' aktualisiert.", "success")
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("users"))
 
     @app.route("/admin/users/<int:user_id>/permissions", methods=["POST"])
     @admin_required
@@ -1727,7 +1740,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             f"Berechtigungen für '{row['username']}' aktualisiert.",
             "success",
         )
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("users"))
 
     @app.route("/admin/users/<int:user_id>/role", methods=["POST"])
     @admin_required
@@ -1739,12 +1752,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         role = request.form.get("role") or "full"
         if role not in models.VALID_ROLES:
             flash(f"Unbekannte Rolle: {role}", "error")
-            return redirect(url_for("admin_users"))
+            return redirect(_admin_settings_url("users"))
         models.set_user_role(db, user_id, role)
         db.commit()
         flash(f"Rolle für '{row['username']}' geändert auf '{role}'.",
               "success")
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("users"))
 
     @app.route("/admin/users/<int:user_id>/reset-totp", methods=["POST"])
     @admin_required
@@ -1760,7 +1773,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             f"nächster Anmeldung erneut einen Authenticator einrichten.",
             "success",
         )
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("users"))
 
     @app.route("/admin/users/<int:user_id>/toggle-totp-required",
                methods=["POST"])
@@ -1786,7 +1799,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 f"jetzt nur mit Passwort an.",
                 "success",
             )
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("users"))
 
     @app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
     @admin_required
@@ -1802,7 +1815,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             models.set_user_password(db, user_id, new_password)
             db.commit()
             flash(f"Passwort für '{row['username']}' zurückgesetzt.", "success")
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("users"))
 
     @app.route("/admin/users/<int:user_id>/toggle-admin", methods=["POST"])
     @admin_required
@@ -1815,7 +1828,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         # Don't let the last admin demote themselves into a lockout.
         if not new_state and models.count_admins(db) <= 1:
             flash("Mindestens ein Admin muss bleiben.", "error")
-            return redirect(url_for("admin_users"))
+            return redirect(_admin_settings_url("users"))
         models.set_user_admin(db, user_id, new_state)
         db.commit()
         flash(
@@ -1823,7 +1836,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             f"{'Admin' if new_state else 'normaler Benutzer'}.",
             "success",
         )
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("users"))
 
     @app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
     @admin_required
@@ -1834,14 +1847,14 @@ def create_app(test_config: dict | None = None) -> Flask:
             abort(404)
         if user_id == current_user.id:
             flash("Du kannst dich nicht selbst löschen.", "error")
-            return redirect(url_for("admin_users"))
+            return redirect(_admin_settings_url("users"))
         if row["is_admin"] and models.count_admins(db) <= 1:
             flash("Letzten Admin kann man nicht löschen.", "error")
-            return redirect(url_for("admin_users"))
+            return redirect(_admin_settings_url("users"))
         models.delete_user(db, user_id)
         db.commit()
         flash(f"Benutzer '{row['username']}' gelöscht.", "success")
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("users"))
 
     # ----- Admin: Reset (alle Protokolle löschen + Counter zurück) -----
 
@@ -1855,11 +1868,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         user_row = models.get_user_by_id(db, current_user.id)
         if not user_row or not models.verify_password(user_row, password):
             flash("Passwort falsch — nichts gelöscht.", "error")
-            return redirect(url_for("admin_users"))
+            return redirect(_admin_settings_url("danger"))
         if confirm != "RESET":
             flash("Bitte 'RESET' (Großbuchstaben) als Bestätigung eintippen — nichts gelöscht.",
                   "error")
-            return redirect(url_for("admin_users"))
+            return redirect(_admin_settings_url("danger"))
         stats = models.reset_all_protocols(db)
         db.commit()
         flash(
@@ -1869,7 +1882,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             f"Patienten bleiben erhalten. Nächste Bericht-Nr. ist wieder #1.",
             "success",
         )
-        return redirect(url_for("admin_users"))
+        return redirect(_admin_settings_url("danger"))
 
     # ----- Admin-PIN (für Entschlüsselungs-Freigaben) -----
 
@@ -2082,6 +2095,12 @@ def _read_filters(args) -> dict:
         "stammnummer": (args.get("stammnummer") or "").strip() or None,
         "name_query": (args.get("name") or "").strip() or None,
     }
+
+
+def _admin_settings_url(section: str = "events") -> str:
+    allowed = {"events", "new-user", "users", "danger"}
+    target = section if section in allowed else "events"
+    return url_for("admin_users") + f"#{target}"
 
 
 def _event_report_stats(db, event_id: int) -> dict:

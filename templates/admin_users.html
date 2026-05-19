@@ -8,293 +8,447 @@
       Veranstaltungen, Nummern-Präfixe, Benutzer und Berechtigungen verwalten.
     </p>
   </div>
-  <div class="btn-row">
-    <a class="btn small secondary" href="{{ url_for('account_pin') }}">Mein Admin-PIN</a>
+</div>
+
+<div class="settings-shell" data-settings>
+  <aside class="settings-nav-card" aria-label="Einstellungsbereiche">
+    <div class="settings-nav-title">Bereiche</div>
+    <nav class="settings-nav-links">
+      <a class="settings-nav-link is-active" href="#events" data-settings-link>
+        <span>
+          <strong>Veranstaltungen</strong>
+          <small>Anlegen, bearbeiten, Report</small>
+        </span>
+        <em>{{ events|length }}</em>
+      </a>
+      <a class="settings-nav-link" href="#new-user" data-settings-link>
+        <span>
+          <strong>Benutzer anlegen</strong>
+          <small>Login, Rolle, Admin</small>
+        </span>
+        <em>+</em>
+      </a>
+      <a class="settings-nav-link" href="#users" data-settings-link>
+        <span>
+          <strong>Benutzer & Rechte</strong>
+          <small>Zugriff, 2FA, Events</small>
+        </span>
+        <em>{{ users|length }}</em>
+      </a>
+      <a class="settings-nav-link" href="#danger" data-settings-link>
+        <span>
+          <strong>Datenbank</strong>
+          <small>Testdaten löschen</small>
+        </span>
+        <em>!</em>
+      </a>
+    </nav>
+    <div class="settings-nav-tools">
+      <a class="btn small secondary" href="{{ url_for('account_pin') }}">Mein Admin-PIN</a>
+      <a class="btn small secondary" href="{{ url_for('docs_index') }}">Hilfe</a>
+    </div>
+  </aside>
+
+  <div class="settings-content">
+    <section class="settings-panel is-active" id="events" data-settings-panel>
+      <div class="settings-panel-head">
+        <div>
+          <h2>Veranstaltungen</h2>
+          <p class="muted">
+            Hier liegen Veranstaltungsdaten, laufende Nummern und der PDF-Report.
+          </p>
+        </div>
+        {% if current_event and current_user.can_export_akte %}
+          <a class="btn small" href="{{ url_for('event_report', event_id=current_event.id, source='settings') }}">
+            Aktuellen Report exportieren
+          </a>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <div class="card-header">Neue Veranstaltung</div>
+        <form method="post" action="{{ url_for('admin_event_create') }}" class="stack">
+          <div class="row four">
+            <label class="field">
+              Name <span class="req">*</span>
+              <input name="name" required placeholder="z. B. Camp 2026">
+            </label>
+            <label class="field">
+              Präfix laufende Nr. <span class="req">*</span>
+              <input name="prefix" required placeholder="z. B. C26">
+            </label>
+            <label class="field">
+              Beginn
+              <input name="start_date" type="date">
+            </label>
+            <label class="field">
+              Ende
+              <input name="end_date" type="date">
+            </label>
+          </div>
+          <div><button class="btn small" type="submit">Veranstaltung anlegen</button></div>
+        </form>
+      </div>
+
+      {% if events %}
+        <div class="event-settings-list">
+          {% for e in events %}
+            <form method="post"
+                  action="{{ url_for('admin_event_update', event_id=e.id) }}"
+                  class="event-settings-card stack">
+              <div class="event-settings-top">
+                <div>
+                  <div class="event-settings-name">{{ e.name }}</div>
+                  <div class="muted">
+                    Laufende Nummern: <code>#{{ e.prefix }}1</code>,
+                    <code>#{{ e.prefix }}2</code>, ...
+                  </div>
+                </div>
+                <div class="event-settings-actions">
+                  {% if e.is_active %}
+                    <span class="badge type-d">aktiv</span>
+                  {% else %}
+                    <span class="badge totp-off">inaktiv</span>
+                  {% endif %}
+                  {% if current_user.can_export_akte %}
+                    <a class="btn small secondary"
+                       href="{{ url_for('event_report', event_id=e.id, source='settings') }}">
+                      Report
+                    </a>
+                  {% endif %}
+                </div>
+              </div>
+
+              <div class="row four">
+                <label class="field">
+                  Name
+                  <input name="name" value="{{ e.name }}" required>
+                </label>
+                <label class="field">
+                  Präfix
+                  <input name="prefix" value="{{ e.prefix }}" required>
+                </label>
+                <label class="field">
+                  Beginn
+                  <input name="start_date" type="date" value="{{ e.start_date or '' }}">
+                </label>
+                <label class="field">
+                  Ende
+                  <input name="end_date" type="date" value="{{ e.end_date or '' }}">
+                </label>
+              </div>
+              <div class="btn-row">
+                <label class="checkbox-row">
+                  <input type="checkbox" name="is_active" value="1" {% if e.is_active %}checked{% endif %}>
+                  aktiv
+                </label>
+                <button class="btn small secondary" type="submit">Speichern</button>
+              </div>
+            </form>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="settings-panel" id="new-user" data-settings-panel hidden>
+      <div class="settings-panel-head">
+        <div>
+          <h2>Benutzer anlegen</h2>
+          <p class="muted">
+            Neue Logins bekommen direkt eine Rolle und optional Admin-Rechte.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">Neuen Benutzer anlegen</div>
+        <form method="post" action="{{ url_for('admin_user_create') }}" class="stack">
+          <div class="row three">
+            <label class="field">
+              Benutzername <span class="req">*</span>
+              <input name="username" required autocomplete="off"
+                     placeholder="z. B. lisa">
+            </label>
+            <label class="field">
+              Voller Name
+              <input name="full_name" autocomplete="off"
+                     placeholder="z. B. Lisa Musterfrau">
+            </label>
+            <label class="field">
+              Passwort <span class="req">*</span>
+              <input name="password" type="text" required minlength="6"
+                     autocomplete="new-password" placeholder="min. 6 Zeichen">
+            </label>
+          </div>
+          <label class="field">
+            Rolle
+            <select name="role">
+              <option value="full">Voll (kann alles lesen + schreiben)</option>
+              <option value="zentral_writer">Nur Zentrale Erste Hilfe schreiben</option>
+              <option value="triage_intake">Nur Anmeldung (Triage-Kiosk)</option>
+            </select>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="is_admin" value="1">
+            Zusätzlich Administrator (kann Benutzer verwalten)
+          </label>
+          <div><button class="btn" type="submit">Benutzer anlegen</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section class="settings-panel" id="users" data-settings-panel hidden>
+      <div class="settings-panel-head">
+        <div>
+          <h2>Benutzer & Rechte</h2>
+          <p class="muted">
+            Rollen, PDF-Rechte, 2FA und Veranstaltungszugriff pro Person.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">Bestehende Benutzer</div>
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Benutzername</th>
+              <th>Voller Name</th>
+              <th>Rolle</th>
+              <th>Berechtigung</th>
+              <th>2FA</th>
+              <th>Angelegt</th>
+              <th class="right">Aktionen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+            <tr>
+              <td><strong>{{ u.username }}</strong>
+                {% if u.id == current_user.id %}<span class="badge">du</span>{% endif %}
+              </td>
+              <td>{{ u.full_name or '—' }}</td>
+              <td>
+                {% if u.is_admin %}<span class="badge admin">Admin</span>
+                {% else %}<span class="muted">Benutzer</span>{% endif %}
+              </td>
+              <td>
+                {% if u.role == 'zentral_writer' %}
+                  <span class="badge">Nur Zentral schreiben</span>
+                {% elif u.role == 'triage_intake' %}
+                  <span class="badge">Anmelde-Kiosk</span>
+                {% else %}
+                  <span class="muted">Voll (Lesen + Schreiben)</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if not u.totp_required %}
+                  <span class="badge totp-off">deaktiviert</span>
+                {% elif u.totp_confirmed %}
+                  <span class="badge totp-on">aktiv</span>
+                {% else %}
+                  <span class="muted">offen</span>
+                {% endif %}
+              </td>
+              <td>{{ format_dt(u.created_at) }}</td>
+              <td class="right action-cell">
+                <details class="inline-action">
+                  <summary class="btn small secondary">Passwort</summary>
+                  <form method="post"
+                        action="{{ url_for('admin_user_reset_password', user_id=u.id) }}"
+                        class="inline-form">
+                    <input name="new_password" type="text" required minlength="6"
+                           placeholder="Neues Passwort">
+                    <button class="btn small" type="submit">Setzen</button>
+                  </form>
+                </details>
+                {% if u.id != current_user.id %}
+                  <form method="post"
+                        action="{{ url_for('admin_user_set_role', user_id=u.id) }}"
+                        class="inline-form">
+                    <select name="role" onchange="this.form.submit()">
+                      <option value="full" {% if u.role == 'full' %}selected{% endif %}>Voll</option>
+                      <option value="zentral_writer" {% if u.role == 'zentral_writer' %}selected{% endif %}>Nur Zentral</option>
+                      <option value="triage_intake" {% if u.role == 'triage_intake' %}selected{% endif %}>Anmelde-Kiosk</option>
+                    </select>
+                  </form>
+                  <form method="post"
+                        action="{{ url_for('admin_user_toggle_admin', user_id=u.id) }}"
+                        class="inline-form">
+                    <button class="btn small secondary" type="submit">
+                      {% if u.is_admin %}Admin entziehen{% else %}Admin geben{% endif %}
+                    </button>
+                  </form>
+                  <form method="post"
+                        action="{{ url_for('admin_user_toggle_totp_required', user_id=u.id) }}"
+                        class="inline-form"
+                        onsubmit="return confirm('2FA für „{{ u.username }}“ {% if u.totp_required %}deaktivieren? Sie/er meldet sich dann nur mit Passwort an.{% else %}wieder aktivieren?{% endif %}');">
+                    <button class="btn small secondary" type="submit">
+                      {% if u.totp_required %}2FA deaktivieren{% else %}2FA aktivieren{% endif %}
+                    </button>
+                  </form>
+                  <form method="post"
+                        action="{{ url_for('admin_user_reset_totp', user_id=u.id) }}"
+                        class="inline-form"
+                        onsubmit="return confirm('2FA für „{{ u.username }}“ zurücksetzen? Beim nächsten Login muss neu eingerichtet werden.');">
+                    <button class="btn small secondary" type="submit">2FA zurücksetzen</button>
+                  </form>
+                  <details class="inline-action">
+                    <summary class="btn small secondary">Berechtigungen</summary>
+                    <form method="post"
+                          action="{{ url_for('admin_user_set_permissions', user_id=u.id) }}"
+                          class="perm-form">
+                      <label class="perm-row">
+                        <input type="checkbox" name="perm_view_contact"
+                               {% if u.perm_view_contact %}checked{% endif %}>
+                        Adresse / Krankenkasse / Telefon ohne PIN sehen
+                      </label>
+                      <label class="perm-row">
+                        <input type="checkbox" name="perm_export_pdf"
+                               {% if u.perm_export_pdf %}checked{% endif %}>
+                        Notfallprotokoll-PDF erzeugen
+                      </label>
+                      <label class="perm-row">
+                        <input type="checkbox" name="perm_export_akte"
+                               {% if u.perm_export_akte %}checked{% endif %}>
+                        Akte exportieren (PDF)
+                      </label>
+                      <label class="perm-row">
+                        <input type="checkbox" name="perm_edit_patient"
+                               {% if u.perm_edit_patient %}checked{% endif %}>
+                        Patientendaten bearbeiten
+                      </label>
+                      <button class="btn small" type="submit">Speichern</button>
+                      <p class="muted" style="margin: 6px 0 0; font-size: 0.78rem;">
+                        Admins haben automatisch alle Berechtigungen.
+                      </p>
+                    </form>
+                  </details>
+                  <details class="inline-action">
+                    <summary class="btn small secondary">Veranstaltungen</summary>
+                    <form method="post"
+                          action="{{ url_for('admin_user_set_events', user_id=u.id) }}"
+                          class="perm-form">
+                      {% set perms = user_event_permissions.get(u.id, {}) %}
+                      {% for e in events %}
+                        {% set ep = perms.get(e.id, {}) %}
+                        <div class="perm-row" style="align-items:flex-start;">
+                          <div style="min-width: 180px;">
+                            <strong>{{ e.name }}</strong><br>
+                            <span class="muted">Nr. {{ e.prefix }}1, {{ e.prefix }}2, ...</span>
+                          </div>
+                          <label>
+                            <input type="checkbox" name="event_{{ e.id }}_view"
+                                   {% if ep.get('can_view') %}checked{% endif %}>
+                            sehen
+                          </label>
+                          <label>
+                            <input type="checkbox" name="event_{{ e.id }}_create"
+                                   {% if ep.get('can_create') %}checked{% endif %}>
+                            neu anlegen
+                          </label>
+                        </div>
+                      {% endfor %}
+                      <button class="btn small" type="submit">Speichern</button>
+                      <p class="muted" style="margin: 6px 0 0; font-size: 0.78rem;">
+                        Admins haben automatisch Zugriff auf alle Veranstaltungen.
+                      </p>
+                    </form>
+                  </details>
+                  <form method="post"
+                        action="{{ url_for('admin_user_delete', user_id=u.id) }}"
+                        class="inline-form"
+                        onsubmit="return confirm('Benutzer „{{ u.username }}“ wirklich löschen?');">
+                    <button class="btn small danger" type="submit">Löschen</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="settings-panel" id="danger" data-settings-panel hidden>
+      <div class="settings-panel-head">
+        <div>
+          <h2>Datenbank</h2>
+          <p class="muted">
+            Testberichte entfernen, ohne Patienten und Benutzerkonten zu löschen.
+          </p>
+        </div>
+      </div>
+
+      <div class="card danger-card">
+        <div class="card-header">Datenbank zurücksetzen</div>
+        <p style="margin: 0 0 12px;">
+          Löscht <strong>alle dezentralen und zentralen Berichte</strong> samt
+          Kommentaren und setzt den laufenden Counter zurück (nächste Bericht-Nr.
+          wieder #1). Patienten und Benutzerkonten bleiben unverändert.
+        </p>
+        <p class="muted" style="margin: 0 0 14px; font-size: 0.85rem;">
+          Diese Aktion ist <strong>nicht</strong> rückgängig zu machen. Nutze
+          sie nach Test-Phasen, bevor das Camp beginnt.
+        </p>
+        <form method="post" action="{{ url_for('admin_reset_protocols') }}"
+              class="stack"
+              onsubmit="return confirm('Wirklich alle Berichte unwiderruflich löschen und Counter zurücksetzen?');">
+          <div class="row">
+            <label class="field">
+              Bestätigung — tippe <code>RESET</code>
+              <input name="confirm" required pattern="RESET"
+                     placeholder="RESET" autocomplete="off">
+            </label>
+            <label class="field">
+              Dein Admin-Passwort
+              <input name="password" type="password" required
+                     autocomplete="current-password">
+            </label>
+          </div>
+          <div><button class="btn danger" type="submit">Alle Berichte löschen + Counter zurücksetzen</button></div>
+        </form>
+      </div>
+    </section>
   </div>
 </div>
 
-<div class="card">
-  <div class="card-header">Neuen Benutzer anlegen</div>
-  <form method="post" action="{{ url_for('admin_user_create') }}" class="stack">
-    <div class="row three">
-      <label class="field">
-        Benutzername <span class="req">*</span>
-        <input name="username" required autocomplete="off"
-               placeholder="z. B. lisa">
-      </label>
-      <label class="field">
-        Voller Name
-        <input name="full_name" autocomplete="off"
-               placeholder="z. B. Lisa Musterfrau">
-      </label>
-      <label class="field">
-        Passwort <span class="req">*</span>
-        <input name="password" type="text" required minlength="6"
-               autocomplete="new-password" placeholder="min. 6 Zeichen">
-      </label>
-    </div>
-    <label class="field">
-      Rolle
-      <select name="role">
-        <option value="full">Voll (kann alles lesen + schreiben)</option>
-        <option value="zentral_writer">Nur Zentrale Erste Hilfe schreiben</option>
-        <option value="triage_intake">Nur Anmeldung (Triage-Kiosk)</option>
-      </select>
-    </label>
-    <label class="checkbox-row">
-      <input type="checkbox" name="is_admin" value="1">
-      Zusätzlich Administrator (kann Benutzer verwalten)
-    </label>
-    <div><button class="btn" type="submit">Benutzer anlegen</button></div>
-  </form>
-</div>
+<script>
+(function () {
+  const root = document.querySelector('[data-settings]');
+  if (!root) return;
 
-<div class="card">
-  <div class="card-header">Veranstaltungen</div>
-  <form method="post" action="{{ url_for('admin_event_create') }}" class="stack">
-    <div class="row four">
-      <label class="field">
-        Name <span class="req">*</span>
-        <input name="name" required placeholder="z. B. Camp 2026">
-      </label>
-      <label class="field">
-        Präfix laufende Nr. <span class="req">*</span>
-        <input name="prefix" required placeholder="z. B. C26">
-      </label>
-      <label class="field">
-        Beginn
-        <input name="start_date" type="date">
-      </label>
-      <label class="field">
-        Ende
-        <input name="end_date" type="date">
-      </label>
-    </div>
-    <div><button class="btn small" type="submit">Veranstaltung anlegen</button></div>
-  </form>
+  const links = Array.from(root.querySelectorAll('[data-settings-link]'));
+  const panels = Array.from(root.querySelectorAll('[data-settings-panel]'));
+  const panelIds = new Set(panels.map((panel) => panel.id));
 
-  {% if events %}
-    <div class="stack" style="margin-top: 14px;">
-      {% for e in events %}
-        <form method="post"
-              action="{{ url_for('admin_event_update', event_id=e.id) }}"
-              class="toolbar">
-          <label class="field">
-            Name
-            <input name="name" value="{{ e.name }}" required>
-          </label>
-          <label class="field">
-            Präfix
-            <input name="prefix" value="{{ e.prefix }}" required style="max-width: 110px;">
-          </label>
-          <label class="field">
-            Beginn
-            <input name="start_date" type="date" value="{{ e.start_date or '' }}">
-          </label>
-          <label class="field">
-            Ende
-            <input name="end_date" type="date" value="{{ e.end_date or '' }}">
-          </label>
-          <label class="checkbox-row">
-            <input type="checkbox" name="is_active" value="1" {% if e.is_active %}checked{% endif %}>
-            aktiv
-          </label>
-          <button class="btn small secondary" type="submit">Speichern</button>
-        </form>
-      {% endfor %}
-    </div>
-  {% endif %}
-</div>
+  function selectPanel(id, updateHash) {
+    const targetId = panelIds.has(id) ? id : 'events';
+    panels.forEach((panel) => {
+      const active = panel.id === targetId;
+      panel.hidden = !active;
+      panel.classList.toggle('is-active', active);
+    });
+    links.forEach((link) => {
+      link.classList.toggle('is-active', link.getAttribute('href') === '#' + targetId);
+    });
+    if (updateHash) {
+      history.replaceState(null, '', '#' + targetId);
+    }
+  }
 
-<div class="card">
-  <div class="card-header">Bestehende Benutzer</div>
-  <table class="data">
-    <thead>
-      <tr>
-        <th>Benutzername</th>
-        <th>Voller Name</th>
-        <th>Rolle</th>
-        <th>Berechtigung</th>
-        <th>2FA</th>
-        <th>Angelegt</th>
-        <th class="right">Aktionen</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
-      <tr>
-        <td><strong>{{ u.username }}</strong>
-          {% if u.id == current_user.id %}<span class="badge">du</span>{% endif %}
-        </td>
-        <td>{{ u.full_name or '—' }}</td>
-        <td>
-          {% if u.is_admin %}<span class="badge admin">Admin</span>
-          {% else %}<span class="muted">Benutzer</span>{% endif %}
-        </td>
-        <td>
-          {% if u.role == 'zentral_writer' %}
-            <span class="badge">Nur Zentral schreiben</span>
-          {% elif u.role == 'triage_intake' %}
-            <span class="badge">Anmelde-Kiosk</span>
-          {% else %}
-            <span class="muted">Voll (Lesen + Schreiben)</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if not u.totp_required %}
-            <span class="badge totp-off">deaktiviert</span>
-          {% elif u.totp_confirmed %}
-            <span class="badge totp-on">aktiv</span>
-          {% else %}
-            <span class="muted">offen</span>
-          {% endif %}
-        </td>
-        <td>{{ format_dt(u.created_at) }}</td>
-        <td class="right action-cell">
-          <details class="inline-action">
-            <summary class="btn small secondary">Passwort</summary>
-            <form method="post"
-                  action="{{ url_for('admin_user_reset_password', user_id=u.id) }}"
-                  class="inline-form">
-              <input name="new_password" type="text" required minlength="6"
-                     placeholder="Neues Passwort">
-              <button class="btn small" type="submit">Setzen</button>
-            </form>
-          </details>
-          {% if u.id != current_user.id %}
-            <form method="post"
-                  action="{{ url_for('admin_user_set_role', user_id=u.id) }}"
-                  class="inline-form">
-              <select name="role" onchange="this.form.submit()">
-                <option value="full" {% if u.role == 'full' %}selected{% endif %}>Voll</option>
-                <option value="zentral_writer" {% if u.role == 'zentral_writer' %}selected{% endif %}>Nur Zentral</option>
-                <option value="triage_intake" {% if u.role == 'triage_intake' %}selected{% endif %}>Anmelde-Kiosk</option>
-              </select>
-            </form>
-            <form method="post"
-                  action="{{ url_for('admin_user_toggle_admin', user_id=u.id) }}"
-                  class="inline-form">
-              <button class="btn small secondary" type="submit">
-                {% if u.is_admin %}Admin entziehen{% else %}Admin geben{% endif %}
-              </button>
-            </form>
-            <form method="post"
-                  action="{{ url_for('admin_user_toggle_totp_required', user_id=u.id) }}"
-                  class="inline-form"
-                  onsubmit="return confirm('2FA für „{{ u.username }}“ {% if u.totp_required %}deaktivieren? Sie/er meldet sich dann nur mit Passwort an.{% else %}wieder aktivieren?{% endif %}');">
-              <button class="btn small secondary" type="submit">
-                {% if u.totp_required %}2FA deaktivieren{% else %}2FA aktivieren{% endif %}
-              </button>
-            </form>
-            <form method="post"
-                  action="{{ url_for('admin_user_reset_totp', user_id=u.id) }}"
-                  class="inline-form"
-                  onsubmit="return confirm('2FA für „{{ u.username }}“ zurücksetzen? Beim nächsten Login muss neu eingerichtet werden.');">
-              <button class="btn small secondary" type="submit">2FA zurücksetzen</button>
-            </form>
-            <details class="inline-action">
-              <summary class="btn small secondary">Berechtigungen</summary>
-              <form method="post"
-                    action="{{ url_for('admin_user_set_permissions', user_id=u.id) }}"
-                    class="perm-form">
-                <label class="perm-row">
-                  <input type="checkbox" name="perm_view_contact"
-                         {% if u.perm_view_contact %}checked{% endif %}>
-                  Adresse / Krankenkasse / Telefon ohne PIN sehen
-                </label>
-                <label class="perm-row">
-                  <input type="checkbox" name="perm_export_pdf"
-                         {% if u.perm_export_pdf %}checked{% endif %}>
-                  Notfallprotokoll-PDF erzeugen
-                </label>
-                <label class="perm-row">
-                  <input type="checkbox" name="perm_export_akte"
-                         {% if u.perm_export_akte %}checked{% endif %}>
-                  Akte exportieren (PDF)
-                </label>
-                <label class="perm-row">
-                  <input type="checkbox" name="perm_edit_patient"
-                         {% if u.perm_edit_patient %}checked{% endif %}>
-                  Patientendaten bearbeiten
-                </label>
-                <button class="btn small" type="submit">Speichern</button>
-                <p class="muted" style="margin: 6px 0 0; font-size: 0.78rem;">
-                  Admins haben automatisch alle Berechtigungen.
-                </p>
-              </form>
-            </details>
-            <details class="inline-action">
-              <summary class="btn small secondary">Veranstaltungen</summary>
-              <form method="post"
-                    action="{{ url_for('admin_user_set_events', user_id=u.id) }}"
-                    class="perm-form">
-                {% set perms = user_event_permissions.get(u.id, {}) %}
-                {% for e in events %}
-                  {% set ep = perms.get(e.id, {}) %}
-                  <div class="perm-row" style="align-items:flex-start;">
-                    <div style="min-width: 180px;">
-                      <strong>{{ e.name }}</strong><br>
-                      <span class="muted">Nr. {{ e.prefix }}1, {{ e.prefix }}2, ...</span>
-                    </div>
-                    <label>
-                      <input type="checkbox" name="event_{{ e.id }}_view"
-                             {% if ep.get('can_view') %}checked{% endif %}>
-                      sehen
-                    </label>
-                    <label>
-                      <input type="checkbox" name="event_{{ e.id }}_create"
-                             {% if ep.get('can_create') %}checked{% endif %}>
-                      neu anlegen
-                    </label>
-                  </div>
-                {% endfor %}
-                <button class="btn small" type="submit">Speichern</button>
-                <p class="muted" style="margin: 6px 0 0; font-size: 0.78rem;">
-                  Admins haben automatisch Zugriff auf alle Veranstaltungen.
-                </p>
-              </form>
-            </details>
-            <form method="post"
-                  action="{{ url_for('admin_user_delete', user_id=u.id) }}"
-                  class="inline-form"
-                  onsubmit="return confirm('Benutzer „{{ u.username }}“ wirklich löschen?');">
-              <button class="btn small danger" type="submit">Löschen</button>
-            </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+  links.forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      selectPanel(link.getAttribute('href').slice(1), true);
+    });
+  });
 
-<div class="card" style="border-left: 4px solid #b3261e;">
-  <div class="card-header">Datenbank zurücksetzen</div>
-  <p style="margin: 0 0 12px;">
-    Löscht <strong>alle dezentralen und zentralen Berichte</strong> samt
-    Kommentaren und setzt den laufenden Counter zurück (nächste Bericht-Nr.
-    wieder #1). Patienten und Benutzerkonten bleiben unverändert.
-  </p>
-  <p class="muted" style="margin: 0 0 14px; font-size: 0.85rem;">
-    Diese Aktion ist <strong>nicht</strong> rückgängig zu machen. Nutze
-    sie nach Test-Phasen, bevor das Camp beginnt.
-  </p>
-  <form method="post" action="{{ url_for('admin_reset_protocols') }}"
-        class="stack"
-        onsubmit="return confirm('Wirklich alle Berichte unwiderruflich löschen und Counter zurücksetzen?');">
-    <div class="row">
-      <label class="field">
-        Bestätigung — tippe <code>RESET</code>
-        <input name="confirm" required pattern="RESET"
-               placeholder="RESET" autocomplete="off">
-      </label>
-      <label class="field">
-        Dein Admin-Passwort
-        <input name="password" type="password" required
-               autocomplete="current-password">
-      </label>
-    </div>
-    <div><button class="btn danger" type="submit">Alle Berichte löschen + Counter zurücksetzen</button></div>
-  </form>
-</div>
+  window.addEventListener('hashchange', () => {
+    selectPanel(location.hash.slice(1), false);
+  });
+
+  selectPanel(location.hash.slice(1), false);
+})();
+</script>
 {% endblock %}
