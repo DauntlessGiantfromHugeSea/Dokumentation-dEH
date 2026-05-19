@@ -554,7 +554,7 @@
     {% endif %}
     <a href="/triage">Triage</a>
     <a href="/central" class="active">Zentral</a>
-    {% if current_user.can_view_decentral %}
+    {% if current_user.can_view_decentral and can_create_in_current_event %}
       <a href="/protocols/new">Neuer Bericht</a>
       <a href="/patients">Personen</a>
       <a href="/export">Export</a>
@@ -565,6 +565,7 @@
     <a href="/docs">Hilfe</a>
   </nav>
   <span class="app-bar-user">
+    {% if current_event %}<span>{{ current_event.name }}</span>{% endif %}
     <a href="/account/password">{{ current_user_label }}</a>
     <a href="/logout">Abmelden</a>
   </span>
@@ -1127,6 +1128,10 @@
   async function apiList()         { return (await fetch('/api/central/protokolle')).json(); }
   async function apiGet(id)        { return (await fetch('/api/central/protokolle/' + id)).json(); }
   async function apiCreate(data)   {
+    if (!CAN_CREATE_EVENT) {
+      toast('Für diese Veranstaltung darfst du keine neuen Protokolle anlegen');
+      return { error: 'forbidden' };
+    }
     // Falls die SPA aus dem Triage-Wartebereich gestartet wurde, hängen
     // wir die triage_id beim ersten POST an, damit der neue Bericht
     // automatisch mit dem Triage-Eintrag verknüpft wird.
@@ -1533,6 +1538,7 @@
 const IS_ZENTRAL_ONLY = {{ 'true' if current_user.is_zentral_only else 'false' }};
 const IS_ADMIN = {{ 'true' if current_user.is_admin else 'false' }};
 const CAN_VIEW_CONTACT = {{ 'true' if current_user.can_view_contact else 'false' }};
+const CAN_CREATE_EVENT = {{ 'true' if can_create_in_current_event else 'false' }};
 const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|tojson }};
 </script>
 

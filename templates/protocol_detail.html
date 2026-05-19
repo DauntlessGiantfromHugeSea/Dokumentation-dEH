@@ -4,7 +4,10 @@
 <div class="page-header">
   <div>
     <h1>Einsatzbericht <span class="muted">{{ protocol.laufende_nr or '#dEH' ~ protocol.id }}</span></h1>
-    <p class="tagline">Dokumentation gem. DGUV Information 1.</p>
+    <p class="tagline">
+      {{ protocol.event_name or 'Veranstaltung nicht zugeordnet' }} ·
+      Dokumentation gem. DGUV Information 1.
+    </p>
   </div>
   <div class="btn-row">
     <a class="btn secondary small" href="{{ url_for('protocol_edit', protocol_id=protocol.id) }}">Bearbeiten</a>
@@ -34,6 +37,8 @@
       <div class="value">{{ format_dt(protocol.patient_geburtsdatum) }}</div></div>
     <div class="kv"><div class="label">Stammnummer</div>
       <div class="value">{{ protocol.patient_stammnummer or '—' }}</div></div>
+    <div class="kv"><div class="label">Veranstaltung</div>
+      <div class="value">{{ protocol.event_name or '—' }}</div></div>
   </div>
 </div>
 

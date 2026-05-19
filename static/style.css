@@ -193,6 +193,17 @@ header.topbar .user {
   align-items: center;
   gap: 14px;
 }
+header.topbar .event-switch { margin: 0; }
+header.topbar .event-switch select,
+header.topbar .event-pill {
+  border: 1px solid rgba(255,255,255,0.35);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  padding: 5px 8px;
+  font-size: 0.86rem;
+}
+header.topbar .event-switch select option { color: #222; }
 header.topbar .user a {
   color: rgba(255, 255, 255, 0.85);
   padding: 6px 12px;

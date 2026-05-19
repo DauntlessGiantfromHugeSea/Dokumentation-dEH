@@ -48,6 +48,63 @@
 </div>
 
 <div class="card">
+  <div class="card-header">Veranstaltungen</div>
+  <form method="post" action="{{ url_for('admin_event_create') }}" class="stack">
+    <div class="row four">
+      <label class="field">
+        Name <span class="req">*</span>
+        <input name="name" required placeholder="z. B. Camp 2026">
+      </label>
+      <label class="field">
+        Präfix laufende Nr. <span class="req">*</span>
+        <input name="prefix" required placeholder="z. B. C26">
+      </label>
+      <label class="field">
+        Beginn
+        <input name="start_date" type="date">
+      </label>
+      <label class="field">
+        Ende
+        <input name="end_date" type="date">
+      </label>
+    </div>
+    <div><button class="btn small" type="submit">Veranstaltung anlegen</button></div>
+  </form>
+
+  {% if events %}
+    <div class="stack" style="margin-top: 14px;">
+      {% for e in events %}
+        <form method="post"
+              action="{{ url_for('admin_event_update', event_id=e.id) }}"
+              class="toolbar">
+          <label class="field">
+            Name
+            <input name="name" value="{{ e.name }}" required>
+          </label>
+          <label class="field">
+            Präfix
+            <input name="prefix" value="{{ e.prefix }}" required style="max-width: 110px;">
+          </label>
+          <label class="field">
+            Beginn
+            <input name="start_date" type="date" value="{{ e.start_date or '' }}">
+          </label>
+          <label class="field">
+            Ende
+            <input name="end_date" type="date" value="{{ e.end_date or '' }}">
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="is_active" value="1" {% if e.is_active %}checked{% endif %}>
+            aktiv
+          </label>
+          <button class="btn small secondary" type="submit">Speichern</button>
+        </form>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+<div class="card">
   <div class="card-header">Bestehende Benutzer</div>
   <table class="data">
     <thead>
@@ -161,6 +218,37 @@
                 <button class="btn small" type="submit">Speichern</button>
                 <p class="muted" style="margin: 6px 0 0; font-size: 0.78rem;">
                   Admins haben automatisch alle Berechtigungen.
+                </p>
+              </form>
+            </details>
+            <details class="inline-action">
+              <summary class="btn small secondary">Veranstaltungen</summary>
+              <form method="post"
+                    action="{{ url_for('admin_user_set_events', user_id=u.id) }}"
+                    class="perm-form">
+                {% set perms = user_event_permissions.get(u.id, {}) %}
+                {% for e in events %}
+                  {% set ep = perms.get(e.id, {}) %}
+                  <div class="perm-row" style="align-items:flex-start;">
+                    <div style="min-width: 180px;">
+                      <strong>{{ e.name }}</strong><br>
+                      <span class="muted">Nr. {{ e.prefix }}1, {{ e.prefix }}2, ...</span>
+                    </div>
+                    <label>
+                      <input type="checkbox" name="event_{{ e.id }}_view"
+                             {% if ep.get('can_view') %}checked{% endif %}>
+                      sehen
+                    </label>
+                    <label>
+                      <input type="checkbox" name="event_{{ e.id }}_create"
+                             {% if ep.get('can_create') %}checked{% endif %}>
+                      neu anlegen
+                    </label>
+                  </div>
+                {% endfor %}
+                <button class="btn small" type="submit">Speichern</button>
+                <p class="muted" style="margin: 6px 0 0; font-size: 0.78rem;">
+                  Admins haben automatisch Zugriff auf alle Veranstaltungen.
                 </p>
               </form>
             </details>

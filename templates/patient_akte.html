@@ -5,7 +5,8 @@
   <div>
     <h1>Akten-Export</h1>
     <p class="tagline">
-      Vollständiger Auszug für Rettungsdienst, Eltern oder Ärzte.
+      {{ current_event.name if current_event else 'Aktuelle Veranstaltung' }} ·
+      Auszug für Rettungsdienst, Eltern oder Ärzte.
     </p>
   </div>
   <div class="btn-row">
@@ -68,6 +69,8 @@
       <div class="value">{{ format_dt(patient.geburtsdatum) }}</div></div>
     <div class="kv"><div class="label">Stammnummer</div>
       <div class="value">{{ patient.stammnummer or '—' }}</div></div>
+    <div class="kv"><div class="label">Veranstaltung</div>
+      <div class="value">{{ current_event.name if current_event else '—' }}</div></div>
   </div>
   <div class="akte-stats">
     <div class="akte-stat">
@@ -94,6 +97,7 @@
       'id': p.id,
       'laufende_nr': p.laufende_nr or '#dEH' ~ p.id,
       'date': p.eh_datum_uhrzeit or p.created_at,
+      'event_name': p.event_name or '—',
       'author': p.author_full_name or p.author_username or '—',
       'url': url_for('protocol_detail', protocol_id=p.id),
     }) %}
@@ -104,6 +108,7 @@
       'id': c.id,
       'laufende_nr': c.laufende_nr or '#zEH' ~ c.id,
       'date': c.datum or c.created_at,
+      'event_name': c.event_name or '—',
       'author': c.author_full_name or c.author_username or c.name_summary or '—',
       'url': url_for('central_detail', pid=c.id),
     }) %}
@@ -116,6 +121,7 @@
           <th>Bericht</th>
           <th>Typ</th>
           <th>Datum</th>
+          <th>Veranstaltung</th>
           <th>Eingetragen von</th>
           <th class="right"></th>
         </tr>
@@ -129,6 +135,7 @@
             {% else %}<span class="badge type-z">zEH</span>{% endif %}
           </td>
           <td>{{ format_dt(r.date) }}</td>
+          <td>{{ r.event_name }}</td>
           <td>{{ r.author }}</td>
           <td class="right">
             <a class="btn small secondary" href="{{ r.url }}">Öffnen</a>

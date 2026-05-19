@@ -10,6 +10,7 @@
   <div>
     <h1>Dashboard</h1>
     <p class="tagline">
+      {{ current_event.name if current_event else 'Veranstaltung' }} ·
       Tagesansicht für <strong>{{ format_dt(selected_iso) }}</strong>
       {% if is_today %}<span class="muted">(heute)</span>{% endif %}
     </p>
@@ -63,6 +64,7 @@
 <div class="card">
   <div class="card-header">Schnell-Aktionen</div>
   <div class="quick-links">
+    {% if can_create_in_current_event %}
     <a class="quick-link" href="{{ url_for('protocol_new_chooser') }}">
       <div class="quick-icon">＋</div>
       <div class="quick-text">
@@ -84,6 +86,7 @@
         <div class="quick-sub">mit Patientenprüfung</div>
       </div>
     </a>
+    {% endif %}
     <a class="quick-link" href="{{ url_for('index') }}">
       <div class="quick-icon">≡</div>
       <div class="quick-text">

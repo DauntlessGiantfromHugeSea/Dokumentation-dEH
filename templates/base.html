@@ -27,6 +27,20 @@
         <a href="{{ url_for('triage_new') }}">+ Anmelden</a>
       </nav>
       <span class="user">
+        {% if available_events|length > 1 %}
+          <form method="post" action="{{ url_for('event_switch') }}" class="event-switch">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <select name="event_id" onchange="this.form.submit()" title="Veranstaltung wechseln">
+              {% for e in available_events %}
+                <option value="{{ e.id }}" {% if current_event and e.id == current_event.id %}selected{% endif %}>
+                  {{ e.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </form>
+        {% elif current_event %}
+          <span class="event-pill">{{ current_event.name }}</span>
+        {% endif %}
         <span class="muted" style="color: rgba(255,255,255,0.85);">Anmelde-Kiosk</span>
         <button type="button" class="theme-toggle" id="themeToggle"
                 title="Hochkontrast umschalten">☀ Kontrast</button>
@@ -40,7 +54,7 @@
         {% endif %}
         <a href="{{ url_for('triage_list') }}">Triage</a>
         <a href="{{ url_for('central_index') }}">Zentral</a>
-        {% if current_user.can_view_decentral %}
+        {% if current_user.can_view_decentral and can_create_in_current_event %}
           <a href="{{ url_for('protocol_new_chooser') }}">Neuer Bericht</a>
           <a href="{{ url_for('patient_list') }}">Personen</a>
           <a href="{{ url_for('export_form') }}">Export</a>
@@ -51,6 +65,20 @@
         <a href="{{ url_for('docs_index') }}">Hilfe</a>
       </nav>
       <span class="user">
+        {% if available_events|length > 1 %}
+          <form method="post" action="{{ url_for('event_switch') }}" class="event-switch">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <select name="event_id" onchange="this.form.submit()" title="Veranstaltung wechseln">
+              {% for e in available_events %}
+                <option value="{{ e.id }}" {% if current_event and e.id == current_event.id %}selected{% endif %}>
+                  {{ e.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </form>
+        {% elif current_event %}
+          <span class="event-pill">{{ current_event.name }}</span>
+        {% endif %}
         <button type="button" class="theme-toggle" id="themeToggle"
                 title="Hochkontrast umschalten">☀ Kontrast</button>
         <a href="{{ url_for('account_password') }}">{{ current_user.full_name or current_user.username }}</a>

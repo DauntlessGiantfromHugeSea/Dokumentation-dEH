@@ -7,7 +7,10 @@
   {% if mode == 'edit' %}Einsatzbericht #{{ protocol.id }} bearbeiten
   {% else %}Neuer Einsatzbericht{% endif %}
 </h1>
-<p class="tagline">Dokumentation gem. DGUV Information 1.</p>
+<p class="tagline">
+  {{ current_event.name if current_event else 'Aktuelle Veranstaltung' }} ·
+  Dokumentation gem. DGUV Information 1.
+</p>
 
 <form method="post" class="stack" id="protocolForm">
   <div class="card">

@@ -34,6 +34,24 @@ CREATE TABLE IF NOT EXISTS users (
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    prefix       TEXT NOT NULL DEFAULT 'EH',
+    start_date   TEXT,
+    end_date     TEXT,
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS user_event_permissions (
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    event_id    INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    can_view    INTEGER NOT NULL DEFAULT 1,
+    can_create  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, event_id)
+);
+
 CREATE TABLE IF NOT EXISTS patients (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     name         TEXT NOT NULL,
@@ -53,6 +71,7 @@ CREATE TABLE IF NOT EXISTS patients (
 
 CREATE TABLE IF NOT EXISTS protocols (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id              INTEGER REFERENCES events(id) ON DELETE SET NULL,
     patient_id            INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
     laufende_nr           TEXT,
     deh                   TEXT,
@@ -84,6 +103,7 @@ CREATE INDEX IF NOT EXISTS idx_comments_protocol ON comments(protocol_id);
 
 CREATE TABLE IF NOT EXISTS central_protocols (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id      INTEGER REFERENCES events(id) ON DELETE SET NULL,
     patient_id    INTEGER REFERENCES patients(id) ON DELETE SET NULL,
     einsatznummer TEXT,
     datum         TEXT,
@@ -136,6 +156,8 @@ CREATE INDEX IF NOT EXISTS idx_emergency_unlocks_patient ON emergency_unlocks(pa
 -- vergebene auto-increment ist die "Bericht-Nr." über beide Systeme hinweg.
 CREATE TABLE IF NOT EXISTS protocol_sequence (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id    INTEGER REFERENCES events(id) ON DELETE SET NULL,
+    seq_no      INTEGER,
     source_type TEXT NOT NULL,           -- 'decentral' | 'central'
     source_id   INTEGER NOT NULL,        -- protocols.id oder central_protocols.id
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -147,6 +169,7 @@ CREATE TABLE IF NOT EXISTS protocol_sequence (
 -- der Wartebereich-Liste auf, sortiert nach Akutität + Wartezeit.
 CREATE TABLE IF NOT EXISTS triage_entries (
     id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id                 INTEGER REFERENCES events(id) ON DELETE SET NULL,
     patient_id               INTEGER REFERENCES patients(id) ON DELETE SET NULL,
     name                     TEXT,
     geburtsdatum             TEXT,
@@ -229,6 +252,8 @@ def init_db(db_path: Path) -> None:
                     "INTEGER NOT NULL DEFAULT 0"
                 )
 
+        _ensure_default_event(conn)
+
         # Patient extras (Notfallkontakt / Allergien / Medikamente)
         pat_cols = {row[1] for row in conn.execute("PRAGMA table_info(patients)")}
         for col, decl in [
@@ -246,22 +271,55 @@ def init_db(db_path: Path) -> None:
 
         # Migration: global_id columns for both protocol tables.
         proto_cols = {row[1] for row in conn.execute("PRAGMA table_info(protocols)")}
+        if "event_id" not in proto_cols:
+            conn.execute("ALTER TABLE protocols ADD COLUMN event_id INTEGER")
         if "global_id" not in proto_cols:
             conn.execute("ALTER TABLE protocols ADD COLUMN global_id INTEGER")
         cent_cols = {row[1] for row in conn.execute("PRAGMA table_info(central_protocols)")}
+        if "event_id" not in cent_cols:
+            conn.execute("ALTER TABLE central_protocols ADD COLUMN event_id INTEGER")
         if "global_id" not in cent_cols:
             conn.execute("ALTER TABLE central_protocols ADD COLUMN global_id INTEGER")
         if "laufende_nr" not in cent_cols:
             conn.execute("ALTER TABLE central_protocols ADD COLUMN laufende_nr TEXT")
 
+        seq_cols = {row[1] for row in conn.execute("PRAGMA table_info(protocol_sequence)")}
+        if "event_id" not in seq_cols:
+            conn.execute("ALTER TABLE protocol_sequence ADD COLUMN event_id INTEGER")
+        if "seq_no" not in seq_cols:
+            conn.execute("ALTER TABLE protocol_sequence ADD COLUMN seq_no INTEGER")
+
         # Migration: triage treatment_finished_at column.
         triage_cols = {
             row[1] for row in conn.execute("PRAGMA table_info(triage_entries)")
         }
+        if "event_id" not in triage_cols:
+            conn.execute("ALTER TABLE triage_entries ADD COLUMN event_id INTEGER")
         if "treatment_finished_at" not in triage_cols:
             conn.execute(
                 "ALTER TABLE triage_entries ADD COLUMN treatment_finished_at TEXT"
             )
+
+        default_event_id = get_default_event_id(conn)
+        conn.execute(
+            "UPDATE protocols SET event_id = ? WHERE event_id IS NULL",
+            (default_event_id,),
+        )
+        conn.execute(
+            "UPDATE central_protocols SET event_id = ? WHERE event_id IS NULL",
+            (default_event_id,),
+        )
+        conn.execute(
+            "UPDATE triage_entries SET event_id = ? WHERE event_id IS NULL",
+            (default_event_id,),
+        )
+        conn.execute(
+            "UPDATE protocol_sequence SET event_id = ? WHERE event_id IS NULL",
+            (default_event_id,),
+        )
+        conn.execute(
+            "UPDATE protocol_sequence SET seq_no = id WHERE seq_no IS NULL"
+        )
 
         # Backfill global_id (and matching laufende_nr) for any rows that
         # don't have one yet — chronologically, oldest first.
@@ -276,6 +334,18 @@ def init_db(db_path: Path) -> None:
                 "UPDATE users SET is_admin = 1 "
                 "WHERE id = (SELECT MIN(id) FROM users)"
             )
+        for u in conn.execute("SELECT id, role, is_admin FROM users").fetchall():
+            for e in conn.execute("SELECT id FROM events").fetchall():
+                exists = conn.execute(
+                    "SELECT 1 FROM user_event_permissions "
+                    "WHERE user_id = ? AND event_id = ?",
+                    (u["id"], e["id"]),
+                ).fetchone()
+                if exists or u["is_admin"]:
+                    continue
+                can_create = u["role"] in ("full", "zentral_writer", "triage_intake")
+                set_user_event_permission(
+                    conn, u["id"], e["id"], can_view=True, can_create=can_create)
         conn.commit()
     finally:
         conn.close()
@@ -301,23 +371,182 @@ def _backfill_global_ids(conn: sqlite3.Connection) -> None:
     ).fetchall()
     for r in rows:
         # Each backfill insert assigns the next sequence id.
+        event_id = get_default_event_id(conn)
+        row = conn.execute(
+            "SELECT COALESCE(MAX(seq_no), 0) + 1 AS next_no "
+            "FROM protocol_sequence WHERE event_id = ?",
+            (event_id,),
+        ).fetchone()
+        seq_no = row["next_no"] if row else 1
         cur = conn.execute(
-            "INSERT INTO protocol_sequence (source_type, source_id) VALUES (?, ?)",
-            (r["source"], r["source_id"]),
+            "INSERT INTO protocol_sequence "
+            "(event_id, seq_no, source_type, source_id) VALUES (?, ?, ?, ?)",
+            (event_id, seq_no, r["source"], r["source_id"]),
         )
         gid = cur.lastrowid
-        prefix = "dEH" if r["source"] == "decentral" else "zEH"
-        nr = f"#{prefix}{gid}"
+        prefix = get_event_prefix(conn, event_id)
+        nr = f"#{prefix}{seq_no}"
         if r["source"] == "decentral":
             conn.execute(
-                "UPDATE protocols SET global_id = ?, laufende_nr = ? WHERE id = ?",
-                (gid, nr, r["source_id"]),
+                "UPDATE protocols SET event_id = ?, global_id = ?, laufende_nr = ? WHERE id = ?",
+                (event_id, gid, nr, r["source_id"]),
             )
         else:
             conn.execute(
-                "UPDATE central_protocols SET global_id = ?, laufende_nr = ? WHERE id = ?",
-                (gid, nr, r["source_id"]),
+                "UPDATE central_protocols SET event_id = ?, global_id = ?, laufende_nr = ? WHERE id = ?",
+                (event_id, gid, nr, r["source_id"]),
             )
+
+
+# ---------- Events / Veranstaltungen ----------
+
+def _ensure_default_event(conn: sqlite3.Connection) -> int:
+    row = conn.execute("SELECT id FROM events ORDER BY id LIMIT 1").fetchone()
+    if row:
+        return row["id"]
+    cur = conn.execute(
+        "INSERT INTO events (name, prefix, is_active) VALUES (?, ?, 1)",
+        ("Standard-Veranstaltung", "EH"),
+    )
+    return cur.lastrowid
+
+
+def get_default_event_id(conn: sqlite3.Connection) -> int:
+    return _ensure_default_event(conn)
+
+
+def get_event(conn: sqlite3.Connection, event_id: int) -> Optional[sqlite3.Row]:
+    return conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+
+
+def get_event_prefix(conn: sqlite3.Connection, event_id: Optional[int]) -> str:
+    if event_id:
+        row = get_event(conn, event_id)
+        if row and row["prefix"]:
+            return row["prefix"]
+    return "EH"
+
+
+def sanitize_event_prefix(value: str) -> str:
+    prefix = "".join(ch for ch in (value or "").strip().upper()
+                     if ch.isalnum() or ch in ("-", "_"))
+    return prefix[:12] or "EH"
+
+
+def list_events(conn: sqlite3.Connection, *, active_only: bool = False) -> list[sqlite3.Row]:
+    sql = "SELECT * FROM events"
+    if active_only:
+        sql += " WHERE is_active = 1"
+    sql += " ORDER BY COALESCE(start_date, '9999-12-31'), name COLLATE NOCASE"
+    return conn.execute(sql).fetchall()
+
+
+def list_user_events(conn: sqlite3.Connection, user_id: int,
+                     is_admin: bool = False) -> list[sqlite3.Row]:
+    if is_admin:
+        return list_events(conn, active_only=True)
+    return conn.execute(
+        """
+        SELECT e.*
+        FROM events e
+        JOIN user_event_permissions p ON p.event_id = e.id
+        WHERE p.user_id = ? AND p.can_view = 1 AND e.is_active = 1
+        ORDER BY COALESCE(e.start_date, '9999-12-31'), e.name COLLATE NOCASE
+        """,
+        (user_id,),
+    ).fetchall()
+
+
+def user_can_view_event(conn: sqlite3.Connection, user_id: int,
+                        event_id: Optional[int], is_admin: bool = False) -> bool:
+    if is_admin:
+        return True
+    if not event_id:
+        return False
+    row = conn.execute(
+        """
+        SELECT 1 FROM user_event_permissions
+        WHERE user_id = ? AND event_id = ? AND can_view = 1
+        """,
+        (user_id, event_id),
+    ).fetchone()
+    return bool(row)
+
+
+def user_can_create_in_event(conn: sqlite3.Connection, user_id: int,
+                             event_id: Optional[int], is_admin: bool = False) -> bool:
+    if is_admin:
+        return True
+    if not event_id:
+        return False
+    row = conn.execute(
+        """
+        SELECT 1 FROM user_event_permissions
+        WHERE user_id = ? AND event_id = ? AND can_view = 1 AND can_create = 1
+        """,
+        (user_id, event_id),
+    ).fetchone()
+    return bool(row)
+
+
+def create_event(conn: sqlite3.Connection, name: str, prefix: str,
+                 start_date: Optional[str], end_date: Optional[str]) -> int:
+    cur = conn.execute(
+        "INSERT INTO events (name, prefix, start_date, end_date, is_active) "
+        "VALUES (?, ?, ?, ?, 1)",
+        (name.strip(), sanitize_event_prefix(prefix), start_date or None,
+         end_date or None),
+    )
+    return cur.lastrowid
+
+
+def update_event(conn: sqlite3.Connection, event_id: int, *, name: str,
+                 prefix: str, start_date: Optional[str],
+                 end_date: Optional[str], is_active: bool) -> None:
+    conn.execute(
+        """
+        UPDATE events
+           SET name = ?, prefix = ?, start_date = ?, end_date = ?, is_active = ?
+         WHERE id = ?
+        """,
+        (name.strip(), sanitize_event_prefix(prefix), start_date or None,
+         end_date or None, 1 if is_active else 0, event_id),
+    )
+
+
+def get_user_event_permissions(conn: sqlite3.Connection, user_id: int) -> dict[int, dict]:
+    rows = conn.execute(
+        """
+        SELECT event_id, can_view, can_create
+        FROM user_event_permissions
+        WHERE user_id = ?
+        """,
+        (user_id,),
+    ).fetchall()
+    return {
+        r["event_id"]: {
+            "can_view": bool(r["can_view"]),
+            "can_create": bool(r["can_create"]),
+        }
+        for r in rows
+    }
+
+
+def set_user_event_permission(conn: sqlite3.Connection, user_id: int,
+                              event_id: int, *, can_view: bool,
+                              can_create: bool) -> None:
+    conn.execute(
+        """
+        INSERT INTO user_event_permissions
+          (user_id, event_id, can_view, can_create)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, event_id)
+        DO UPDATE SET can_view = excluded.can_view,
+                      can_create = excluded.can_create
+        """,
+        (user_id, event_id, 1 if can_view else 0,
+         1 if (can_view and can_create) else 0),
+    )
 
 
 @contextmanager
@@ -487,7 +716,8 @@ def get_patient(conn: sqlite3.Connection, patient_id: int) -> Optional[sqlite3.R
     return conn.execute("SELECT * FROM patients WHERE id = ?", (patient_id,)).fetchone()
 
 
-def list_patients(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+def list_patients(conn: sqlite3.Connection,
+                  event_id: Optional[int] = None) -> list[sqlite3.Row]:
     return conn.execute(
         """
         SELECT p.*,
@@ -501,15 +731,20 @@ def list_patients(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         LEFT JOIN (
           SELECT patient_id, COUNT(*) AS n,
                  MAX(eh_datum_uhrzeit) AS last_d
-          FROM protocols GROUP BY patient_id
+          FROM protocols
+          WHERE (? IS NULL OR event_id = ?)
+          GROUP BY patient_id
         ) d ON d.patient_id = p.id
         LEFT JOIN (
           SELECT patient_id, COUNT(*) AS n, MAX(datum) AS last_c
-          FROM central_protocols WHERE patient_id IS NOT NULL
+          FROM central_protocols
+          WHERE patient_id IS NOT NULL AND (? IS NULL OR event_id = ?)
           GROUP BY patient_id
         ) c ON c.patient_id = p.id
+        WHERE (COALESCE(d.n, 0) + COALESCE(c.n, 0)) > 0
         ORDER BY p.name COLLATE NOCASE ASC
-        """
+        """,
+        (event_id, event_id, event_id, event_id),
     ).fetchall()
 
 
@@ -531,28 +766,37 @@ PROTOCOL_FIELDS = (
 
 
 def _assign_global_id(conn: sqlite3.Connection, source_type: str,
-                      source_id: int) -> tuple[int, str]:
+                      source_id: int, event_id: Optional[int]) -> tuple[int, str]:
     """Insert into protocol_sequence and return (global_id, laufende_nr)."""
+    event_id = event_id or get_default_event_id(conn)
+    row = conn.execute(
+        "SELECT COALESCE(MAX(seq_no), 0) + 1 AS next_no "
+        "FROM protocol_sequence WHERE event_id = ?",
+        (event_id,),
+    ).fetchone()
+    seq_no = row["next_no"] if row else 1
     cur = conn.execute(
-        "INSERT INTO protocol_sequence (source_type, source_id) VALUES (?, ?)",
-        (source_type, source_id),
+        "INSERT INTO protocol_sequence (event_id, seq_no, source_type, source_id) "
+        "VALUES (?, ?, ?, ?)",
+        (event_id, seq_no, source_type, source_id),
     )
     gid = cur.lastrowid
-    prefix = "dEH" if source_type == "decentral" else "zEH"
-    return gid, f"#{prefix}{gid}"
+    return gid, f"#{get_event_prefix(conn, event_id)}{seq_no}"
 
 
 def create_protocol(conn: sqlite3.Connection, patient_id: int,
-                    data: dict, created_by: Optional[int]) -> int:
-    cols = ["patient_id"] + list(PROTOCOL_FIELDS) + ["created_by"]
+                    data: dict, created_by: Optional[int],
+                    event_id: Optional[int] = None) -> int:
+    event_id = event_id or get_default_event_id(conn)
+    cols = ["event_id", "patient_id"] + list(PROTOCOL_FIELDS) + ["created_by"]
     placeholders = ",".join(["?"] * len(cols))
-    values = [patient_id] + [data.get(f) or None for f in PROTOCOL_FIELDS] + [created_by]
+    values = [event_id, patient_id] + [data.get(f) or None for f in PROTOCOL_FIELDS] + [created_by]
     cur = conn.execute(
         f"INSERT INTO protocols ({','.join(cols)}) VALUES ({placeholders})",
         values,
     )
     new_id = cur.lastrowid
-    gid, nr = _assign_global_id(conn, "decentral", new_id)
+    gid, nr = _assign_global_id(conn, "decentral", new_id, event_id)
     conn.execute(
         "UPDATE protocols SET global_id = ?, laufende_nr = ? WHERE id = ?",
         (gid, nr, new_id),
@@ -575,6 +819,8 @@ def get_protocol(conn: sqlite3.Connection, protocol_id: int) -> Optional[sqlite3
     return conn.execute(
         """
         SELECT pr.*,
+               e.name          AS event_name,
+               e.prefix        AS event_prefix,
                p.name          AS patient_name,
                p.geburtsdatum  AS patient_geburtsdatum,
                p.stammnummer   AS patient_stammnummer,
@@ -582,6 +828,7 @@ def get_protocol(conn: sqlite3.Connection, protocol_id: int) -> Optional[sqlite3
                u.full_name     AS author_full_name
         FROM protocols pr
         JOIN patients p ON p.id = pr.patient_id
+        LEFT JOIN events e ON e.id = pr.event_id
         LEFT JOIN users u ON u.id = pr.created_by
         WHERE pr.id = ?
         """,
@@ -591,6 +838,7 @@ def get_protocol(conn: sqlite3.Connection, protocol_id: int) -> Optional[sqlite3
 
 def list_protocols(conn: sqlite3.Connection, *,
                    patient_id: Optional[int] = None,
+                   event_id: Optional[int] = None,
                    date_from: Optional[str] = None,
                    date_to: Optional[str] = None,
                    stammnummer: Optional[str] = None,
@@ -598,16 +846,21 @@ def list_protocols(conn: sqlite3.Connection, *,
     sql = [
         """
         SELECT pr.id, pr.patient_id, pr.laufende_nr, pr.deh,
+               pr.event_id, e.name AS event_name,
                pr.unfall_datum_uhrzeit, pr.eh_datum_uhrzeit,
                pr.name_ersthelfer, pr.created_at,
                p.name AS patient_name, p.geburtsdatum AS patient_geburtsdatum,
                p.stammnummer AS patient_stammnummer
         FROM protocols pr
         JOIN patients p ON p.id = pr.patient_id
+        LEFT JOIN events e ON e.id = pr.event_id
         WHERE 1=1
         """
     ]
     params: list = []
+    if event_id is not None:
+        sql.append("AND pr.event_id = ?")
+        params.append(event_id)
     if patient_id is not None:
         sql.append("AND pr.patient_id = ?")
         params.append(patient_id)
@@ -627,8 +880,9 @@ def list_protocols(conn: sqlite3.Connection, *,
     return conn.execute("\n".join(sql), params).fetchall()
 
 
-def list_patient_protocols(conn: sqlite3.Connection, patient_id: int) -> list[sqlite3.Row]:
-    return list_protocols(conn, patient_id=patient_id)
+def list_patient_protocols(conn: sqlite3.Connection, patient_id: int,
+                           event_id: Optional[int] = None) -> list[sqlite3.Row]:
+    return list_protocols(conn, patient_id=patient_id, event_id=event_id)
 
 
 # ---------- Comments ----------
@@ -702,11 +956,13 @@ def _link_central_to_patient(conn: sqlite3.Connection, data: dict) -> Optional[i
 
 def list_central_protocols(conn: sqlite3.Connection, *,
                            patient_id: Optional[int] = None,
+                           event_id: Optional[int] = None,
                            created_by: Optional[int] = None
                            ) -> list[sqlite3.Row]:
     sql = [
         """
         SELECT cp.id, cp.patient_id, cp.einsatznummer, cp.datum,
+               cp.event_id, e.name AS event_name,
                cp.name_summary, cp.global_id, cp.laufende_nr,
                cp.created_by, cp.created_at, cp.updated_at,
                p.name AS patient_name, p.geburtsdatum AS patient_geburtsdatum,
@@ -714,12 +970,16 @@ def list_central_protocols(conn: sqlite3.Connection, *,
                u.username  AS author_username,
                u.full_name AS author_full_name
         FROM central_protocols cp
+        LEFT JOIN events e ON e.id = cp.event_id
         LEFT JOIN patients p ON p.id = cp.patient_id
         LEFT JOIN users u ON u.id = cp.created_by
         WHERE 1=1
         """
     ]
     params: list = []
+    if event_id is not None:
+        sql.append("AND cp.event_id = ?")
+        params.append(event_id)
     if patient_id is not None:
         sql.append("AND cp.patient_id = ?")
         params.append(patient_id)
@@ -731,6 +991,7 @@ def list_central_protocols(conn: sqlite3.Connection, *,
 
 
 def list_unified_protocols(conn: sqlite3.Connection, *,
+                           event_id: Optional[int] = None,
                            date_from: Optional[str] = None,
                            date_to: Optional[str] = None,
                            stammnummer: Optional[str] = None,
@@ -765,12 +1026,18 @@ def list_unified_protocols(conn: sqlite3.Connection, *,
             " AND (pat.name LIKE ? OR c.name_summary LIKE ?)"
         )
         central_params.extend([f"%{name_query}%", f"%{name_query}%"])
+    if event_id is not None:
+        decentral_filter += " AND p.event_id = ?"
+        decentral_params.append(event_id)
+        central_filter += " AND c.event_id = ?"
+        central_params.append(event_id)
 
     parts = []
     params: list = []
     if source_filter != "central":
         parts.append(f"""
             SELECT 'decentral' AS source, p.id AS source_id,
+                   p.event_id, e.name AS event_name,
                    p.global_id, p.laufende_nr,
                    p.eh_datum_uhrzeit AS event_date,
                    p.name_ersthelfer AS responder,
@@ -780,6 +1047,7 @@ def list_unified_protocols(conn: sqlite3.Connection, *,
                    pat.geburtsdatum AS patient_geburtsdatum,
                    pat.stammnummer AS patient_stammnummer
             FROM protocols p
+            LEFT JOIN events e ON e.id = p.event_id
             LEFT JOIN patients pat ON pat.id = p.patient_id
             WHERE p.global_id IS NOT NULL{decentral_filter}
         """)
@@ -787,6 +1055,7 @@ def list_unified_protocols(conn: sqlite3.Connection, *,
     if source_filter != "decentral":
         parts.append(f"""
             SELECT 'central' AS source, c.id AS source_id,
+                   c.event_id, e.name AS event_name,
                    c.global_id, c.laufende_nr,
                    c.datum AS event_date,
                    c.name_summary AS responder,
@@ -796,6 +1065,7 @@ def list_unified_protocols(conn: sqlite3.Connection, *,
                    pat.geburtsdatum AS patient_geburtsdatum,
                    pat.stammnummer AS patient_stammnummer
             FROM central_protocols c
+            LEFT JOIN events e ON e.id = c.event_id
             LEFT JOIN patients pat ON pat.id = c.patient_id
             WHERE c.global_id IS NOT NULL{central_filter}
         """)
@@ -810,8 +1080,11 @@ def list_unified_protocols(conn: sqlite3.Connection, *,
 def get_central_protocol(conn: sqlite3.Connection, pid: int) -> Optional[dict]:
     row = conn.execute(
         """
-        SELECT cp.*, p.name AS patient_name, p.geburtsdatum AS patient_geburtsdatum
+        SELECT cp.*, e.name AS event_name, e.prefix AS event_prefix,
+               p.name AS patient_name, p.geburtsdatum AS patient_geburtsdatum,
+               p.stammnummer AS patient_stammnummer
         FROM central_protocols cp
+        LEFT JOIN events e ON e.id = cp.event_id
         LEFT JOIN patients p ON p.id = cp.patient_id
         WHERE cp.id = ?
         """,
@@ -825,15 +1098,18 @@ def get_central_protocol(conn: sqlite3.Connection, pid: int) -> Optional[dict]:
 
 
 def create_central_protocol(conn: sqlite3.Connection, data: dict,
-                            created_by: Optional[int]) -> int:
+                            created_by: Optional[int],
+                            event_id: Optional[int] = None) -> int:
+    event_id = event_id or get_default_event_id(conn)
     patient_id = _link_central_to_patient(conn, data)
     cur = conn.execute(
         """
         INSERT INTO central_protocols
-          (patient_id, einsatznummer, datum, name_summary, data, created_by)
-        VALUES (?, ?, ?, ?, ?, ?)
+          (event_id, patient_id, einsatznummer, datum, name_summary, data, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
+            event_id,
             patient_id,
             _scalar(data.get("einsatznummer")) or None,
             _scalar(data.get("datum")) or None,
@@ -843,7 +1119,7 @@ def create_central_protocol(conn: sqlite3.Connection, data: dict,
         ),
     )
     new_id = cur.lastrowid
-    gid, nr = _assign_global_id(conn, "central", new_id)
+    gid, nr = _assign_global_id(conn, "central", new_id, event_id)
     conn.execute(
         "UPDATE central_protocols SET global_id = ?, laufende_nr = ? WHERE id = ?",
         (gid, nr, new_id),
@@ -888,31 +1164,37 @@ def delete_patient(conn: sqlite3.Connection, patient_id: int) -> bool:
     return cur.rowcount > 0
 
 
-def patient_protocol_counts(conn: sqlite3.Connection, patient_id: int) -> dict:
+def patient_protocol_counts(conn: sqlite3.Connection, patient_id: int,
+                            event_id: Optional[int] = None) -> dict:
     """How many decentral and central protocols exist for this patient."""
+    event_sql = " AND event_id = ?" if event_id is not None else ""
+    params = (patient_id, event_id) if event_id is not None else (patient_id,)
     decentral = conn.execute(
-        "SELECT COUNT(*) AS n FROM protocols WHERE patient_id = ?",
-        (patient_id,),
+        f"SELECT COUNT(*) AS n FROM protocols WHERE patient_id = ?{event_sql}",
+        params,
     ).fetchone()["n"]
     central = conn.execute(
-        "SELECT COUNT(*) AS n FROM central_protocols WHERE patient_id = ?",
-        (patient_id,),
+        f"SELECT COUNT(*) AS n FROM central_protocols WHERE patient_id = ?{event_sql}",
+        params,
     ).fetchone()["n"]
     return {"decentral": decentral, "central": central}
 
 
 def patient_last_treatment(conn: sqlite3.Connection,
-                           patient_id: int) -> Optional[str]:
+                           patient_id: int,
+                           event_id: Optional[int] = None) -> Optional[str]:
     """Most recent treatment date across both protocol types, or None."""
     row = conn.execute(
         """
         SELECT MAX(d) AS last FROM (
-            SELECT eh_datum_uhrzeit AS d FROM protocols WHERE patient_id = ?
+            SELECT eh_datum_uhrzeit AS d FROM protocols
+            WHERE patient_id = ? AND (? IS NULL OR event_id = ?)
             UNION ALL
-            SELECT datum AS d FROM central_protocols WHERE patient_id = ?
+            SELECT datum AS d FROM central_protocols
+            WHERE patient_id = ? AND (? IS NULL OR event_id = ?)
         )
         """,
-        (patient_id, patient_id),
+        (patient_id, event_id, event_id, patient_id, event_id, event_id),
     ).fetchone()
     return row["last"] if row and row["last"] else None
 
@@ -944,7 +1226,8 @@ def search_patients(conn: sqlite3.Connection, *,
 
 
 def patient_history(conn: sqlite3.Connection,
-                    patient_id: int) -> list[dict]:
+                    patient_id: int,
+                    event_id: Optional[int] = None) -> list[dict]:
     """Alle Berichte (dezentral + zentral) eines Patienten, chronologisch
     absteigend. Wird für die Vorbehandlungs-Popup-Liste genutzt."""
     rows = conn.execute(
@@ -953,14 +1236,16 @@ def patient_history(conn: sqlite3.Connection,
                COALESCE(eh_datum_uhrzeit, created_at) AS event_date,
                name_ersthelfer AS responder, created_at
         FROM protocols WHERE patient_id = ?
+          AND (? IS NULL OR event_id = ?)
         UNION ALL
         SELECT 'central' AS source, id, laufende_nr,
                COALESCE(datum, created_at) AS event_date,
                name_summary AS responder, created_at
         FROM central_protocols WHERE patient_id = ?
+          AND (? IS NULL OR event_id = ?)
         ORDER BY event_date DESC, created_at DESC
         """,
-        (patient_id, patient_id),
+        (patient_id, event_id, event_id, patient_id, event_id, event_id),
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -988,23 +1273,29 @@ def _treatment_date_central():
     return "COALESCE(date(datum), date(created_at))"
 
 
-def dashboard_stats(conn: sqlite3.Connection, ref_date) -> dict:
+def dashboard_stats(conn: sqlite3.Connection, ref_date,
+                    event_id: Optional[int] = None) -> dict:
     """Liefert Statistiken bezogen auf ref_date (datetime.date)."""
     from datetime import date as _date, timedelta
     iso = ref_date.isoformat()
 
     def one(d_iso):
-        d = _count_decentral(conn, f"{_treatment_date_decentral()} = ?", (d_iso,))
-        c = _count_central(conn, f"{_treatment_date_central()} = ?", (d_iso,))
+        event_sql = " AND event_id = ?" if event_id is not None else ""
+        params = (d_iso, event_id) if event_id is not None else (d_iso,)
+        d = _count_decentral(conn, f"{_treatment_date_decentral()} = ?{event_sql}", params)
+        c = _count_central(conn, f"{_treatment_date_central()} = ?{event_sql}", params)
         return {"d": d, "c": c}
 
     def rng(start_iso, end_iso):
+        event_sql = " AND event_id = ?" if event_id is not None else ""
+        params = ((start_iso, end_iso, event_id)
+                  if event_id is not None else (start_iso, end_iso))
         d = _count_decentral(conn,
-            f"{_treatment_date_decentral()} BETWEEN ? AND ?",
-            (start_iso, end_iso))
+            f"{_treatment_date_decentral()} BETWEEN ? AND ?{event_sql}",
+            params)
         c = _count_central(conn,
-            f"{_treatment_date_central()} BETWEEN ? AND ?",
-            (start_iso, end_iso))
+            f"{_treatment_date_central()} BETWEEN ? AND ?{event_sql}",
+            params)
         return {"d": d, "c": c}
 
     week_start = ref_date - timedelta(days=ref_date.weekday())
@@ -1017,27 +1308,32 @@ def dashboard_stats(conn: sqlite3.Connection, ref_date) -> dict:
         "week": rng(week_start.isoformat(), iso),
         "month": rng(month_start.isoformat(), iso),
         "total": {
-            "d": conn.execute("SELECT COUNT(*) AS n FROM protocols").fetchone()["n"],
-            "c": conn.execute("SELECT COUNT(*) AS n FROM central_protocols").fetchone()["n"],
+            "d": _count_decentral(conn, "event_id = ?" if event_id is not None else "1=1",
+                                  (event_id,) if event_id is not None else ()),
+            "c": _count_central(conn, "event_id = ?" if event_id is not None else "1=1",
+                                (event_id,) if event_id is not None else ()),
         },
     }
 
 
 def dashboard_daily_counts(conn: sqlite3.Connection, *,
-                           end_date, days: int = 14) -> list[dict]:
+                           end_date, days: int = 14,
+                           event_id: Optional[int] = None) -> list[dict]:
     """Pro Tag (rückwärts ab end_date) Zähler dezentral/zentral."""
     from datetime import timedelta
     out = []
     for i in range(days - 1, -1, -1):
         d = end_date - timedelta(days=i)
         d_iso = d.isoformat()
+        event_sql = " AND event_id = ?" if event_id is not None else ""
+        params = (d_iso, event_id) if event_id is not None else (d_iso,)
         out.append({
             "date": d,
             "decentral": _count_decentral(
-                conn, f"{_treatment_date_decentral()} = ?", (d_iso,)
+                conn, f"{_treatment_date_decentral()} = ?{event_sql}", params
             ),
             "central": _count_central(
-                conn, f"{_treatment_date_central()} = ?", (d_iso,)
+                conn, f"{_treatment_date_central()} = ?{event_sql}", params
             ),
         })
     return out
@@ -1058,17 +1354,24 @@ def list_decentral_responders(conn: sqlite3.Connection) -> list[str]:
 
 
 def top_decentral_responders(conn: sqlite3.Connection,
-                             limit: int = 5) -> list[sqlite3.Row]:
+                             limit: int = 5,
+                             event_id: Optional[int] = None) -> list[sqlite3.Row]:
+    where = "WHERE name_ersthelfer IS NOT NULL AND TRIM(name_ersthelfer) != ''"
+    params: list = []
+    if event_id is not None:
+        where += " AND event_id = ?"
+        params.append(event_id)
+    params.append(limit)
     return conn.execute(
-        """
+        f"""
         SELECT TRIM(name_ersthelfer) AS responder, COUNT(*) AS n
         FROM protocols
-        WHERE name_ersthelfer IS NOT NULL AND TRIM(name_ersthelfer) != ''
+        {where}
         GROUP BY responder COLLATE NOCASE
         ORDER BY n DESC, responder COLLATE NOCASE
         LIMIT ?
         """,
-        (limit,),
+        params,
     ).fetchall()
 
 
@@ -1398,7 +1701,7 @@ def classify_prior(indicator_keys: list[str]) -> str:
 
 def create_triage_entry(conn, *, name=None, geburtsdatum=None,
                          indicators=None, notes=None,
-                         created_by=None) -> int:
+                         created_by=None, event_id=None) -> int:
     indicators = indicators or []
     category = classify_prior(indicators)
     # Patienten matchen, falls Name + Geburtsdatum ausreichend sind
@@ -1408,11 +1711,11 @@ def create_triage_entry(conn, *, name=None, geburtsdatum=None,
     cur = conn.execute(
         """
         INSERT INTO triage_entries
-          (patient_id, name, geburtsdatum, category, indicators, notes,
+          (event_id, patient_id, name, geburtsdatum, category, indicators, notes,
            created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (patient_id, (name or "").strip() or None,
+        (event_id or get_default_event_id(conn), patient_id, (name or "").strip() or None,
          (geburtsdatum or "").strip() or None,
          category, _json.dumps(indicators), (notes or "").strip() or None,
          created_by),
@@ -1537,7 +1840,7 @@ def protocol_summary(conn: sqlite3.Connection, source: str,
     }
 
 
-def list_triage_waiting(conn) -> list[sqlite3.Row]:
+def list_triage_waiting(conn, event_id: Optional[int] = None) -> list[sqlite3.Row]:
     """Patient*innen, die noch warten — sortiert nach SK-Akutität (SK1
     zuerst), innerhalb gleicher Kategorie nach Ankunftszeit (älteste oben).
     """
@@ -1550,6 +1853,7 @@ def list_triage_waiting(conn) -> list[sqlite3.Row]:
         FROM triage_entries t
         LEFT JOIN patients p ON p.id = t.patient_id
         WHERE t.status = 'wartend'
+          AND (? IS NULL OR t.event_id = ?)
         ORDER BY
             CASE t.category
                 WHEN 'SK1' THEN 1
@@ -1559,10 +1863,13 @@ def list_triage_waiting(conn) -> list[sqlite3.Row]:
             END ASC,
             datetime(t.arrival_at) ASC
         """
+        ,
+        (event_id, event_id),
     ).fetchall()
 
 
-def list_triage_active(conn, limit: int = 50) -> list[sqlite3.Row]:
+def list_triage_active(conn, limit: int = 50,
+                       event_id: Optional[int] = None) -> list[sqlite3.Row]:
     """Aktuell in Behandlung — abgeschlossene Einträge tauchen hier nicht mehr auf."""
     return conn.execute(
         """
@@ -1572,10 +1879,11 @@ def list_triage_active(conn, limit: int = 50) -> list[sqlite3.Row]:
         LEFT JOIN patients p ON p.id = t.patient_id
         LEFT JOIN central_protocols cp ON cp.id = t.treatment_protocol_id
         WHERE t.status = 'in_behandlung'
+          AND (? IS NULL OR t.event_id = ?)
         ORDER BY datetime(t.arrival_at) DESC
         LIMIT ?
         """,
-        (limit,),
+        (event_id, event_id, limit),
     ).fetchall()
 
 
@@ -1607,7 +1915,8 @@ def reopen_triage_treatment(conn, tid: int) -> bool:
     return cur.rowcount > 0
 
 
-def list_triage_recently_finished(conn, limit: int = 10) -> list[sqlite3.Row]:
+def list_triage_recently_finished(conn, limit: int = 10,
+                                  event_id: Optional[int] = None) -> list[sqlite3.Row]:
     """Zuletzt abgeschlossene Behandlungen — für die "Wieder öffnen"-Liste."""
     return conn.execute(
         """
@@ -1617,10 +1926,11 @@ def list_triage_recently_finished(conn, limit: int = 10) -> list[sqlite3.Row]:
         LEFT JOIN patients p ON p.id = t.patient_id
         LEFT JOIN central_protocols cp ON cp.id = t.treatment_protocol_id
         WHERE t.status = 'abgeschlossen'
+          AND (? IS NULL OR t.event_id = ?)
         ORDER BY datetime(COALESCE(t.treatment_finished_at, t.arrival_at)) DESC
         LIMIT ?
         """,
-        (limit,),
+        (event_id, event_id, limit),
     ).fetchall()
 
 

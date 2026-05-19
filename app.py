@@ -58,11 +58,60 @@ def _login_landing(user) -> str:
     return url_for("index")
 
 
+def _current_event_id() -> int | None:
+    db = models.get_db()
+    if not current_user.is_authenticated:
+        return None
+    raw = session.get("event_id")
+    try:
+        event_id = int(raw) if raw else None
+    except (TypeError, ValueError):
+        event_id = None
+    available = models.list_user_events(
+        db, current_user.id, is_admin=current_user.is_admin
+    )
+    available_ids = {e["id"] for e in available}
+    if event_id in available_ids:
+        return event_id
+    if available:
+        event_id = available[0]["id"]
+        session["event_id"] = event_id
+        return event_id
+    if current_user.is_admin:
+        event_id = models.get_default_event_id(db)
+        session["event_id"] = event_id
+        return event_id
+    return None
+
+
+def _current_event():
+    event_id = _current_event_id()
+    return models.get_event(models.get_db(), event_id) if event_id else None
+
+
+def _require_event_view(event_id: int | None = None) -> int:
+    db = models.get_db()
+    event_id = event_id or _current_event_id()
+    if not event_id or not models.user_can_view_event(
+            db, current_user.id, event_id, current_user.is_admin):
+        abort(403)
+    return event_id
+
+
+def _require_event_create() -> int:
+    db = models.get_db()
+    event_id = _current_event_id()
+    if not event_id or not models.user_can_create_in_event(
+            db, current_user.id, event_id, current_user.is_admin):
+        abort(403)
+    return event_id
+
+
 # Triage-intake users are restricted to the kiosk flow.
 TRIAGE_INTAKE_ALLOWED = (
     "/triage/new", "/triage", "/account/password",
     "/login", "/logout", "/setup-totp", "/two-factor",
-    "/static/", "/api/triage/",
+    "/events/switch", "/static/", "/api/triage/",
 )
 
 
@@ -121,6 +170,24 @@ def create_app(test_config: dict | None = None) -> Flask:
         if _is_path_allowed_for_intake(request.path):
             return
         abort(403)
+
+    @app.context_processor
+    def _inject_events():
+        if not current_user.is_authenticated:
+            return {}
+        db = models.get_db()
+        event_id = _current_event_id()
+        return {
+            "available_events": models.list_user_events(
+                db, current_user.id, is_admin=current_user.is_admin
+            ),
+            "current_event": models.get_event(db, event_id) if event_id else None,
+            "can_create_in_current_event": (
+                models.user_can_create_in_event(
+                    db, current_user.id, event_id, current_user.is_admin
+                ) if event_id else False
+            ),
+        }
 
     # ----- Auth -----
     login_manager = LoginManager(app)
@@ -218,6 +285,20 @@ def create_app(test_config: dict | None = None) -> Flask:
         session.clear()
         return redirect(url_for("login"))
 
+    @app.route("/events/switch", methods=["POST"])
+    @login_required
+    def event_switch():
+        try:
+            event_id = int(request.form.get("event_id") or 0)
+        except (TypeError, ValueError):
+            event_id = 0
+        if not models.user_can_view_event(
+                models.get_db(), current_user.id, event_id, current_user.is_admin):
+            abort(403)
+        session["event_id"] = event_id
+        next_url = request.form.get("next") or request.referrer or url_for("dashboard")
+        return redirect(next_url)
+
     @app.route("/setup-totp", methods=["GET", "POST"])
     def setup_totp():
         user_id = session.get("pending_user_id")
@@ -292,12 +373,14 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/")
     @decentral_view_required
     def index():
+        event_id = _require_event_view()
         filters = _read_filters(request.args)
         source_filter = (request.args.get("type") or "").strip() or None
         if source_filter not in ("decentral", "central"):
             source_filter = None
         unified = models.list_unified_protocols(
             models.get_db(),
+            event_id=event_id,
             **filters,
             source_filter=source_filter,
         )
@@ -312,6 +395,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/protocols/new")
     @login_required
     def protocol_new_chooser():
+        _require_event_create()
         """Step 1: choose between decentral or central first aid.
 
         zentral_writer hat nur eine Option ("Zentrale EH") — direkt
@@ -335,6 +419,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/protocols/new/dezentral", methods=["GET", "POST"])
     @decentral_view_required
     def protocol_new():
+        _require_event_create()
         if request.method == "POST":
             return _save_protocol(None)
         prefill = {
@@ -355,8 +440,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         protocol = models.get_protocol(db, protocol_id)
         if not protocol:
             abort(404)
+        _require_event_view(protocol["event_id"])
         comments = models.list_comments(db, protocol_id)
-        siblings = models.list_patient_protocols(db, protocol["patient_id"])
+        siblings = models.list_patient_protocols(
+            db, protocol["patient_id"], event_id=protocol["event_id"])
         return render_template("protocol_detail.html", protocol=protocol,
                                comments=comments, siblings=siblings,
                                format_dt=models.format_dt)
@@ -368,6 +455,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         protocol = models.get_protocol(db, protocol_id)
         if not protocol:
             abort(404)
+        _require_event_view(protocol["event_id"])
         if request.method == "POST":
             return _save_protocol(protocol_id)
         return render_template(
@@ -383,6 +471,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         protocol = models.get_protocol(db, protocol_id)
         if not protocol:
             abort(404)
+        _require_event_view(protocol["event_id"])
         password = request.form.get("password", "")
         user_row = models.get_user_by_id(db, current_user.id)
         if not user_row or not models.verify_password(user_row, password):
@@ -398,8 +487,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     def protocol_add_comment(protocol_id: int):
         db = models.get_db()
-        if not models.get_protocol(db, protocol_id):
+        protocol = models.get_protocol(db, protocol_id)
+        if not protocol:
             abort(404)
+        _require_event_view(protocol["event_id"])
         text = request.form.get("text", "").strip()
         if text:
             models.add_comment(db, protocol_id, text, current_user.id)
@@ -414,6 +505,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         protocol = models.get_protocol(db, protocol_id)
         if not protocol:
             abort(404)
+        _require_event_view(protocol["event_id"])
         comments = models.list_comments(db, protocol_id)
         pdf_bytes = render_protocol_pdf(protocol, comments)
         return send_file(
@@ -428,19 +520,22 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/patients")
     @decentral_view_required
     def patient_list():
-        patients = models.list_patients(models.get_db())
+        patients = models.list_patients(models.get_db(),
+                                        event_id=_require_event_view())
         return render_template("patient_list.html", patients=patients,
                                format_dt=models.format_dt)
 
     @app.route("/patients/<int:patient_id>")
     @login_required
     def patient_detail(patient_id: int):
+        event_id = _require_event_view()
         db = models.get_db()
         patient = models.get_patient(db, patient_id)
         if not patient:
             abort(404)
-        protocols = models.list_patient_protocols(db, patient_id)
-        central_protocols = models.list_central_protocols(db, patient_id=patient_id)
+        protocols = models.list_patient_protocols(db, patient_id, event_id=event_id)
+        central_protocols = models.list_central_protocols(db, patient_id=patient_id,
+                                                          event_id=event_id)
         change_log = models.list_patient_changes(db, patient_id)
         sensitive = (
             models.patient_sensitive_full(patient)
@@ -462,6 +557,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     def patient_akte(patient_id: int):
         if not current_user.can_export_akte:
             abort(403)
+        event_id = _require_event_view()
         """Vorschauseite für den vollständigen Akten-Export.
         Zeigt, was im PDF landet, plus den Download-Button.
         Sensible Daten erscheinen nur für Admins; Voll-User sehen
@@ -471,8 +567,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         patient = models.get_patient(db, patient_id)
         if not patient:
             abort(404)
-        decentral = models.list_patient_protocols(db, patient_id)
-        central = models.list_central_protocols(db, patient_id=patient_id)
+        decentral = models.list_patient_protocols(db, patient_id, event_id=event_id)
+        central = models.list_central_protocols(db, patient_id=patient_id,
+                                                event_id=event_id)
         change_log = models.list_patient_changes(db, patient_id)
         unlocks = db.execute(
             """
@@ -495,6 +592,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             unlocks=unlocks,
             sensitive_visible=current_user.can_view_contact,
             format_dt=models.format_dt,
+            current_event=_current_event(),
         )
 
     @app.route("/patients/<int:patient_id>/akte.pdf")
@@ -502,19 +600,21 @@ def create_app(test_config: dict | None = None) -> Flask:
     def patient_akte_pdf(patient_id: int):
         if not current_user.can_export_akte:
             abort(403)
+        event_id = _require_event_view()
         db = models.get_db()
         patient = models.get_patient(db, patient_id)
         if not patient:
             abort(404)
         # Sammle alles ein
         decentral = []
-        for p in models.list_patient_protocols(db, patient_id):
+        for p in models.list_patient_protocols(db, patient_id, event_id=event_id):
             full = models.get_protocol(db, p["id"])
             full_dict = dict(full)
             full_dict["comments"] = [dict(c) for c in models.list_comments(db, p["id"])]
             decentral.append(full_dict)
         central = []
-        for c in models.list_central_protocols(db, patient_id=patient_id):
+        for c in models.list_central_protocols(db, patient_id=patient_id,
+                                               event_id=event_id):
             rec = models.get_central_protocol(db, c["id"])
             rec["comments"] = [dict(cm) for cm in
                                models.list_central_comments(db, c["id"])]
@@ -645,7 +745,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         ).fetchone()
         if not row:
             return {"found": False}
-        counts = models.patient_protocol_counts(models.get_db(), row["id"])
+        counts = models.patient_protocol_counts(models.get_db(), row["id"],
+                                                event_id=_current_event_id())
         return {
             "found": True,
             "patient_id": row["id"],
@@ -665,8 +766,9 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/export/csv")
     @decentral_view_required
     def export_csv():
+        event_id = _require_event_view()
         filters = _read_filters(request.args)
-        rows = models.list_protocols(models.get_db(), **filters)
+        rows = models.list_protocols(models.get_db(), event_id=event_id, **filters)
 
         buf = io.StringIO()
         writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
@@ -712,6 +814,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     def dashboard():
         from datetime import date as _date
         db = models.get_db()
+        event_id = _require_event_view()
         # Selected day for the day-view; default heute.
         sel = (request.args.get("date") or "").strip()
         try:
@@ -719,15 +822,17 @@ def create_app(test_config: dict | None = None) -> Flask:
         except ValueError:
             ref = _date.today()
 
-        stats = models.dashboard_stats(db, ref)
-        chart = models.dashboard_daily_counts(db, end_date=ref, days=14)
+        stats = models.dashboard_stats(db, ref, event_id=event_id)
+        chart = models.dashboard_daily_counts(db, end_date=ref, days=14,
+                                              event_id=event_id)
         chart_max = max((d["decentral"] + d["central"] for d in chart),
                         default=0)
         # Berichte des ausgewählten Tages
         day_protocols = models.list_unified_protocols(
-            db, date_from=ref.isoformat(), date_to=ref.isoformat()
+            db, event_id=event_id,
+            date_from=ref.isoformat(), date_to=ref.isoformat()
         )
-        top = models.top_decentral_responders(db, limit=5)
+        top = models.top_decentral_responders(db, limit=5, event_id=event_id)
         return render_template(
             "dashboard.html",
             stats=stats,
@@ -751,12 +856,16 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     def triage_list():
         db = models.get_db()
-        waiting = models.list_triage_waiting(db)
-        active = models.list_triage_active(db, limit=20)
-        recently_finished = models.list_triage_recently_finished(db, limit=10)
+        event_id = _require_event_view()
+        waiting = models.list_triage_waiting(db, event_id=event_id)
+        active = models.list_triage_active(db, limit=20, event_id=event_id)
+        recently_finished = models.list_triage_recently_finished(
+            db, limit=10, event_id=event_id)
         # Höchste vorhandene Triage-ID — als Anker fürs Polling
         row = db.execute(
-            "SELECT COALESCE(MAX(id), 0) AS max_id FROM triage_entries"
+            "SELECT COALESCE(MAX(id), 0) AS max_id FROM triage_entries "
+            "WHERE event_id = ?",
+            (event_id,),
         ).fetchone()
         max_triage_id = row["max_id"] if row else 0
         return render_template(
@@ -773,6 +882,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     def triage_new():
         db = models.get_db()
+        event_id = _require_event_create()
         if request.method == "POST":
             indicators = request.form.getlist("indicators")
             name = (request.form.get("name") or "").strip()
@@ -785,7 +895,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             tid = models.create_triage_entry(
                 db, name=name, geburtsdatum=geburtsdatum,
                 indicators=indicators, notes=notes,
-                created_by=current_user.id,
+                created_by=current_user.id, event_id=event_id,
             )
             if quick_cat in ("SK1", "SK2", "SK3"):
                 db.execute(
@@ -812,15 +922,16 @@ def create_app(test_config: dict | None = None) -> Flask:
             since_id = int(request.args.get("since_id") or 0)
         except (TypeError, ValueError):
             since_id = 0
+        event_id = _require_event_view()
         rows = models.get_db().execute(
             """
             SELECT id, category, name, arrival_at, status
             FROM triage_entries
-            WHERE id > ?
+            WHERE id > ? AND event_id = ?
             ORDER BY id DESC
             LIMIT 50
             """,
-            (since_id,),
+            (since_id, event_id),
         ).fetchall()
         return {
             "entries": [{
@@ -847,8 +958,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
         matches = []
         for r in rows[:10]:
-            counts = models.patient_protocol_counts(db, r["id"])
-            last = models.patient_last_treatment(db, r["id"])
+            counts = models.patient_protocol_counts(db, r["id"],
+                                                    event_id=_current_event_id())
+            last = models.patient_last_treatment(db, r["id"],
+                                                 event_id=_current_event_id())
             matches.append({
                 "patient_id": r["id"],
                 "name": r["name"],
@@ -991,6 +1104,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         und vollem Datensatz → Bestätigung "neue Person". Bei mehreren
         Treffern oder unvollständiger Eingabe → Trefferliste zur Auswahl.
         """
+        _require_event_create()
         src = request.form if request.method == "POST" else request.args
         prefill = {
             "vorname": (src.get("vorname") or "").strip(),
@@ -1012,8 +1126,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                 db, name_query=full_name, geburtsdatum=prefill["geburtsdatum"]
             )
             for r in rows:
-                counts = models.patient_protocol_counts(db, r["id"])
-                last = models.patient_last_treatment(db, r["id"])
+                counts = models.patient_protocol_counts(db, r["id"],
+                                                        event_id=_current_event_id())
+                last = models.patient_last_treatment(db, r["id"],
+                                                     event_id=_current_event_id())
                 matches.append({
                     "id": r["id"],
                     "name": r["name"],
@@ -1054,6 +1170,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         endpoints. We render it via Flask so the @login_required check kicks
         in and so we can pass the current user to a small wrapping banner.
         """
+        _require_event_view()
         return render_template(
             "central_index.html",
             current_user_label=current_user.full_name or current_user.username,
@@ -1068,6 +1185,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             abort(404)
+        _require_event_view(rec.get("event_id"))
         # Lesen ist für alle eingeloggten User erlaubt (auch zentral_writer
         # darf Vorbehandlungen sehen). Schreiben/Löschen prüft weiter unten.
         comments = models.list_central_comments(db, pid)
@@ -1077,11 +1195,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         central_siblings = []
         if rec.get("patient_id"):
             decentral_siblings = models.list_patient_protocols(
-                db, rec["patient_id"]
+                db, rec["patient_id"], event_id=rec.get("event_id")
             )
             central_siblings = [
                 r for r in models.list_central_protocols(
-                    db, patient_id=rec["patient_id"]
+                    db, patient_id=rec["patient_id"],
+                    event_id=rec.get("event_id")
                 ) if r["id"] != pid
             ]
         triage = models.get_triage_for_protocol(db, pid)
@@ -1103,6 +1222,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             abort(404)
+        _require_event_view(rec.get("event_id"))
         # Kommentare darf jeder eingeloggte User schreiben (Diskussion
         # über Vorbehandlungen). Bearbeiten/Löschen des Berichts bleibt
         # weiter eigentumsbasiert.
@@ -1120,6 +1240,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             abort(404)
+        _require_event_view(rec.get("event_id"))
         if (current_user.is_zentral_only
                 and rec.get("created_by") != current_user.id):
             abort(403)
@@ -1140,10 +1261,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     def api_central_list_or_create():
         db = models.get_db()
+        event_id = _require_event_view()
         if request.method == "GET":
             # zentral_writer: only their own protocols.
             rows = models.list_central_protocols(
                 db,
+                event_id=event_id,
                 created_by=(current_user.id
                             if current_user.is_zentral_only else None),
             )
@@ -1163,13 +1286,17 @@ def create_app(test_config: dict | None = None) -> Flask:
                     "updated_at": r["updated_at"],
                     "patient_id": r["patient_id"],
                     "previous_decentral": _decentral_count_for_patient(
-                        db, r["patient_id"]),
+                        db, r["patient_id"], event_id=event_id),
                 }
                 for r in rows
             ]
         # POST
         data = request.get_json(silent=True) or {}
-        new_id = models.create_central_protocol(db, data, current_user.id)
+        if not models.user_can_create_in_event(
+                db, current_user.id, event_id, current_user.is_admin):
+            return {"error": "forbidden"}, 403
+        new_id = models.create_central_protocol(db, data, current_user.id,
+                                                event_id=event_id)
         # Falls die SPA mit ?triage_id=... aufgerufen wurde, das Protokoll
         # mit dem Triage-Eintrag verknüpfen.
         try:
@@ -1188,6 +1315,9 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             return {"error": "not found"}, 404
+        if not models.user_can_view_event(
+                db, current_user.id, rec.get("event_id"), current_user.is_admin):
+            return {"error": "forbidden"}, 403
         # Lesen ist für alle eingeloggten User offen (Vorbehandlungen
         # einsehen). Schreiben/Löschen prüft den Eigentümer für
         # zentral_writer weiter unten.
@@ -1311,8 +1441,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
         matches = []
         for r in rows:
-            counts = models.patient_protocol_counts(db, r["id"])
-            last = models.patient_last_treatment(db, r["id"])
+            counts = models.patient_protocol_counts(db, r["id"],
+                                                    event_id=_current_event_id())
+            last = models.patient_last_treatment(db, r["id"],
+                                                 event_id=_current_event_id())
             matches.append({
                 # patient_id wird auch an zentral_writer zurückgegeben, damit
                 # das Notfall-Widget Indikatoren + Entschlüsseln-Button zeigen
@@ -1353,7 +1485,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "geburtsdatum": patient["geburtsdatum"],
                 "stammnummer": patient["stammnummer"],
             },
-            "history": models.patient_history(db, pid),
+            "history": models.patient_history(db, pid, event_id=_current_event_id()),
         }
 
     @app.route("/api/protocol-summary")
@@ -1368,6 +1500,22 @@ def create_app(test_config: dict | None = None) -> Flask:
             return {"error": "invalid id"}, 400
         if source not in ("central", "decentral") or not pid:
             return {"error": "source/id required"}, 400
+        if source == "central":
+            rec = models.get_central_protocol(models.get_db(), pid)
+            if not rec:
+                return {"error": "not found"}, 404
+            if not models.user_can_view_event(
+                    models.get_db(), current_user.id, rec.get("event_id"),
+                    current_user.is_admin):
+                return {"error": "forbidden"}, 403
+        else:
+            rec = models.get_protocol(models.get_db(), pid)
+            if not rec:
+                return {"error": "not found"}, 404
+            if not models.user_can_view_event(
+                    models.get_db(), current_user.id, rec["event_id"],
+                    current_user.is_admin):
+                return {"error": "forbidden"}, 403
         summary = models.protocol_summary(models.get_db(), source, pid)
         if not summary:
             return {"error": "not found"}, 404
@@ -1402,9 +1550,59 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/admin/users")
     @admin_required
     def admin_users():
-        users = models.list_users(models.get_db())
+        db = models.get_db()
+        users = models.list_users(db)
         return render_template("admin_users.html", users=users,
+                               events=models.list_events(db),
+                               user_event_permissions={
+                                   u["id"]: models.get_user_event_permissions(db, u["id"])
+                                   for u in users
+                               },
                                format_dt=models.format_dt)
+
+    @app.route("/admin/events/create", methods=["POST"])
+    @admin_required
+    def admin_event_create():
+        db = models.get_db()
+        name = (request.form.get("name") or "").strip()
+        prefix = (request.form.get("prefix") or "").strip()
+        if not name:
+            flash("Name der Veranstaltung ist Pflicht.", "error")
+            return redirect(url_for("admin_users"))
+        event_id = models.create_event(
+            db, name, prefix,
+            (request.form.get("start_date") or "").strip() or None,
+            (request.form.get("end_date") or "").strip() or None,
+        )
+        for u in models.list_users(db):
+            if u["is_admin"]:
+                continue
+            models.set_user_event_permission(
+                db, u["id"], event_id, can_view=False, can_create=False)
+        db.commit()
+        flash(f"Veranstaltung '{name}' angelegt.", "success")
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/events/<int:event_id>/update", methods=["POST"])
+    @admin_required
+    def admin_event_update(event_id: int):
+        db = models.get_db()
+        if not models.get_event(db, event_id):
+            abort(404)
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            flash("Name der Veranstaltung ist Pflicht.", "error")
+            return redirect(url_for("admin_users"))
+        models.update_event(
+            db, event_id, name=name,
+            prefix=(request.form.get("prefix") or "").strip(),
+            start_date=(request.form.get("start_date") or "").strip() or None,
+            end_date=(request.form.get("end_date") or "").strip() or None,
+            is_active=bool(request.form.get("is_active")),
+        )
+        db.commit()
+        flash("Veranstaltung aktualisiert.", "success")
+        return redirect(url_for("admin_users"))
 
     @app.route("/admin/users/create", methods=["POST"])
     @admin_required
@@ -1425,10 +1623,35 @@ def create_app(test_config: dict | None = None) -> Flask:
         elif models.get_user_by_username(db, username):
             flash(f"Benutzername '{username}' existiert bereits.", "error")
         else:
-            models.create_user(db, username, password, full_name,
-                               is_admin=is_admin, role=role)
+            user_id = models.create_user(db, username, password, full_name,
+                                         is_admin=is_admin, role=role)
+            if not is_admin:
+                for event in models.list_events(db, active_only=True):
+                    models.set_user_event_permission(
+                        db, user_id, event["id"], can_view=True,
+                        can_create=role in ("full", "zentral_writer",
+                                            "triage_intake"))
             db.commit()
             flash(f"Benutzer '{username}' angelegt.", "success")
+        return redirect(url_for("admin_users"))
+
+    @app.route("/admin/users/<int:user_id>/events", methods=["POST"])
+    @admin_required
+    def admin_user_set_events(user_id: int):
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        if row["is_admin"]:
+            flash("Admins sehen alle Veranstaltungen und dürfen überall anlegen.", "info")
+            return redirect(url_for("admin_users"))
+        for event in models.list_events(db):
+            view = bool(request.form.get(f"event_{event['id']}_view"))
+            create = bool(request.form.get(f"event_{event['id']}_create"))
+            models.set_user_event_permission(
+                db, user_id, event["id"], can_view=view, can_create=create)
+        db.commit()
+        flash(f"Veranstaltungen für '{row['username']}' aktualisiert.", "success")
         return redirect(url_for("admin_users"))
 
     @app.route("/admin/users/<int:user_id>/permissions", methods=["POST"])
@@ -1783,12 +2006,14 @@ def create_app(test_config: dict | None = None) -> Flask:
 
 # ---------- helpers ----------
 
-def _decentral_count_for_patient(db, patient_id):
+def _decentral_count_for_patient(db, patient_id, event_id=None):
     if patient_id is None:
         return 0
+    event_sql = " AND event_id = ?" if event_id is not None else ""
+    params = (patient_id, event_id) if event_id is not None else (patient_id,)
     return db.execute(
-        "SELECT COUNT(*) AS n FROM protocols WHERE patient_id = ?",
-        (patient_id,),
+        f"SELECT COUNT(*) AS n FROM protocols WHERE patient_id = ?{event_sql}",
+        params,
     ).fetchone()["n"]
 
 
@@ -1804,6 +2029,13 @@ def _read_filters(args) -> dict:
 def _save_protocol(protocol_id):
     """Shared handler for create + edit POST. Returns a Flask response."""
     db = models.get_db()
+    if protocol_id is None:
+        event_id = _require_event_create()
+    else:
+        existing = models.get_protocol(db, protocol_id)
+        if not existing:
+            abort(404)
+        event_id = _require_event_view(existing["event_id"])
     form = request.form
 
     name = form.get("patient_name", "").strip()
@@ -1820,7 +2052,8 @@ def _save_protocol(protocol_id):
     data = {f: form.get(f, "").strip() for f in models.PROTOCOL_FIELDS}
 
     if protocol_id is None:
-        new_id = models.create_protocol(db, patient_id, data, current_user.id)
+        new_id = models.create_protocol(db, patient_id, data, current_user.id,
+                                        event_id=event_id)
         db.commit()
         previous = db.execute(
             "SELECT COUNT(*) AS n FROM protocols WHERE patient_id = ? AND id != ?",

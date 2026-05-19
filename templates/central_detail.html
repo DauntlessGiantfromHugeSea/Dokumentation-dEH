@@ -33,7 +33,10 @@
 <div class="page-header">
   <div>
     <h1>Bericht <span class="muted">{{ laufende }}</span> <span class="badge type-z">zEH</span></h1>
-    <p class="tagline">Zentrale Erste Hilfe — Notfallprotokoll</p>
+    <p class="tagline">
+      {{ protocol.event_name or 'Veranstaltung nicht zugeordnet' }} ·
+      Zentrale Erste Hilfe — Notfallprotokoll
+    </p>
   </div>
   <div class="btn-row">
     {% if triage and triage.status == 'in_behandlung' %}
@@ -83,6 +86,7 @@
     {% if protocol.patient_stammnummer %}
       {{ kv("Stammnummer", protocol.patient_stammnummer) }}
     {% endif %}
+    {{ kv("Veranstaltung", protocol.event_name) }}
   </div>
   {% set has_contact = d.get("strasse") or d.get("plz") or d.get("stadt") or d.get("telefon") or d.get("krankenkasse") %}
   {% if has_contact and current_user.can_view_contact %}

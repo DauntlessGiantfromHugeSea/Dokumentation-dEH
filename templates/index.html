@@ -6,11 +6,13 @@
     <h1>Berichte</h1>
     <p class="tagline">
       Übersicht aller dezentralen und zentralen Erste-Hilfe-Berichte —
-      laufend nummeriert über beide Bereiche hinweg.
+      aktuell: <strong>{{ current_event.name if current_event else 'Veranstaltung' }}</strong>.
     </p>
   </div>
   <div class="btn-row">
-    <a class="btn small" href="{{ url_for('protocol_new_chooser') }}">+ Neuer Bericht</a>
+    {% if can_create_in_current_event %}
+      <a class="btn small" href="{{ url_for('protocol_new_chooser') }}">+ Neuer Bericht</a>
+    {% endif %}
   </div>
 </div>
 
@@ -55,6 +57,7 @@
     <tr>
       <th>Bericht</th>
       <th>Typ</th>
+      <th>Veranstaltung</th>
       <th>Datum</th>
       <th>Name</th>
       <th>Geburtsdatum</th>
@@ -73,6 +76,7 @@
           <span class="badge type-z">zEH</span>
         {% endif %}
       </td>
+      <td>{{ p.event_name or '—' }}</td>
       <td>{{ format_dt(p.event_date) or format_dt(p.created_at) }}</td>
       <td>
         {% if p.patient_id %}
