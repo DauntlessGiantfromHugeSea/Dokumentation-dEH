@@ -10,6 +10,7 @@ import base64
 import io
 from datetime import datetime
 from typing import Any
+from xml.sax.saxutils import escape
 
 from pypdf import PdfReader, PdfWriter
 
@@ -128,6 +129,11 @@ S_TXT = ParagraphStyle("Txt", fontName="Helvetica", fontSize=8.5,
                        leading=11, textColor=colors.black)
 S_SMALL = ParagraphStyle("Small", fontName="Helvetica", fontSize=7,
                          leading=9, textColor=colors.HexColor("#666666"))
+S_BOX_TXT = ParagraphStyle(
+    "BoxTxt", parent=S_TXT,
+    borderWidth=0.5, borderColor=BORDER, borderPadding=4,
+    spaceAfter=0,
+)
 
 
 def _p(text, style=S_TXT):
@@ -135,11 +141,19 @@ def _p(text, style=S_TXT):
     return Paragraph(text or "", style)
 
 
+def _long_text_box(label, value):
+    text = _v(value, "—")
+    safe = escape(text).replace("\n", "<br/>")
+    return Paragraph(f"<b>{escape(label)}</b><br/>{safe}", S_BOX_TXT)
+
+
 def _label_value(label, value, value_style=S_VAL, min_h=None):
     """Mini-Block: Label oben klein, Wert darunter.
     Akzeptiert für `value` entweder einen String oder einen ReportLab-
     Flowable (Paragraph/Table) — wenn `wrap` vorhanden ist, wird der
     Flowable direkt eingesetzt, sonst durch `_v()` als String gerendert.
+    `min_h` bleibt aus Kompatibilitätsgründen im Aufruf, darf aber keine
+    feste Tabellenhöhe erzwingen: lange Freitexte müssen mitwachsen.
     """
     if hasattr(value, "wrap"):
         value_cell = value
@@ -148,7 +162,6 @@ def _label_value(label, value, value_style=S_VAL, min_h=None):
     inner = Table(
         [[_p(label, S_LABEL)], [value_cell]],
         colWidths=["100%"],
-        rowHeights=[None, min_h] if min_h else None,
     )
     inner.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -537,23 +550,18 @@ def _vital_trend_table(d, width=CONTENT_W):
 
 
 def _section_5_verlauf(d):
-    """Section 5: Freitext-Verlauf + Vital-Trend-Tabelle."""
-    inner = Table([
-        [_label_value("5. Verlauf", d.get("verlauf"), min_h=20 * mm,
-                       value_style=S_TXT)],
-        [_p("<b>Verlauf der Vitalwerte</b>", S_SUBSEC)],
-        [_vital_trend_table(d, width=INSET_CONTENT_W)],
-    ], colWidths=[CONTENT_W])
-    inner.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.4, LIGHT_BORDER),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
-    return inner
+    """Section 5: Freitext-Verlauf + Vital-Trend-Tabelle.
+
+    Der Verlauf ist bewusst ein eigener Flowable. So kann ein langer Text
+    die Höhe selbst bestimmen und die Vitalwerte rutschen sauber nach unten
+    oder auf die nächste Seite, statt sich zu überlagern.
+    """
+    return [
+        _long_text_box("5. Verlauf", d.get("verlauf")),
+        Spacer(1, 3),
+        _subsection("Verlauf der Vitalwerte", width=CONTENT_W),
+        _vital_trend_table(d, width=CONTENT_W),
+    ]
 
 
 def _section_6_massnahmen(d):
@@ -841,7 +849,7 @@ def render_pdf(data, exporter_label=None, medical_info=None):
 
     # 5. Verlauf
     story.append(_section_bar("5. Verlauf"))
-    story.append(_section_5_verlauf(data))
+    story.extend(_section_5_verlauf(data))
     story.append(Spacer(1, 6))
 
     # 6. Maßnahmen
