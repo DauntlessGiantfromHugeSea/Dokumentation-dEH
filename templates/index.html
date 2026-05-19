@@ -11,7 +11,7 @@
   </div>
   <div class="btn-row">
     {% if can_create_in_current_event %}
-      <a class="btn small" href="{{ url_for('protocol_new_chooser') }}">+ Neuer Bericht</a>
+      <a class="btn small" href="{{ url_for('protocol_new_chooser') }}">+ Neu</a>
     {% endif %}
   </div>
 </div>
@@ -44,12 +44,16 @@
   <div class="btn-row">
     <button class="btn" type="submit">Filtern</button>
     <a class="btn secondary" href="{{ url_for('index') }}">Zurücksetzen</a>
-    <a class="btn secondary"
-       href="{{ url_for('export_csv', name=filters.name_query or '', stammnummer=filters.stammnummer or '', date_from=filters.date_from or '', date_to=filters.date_to or '') }}">
-       CSV-Export (dEH)
-    </a>
   </div>
 </form>
+
+<div class="list-tools">
+  <span class="muted">{{ protocols|length }} Einträge in dieser Ansicht</span>
+  <a class="btn small secondary"
+     href="{{ url_for('export_csv', name=filters.name_query or '', stammnummer=filters.stammnummer or '', date_from=filters.date_from or '', date_to=filters.date_to or '') }}">
+    CSV exportieren
+  </a>
+</div>
 
 {% if protocols %}
 <table class="data">

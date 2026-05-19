@@ -24,6 +24,31 @@
   </form>
 </div>
 
+<div class="workflow-strip">
+  {% if can_create_in_current_event %}
+    <a class="workflow-action primary" href="{{ url_for('triage_new') }}">
+      <span class="workflow-icon">+</span>
+      <span><strong>Anmeldung</strong><small>Patient in Triage aufnehmen</small></span>
+    </a>
+    <a class="workflow-action" href="{{ url_for('central_index') }}">
+      <span class="workflow-icon">Z</span>
+      <span><strong>Zentral</strong><small>Notfallprotokoll öffnen</small></span>
+    </a>
+    <a class="workflow-action" href="{{ url_for('protocol_new') }}">
+      <span class="workflow-icon">D</span>
+      <span><strong>Dezentral</strong><small>Kleinen Bericht schreiben</small></span>
+    </a>
+  {% endif %}
+  <a class="workflow-action" href="{{ url_for('index') }}">
+    <span class="workflow-icon">≡</span>
+    <span><strong>Berichte</strong><small>Suchen und öffnen</small></span>
+  </a>
+  <a class="workflow-action" href="{{ url_for('patient_list') }}">
+    <span class="workflow-icon">⌕</span>
+    <span><strong>Personen</strong><small>Akte und Verlauf</small></span>
+  </a>
+</div>
+
 {# ---------- Stat-Karten ---------- #}
 <div class="dash-stats">
   <div class="dash-stat">
@@ -57,57 +82,6 @@
       <span class="badge type-d">{{ stats.total.d }} dEH</span>
       <span class="badge type-z">{{ stats.total.c }} zEH</span>
     </div>
-  </div>
-</div>
-
-{# ---------- Quick links ---------- #}
-<div class="card">
-  <div class="card-header">Schnell-Aktionen</div>
-  <div class="quick-links">
-    {% if can_create_in_current_event %}
-    <a class="quick-link" href="{{ url_for('protocol_new_chooser') }}">
-      <div class="quick-icon">＋</div>
-      <div class="quick-text">
-        <div class="quick-title">Neuer Bericht</div>
-        <div class="quick-sub">Auswahl Dezentral / Zentral</div>
-      </div>
-    </a>
-    <a class="quick-link" href="{{ url_for('protocol_new') }}">
-      <div class="quick-icon">＋</div>
-      <div class="quick-text">
-        <div class="quick-title">Direkt: Dezentral</div>
-        <div class="quick-sub">DGUV-Formular</div>
-      </div>
-    </a>
-    <a class="quick-link" href="{{ url_for('central_new') }}">
-      <div class="quick-icon">＋</div>
-      <div class="quick-text">
-        <div class="quick-title">Direkt: Zentral</div>
-        <div class="quick-sub">mit Patientenprüfung</div>
-      </div>
-    </a>
-    {% endif %}
-    <a class="quick-link" href="{{ url_for('index') }}">
-      <div class="quick-icon">≡</div>
-      <div class="quick-text">
-        <div class="quick-title">Alle Berichte</div>
-        <div class="quick-sub">filterbar</div>
-      </div>
-    </a>
-    <a class="quick-link" href="{{ url_for('patient_list') }}">
-      <div class="quick-icon">⌕</div>
-      <div class="quick-text">
-        <div class="quick-title">Personen</div>
-        <div class="quick-sub">Patientenstamm</div>
-      </div>
-    </a>
-    <a class="quick-link" href="{{ url_for('export_form') }}">
-      <div class="quick-icon">↓</div>
-      <div class="quick-text">
-        <div class="quick-title">Export</div>
-        <div class="quick-sub">CSV gefiltert</div>
-      </div>
-    </a>
   </div>
 </div>
 

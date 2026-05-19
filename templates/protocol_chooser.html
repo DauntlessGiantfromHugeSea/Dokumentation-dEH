@@ -2,7 +2,7 @@
 {% block title %}Neuer Bericht{% endblock %}
 {% block content %}
 <h1>Neuen Bericht anlegen</h1>
-<p class="tagline">Wähle die Art der Erste-Hilfe-Leistung.</p>
+<p class="tagline">Wenn du unsicher bist: zentral bei Behandlung, dezentral bei kurzer Hilfeleistung.</p>
 
 <div class="chooser-grid">
   <a class="chooser-card"
@@ -10,11 +10,11 @@
                       geburtsdatum=prefill.geburtsdatum,
                       stammnummer=prefill.stammnummer) }}">
     <div class="chooser-title">Dezentrale Erste Hilfe</div>
-    <div class="chooser-subtitle">Kleines Protokoll · DGUV Information 1</div>
+    <div class="chooser-subtitle">kurz · Verband · Pflaster · kleiner Vorfall</div>
     <ul class="chooser-list">
-      <li>Verletzung / Hergang / Maßnahmen</li>
-      <li>Verbrauchtes Material</li>
-      <li>Kommentare nachträglich möglich</li>
+      <li>Name, Datum, Hergang</li>
+      <li>Maßnahme und Material</li>
+      <li>schnell gespeichert</li>
     </ul>
     <div class="chooser-cta">Wählen →</div>
   </a>
@@ -25,20 +25,17 @@
                       nachname=prefill.name.rsplit(' ', 1)[-1] if prefill.name and ' ' in prefill.name else '',
                       geburtsdatum=prefill.geburtsdatum) }}">
     <div class="chooser-title">Zentrale Erste Hilfe</div>
-    <div class="chooser-subtitle">Großes Notfallprotokoll · Behandlung</div>
+    <div class="chooser-subtitle">Behandlung · Vitalwerte · Übergabe</div>
     <ul class="chooser-list">
-      <li>Schritt 1: Person identifizieren (Vorbehandlungen?)</li>
-      <li>Schritt 2: Anamnese, Erstbefund, Messwerte</li>
-      <li>Diagnose · Maßnahmen · Verlauf · Übergabe</li>
+      <li>Patient identifizieren</li>
+      <li>Befund, Messwerte, Verlauf</li>
+      <li>Behandlung Abschließen</li>
     </ul>
     <div class="chooser-cta">Wählen →</div>
   </a>
 </div>
 
-<p class="muted" style="margin-top: 18px; font-size: 0.9rem;">
-  <strong>Tipp:</strong> Vorbehandlungen werden in beiden Richtungen erkannt
-  (Name + Geburtsdatum). Wenn jemand schon einmal in der dezentralen Erste
-  Hilfe war und jetzt zentral ankommt — oder umgekehrt — siehst du das
-  beim Anlegen.
-</p>
+<div class="hint-line">
+  Vorbehandlungen werden automatisch erkannt, sobald Name und Geburtsdatum passen.
+</div>
 {% endblock %}
