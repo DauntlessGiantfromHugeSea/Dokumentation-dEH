@@ -132,8 +132,10 @@ S_SMALL = ParagraphStyle("Small", fontName="Helvetica", fontSize=7,
 S_BOX_TXT = ParagraphStyle(
     "BoxTxt", parent=S_TXT,
     fontSize=8.2, leading=10.5,
-    borderWidth=0.5, borderColor=BORDER, borderPadding=4,
-    spaceAfter=0,
+    leftIndent=4,
+    rightIndent=4,
+    spaceBefore=3,
+    spaceAfter=4,
 )
 
 
