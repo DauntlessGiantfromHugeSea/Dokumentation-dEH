@@ -131,6 +131,7 @@ S_SMALL = ParagraphStyle("Small", fontName="Helvetica", fontSize=7,
                          leading=9, textColor=colors.HexColor("#666666"))
 S_BOX_TXT = ParagraphStyle(
     "BoxTxt", parent=S_TXT,
+    fontSize=8.2, leading=10.5,
     borderWidth=0.5, borderColor=BORDER, borderPadding=4,
     spaceAfter=0,
 )
@@ -141,10 +142,10 @@ def _p(text, style=S_TXT):
     return Paragraph(text or "", style)
 
 
-def _long_text_box(label, value):
+def _long_text_box(value):
     text = _v(value, "—")
     safe = escape(text).replace("\n", "<br/>")
-    return Paragraph(f"<b>{escape(label)}</b><br/>{safe}", S_BOX_TXT)
+    return Paragraph(safe, S_BOX_TXT)
 
 
 def _label_value(label, value, value_style=S_VAL, min_h=None):
@@ -557,7 +558,7 @@ def _section_5_verlauf(d):
     oder auf die nächste Seite, statt sich zu überlagern.
     """
     return [
-        _long_text_box("5. Verlauf", d.get("verlauf")),
+        _long_text_box(d.get("verlauf")),
         Spacer(1, 3),
         _subsection("Verlauf der Vitalwerte", width=CONTENT_W),
         _vital_trend_table(d, width=CONTENT_W),
