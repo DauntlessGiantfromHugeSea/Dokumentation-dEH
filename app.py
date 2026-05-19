@@ -1047,13 +1047,33 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/triage/<int:tid>/start", methods=["POST"])
     @login_required
     def triage_start(tid: int):
+        return _open_triage_protocol(tid)
+
+    @app.route("/triage/<int:tid>/open", methods=["POST"])
+    @login_required
+    def triage_open(tid: int):
+        return _open_triage_protocol(tid)
+
+    def _open_triage_protocol(tid: int):
         db = models.get_db()
         entry = models.get_triage_entry(db, tid)
         if not entry:
             abort(404)
-        # Status auf in_behandlung setzen
-        models.start_triage_treatment(db, tid)
+        _require_event_view(entry.get("event_id"))
+        if current_user.is_triage_intake:
+            abort(403)
+        if entry.get("status") not in ("wartend", "in_behandlung"):
+            flash("Dieser Triage-Eintrag ist nicht mehr in Behandlung.", "error")
+            return redirect(url_for("triage_list"))
+        if not entry.get("treatment_protocol_id") and not models.user_can_create_in_event(
+                db, current_user.id, entry.get("event_id"), current_user.is_admin):
+            abort(403)
+        # Status auf in_behandlung setzen und den aktuellen Bearbeiter merken.
+        models.start_triage_treatment(db, tid, started_by=current_user.id)
         db.commit()
+        if entry.get("treatment_protocol_id"):
+            return redirect(url_for("central_index")
+                            + f"#{entry['treatment_protocol_id']}")
         # Zur SPA mit Pre-fill der Identifikations-Felder
         vorname = ""
         nachname = ""
@@ -1124,16 +1144,33 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             return {"error": "not found"}, 404
+        _require_event_view(rec.get("event_id"))
         triage = models.get_triage_for_protocol(db, pid)
         if not triage:
             return {"has_triage": False}
         finished_at = triage.get("treatment_finished_at")
+        started_by_label = (
+            triage.get("started_by_full_name")
+            or triage.get("started_by_username")
+            or triage.get("behandler_full_name")
+            or triage.get("behandler_username")
+            or ""
+        )
         return {
             "has_triage": True,
             "triage_id": triage["id"],
             "status": triage.get("status"),
             "category": triage.get("category"),
             "started_at": triage.get("treatment_started_at"),
+            "started_at_label": (
+                models.format_dt(triage.get("treatment_started_at"))
+                if triage.get("treatment_started_at") else ""
+            ),
+            "started_by": started_by_label,
+            "started_by_is_current_user": (
+                bool(triage.get("treatment_started_by"))
+                and triage.get("treatment_started_by") == current_user.id
+            ),
             "finished_at": finished_at,
             "finished_at_label": models.format_dt(finished_at) if finished_at else "",
         }
@@ -1150,6 +1187,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         rec = models.get_central_protocol(db, pid)
         if not rec:
             return {"error": "not found"}, 404
+        _require_event_view(rec.get("event_id"))
         triage = models.get_triage_for_protocol(db, pid)
         if not triage:
             return {"error": "no triage entry linked"}, 400
@@ -1375,7 +1413,8 @@ def create_app(test_config: dict | None = None) -> Flask:
         except (ValueError, TypeError):
             tid = 0
         if tid:
-            models.link_triage_to_central_protocol(db, tid, new_id)
+            models.link_triage_to_central_protocol(
+                db, tid, new_id, started_by=current_user.id)
         db.commit()
         return {"id": new_id}, 201
 

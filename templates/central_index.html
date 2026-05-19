@@ -1132,7 +1132,7 @@ if ('serviceWorker' in navigator) {
 
           <div class="section finish-section" id="finish-section"
                style="display: none;">
-            <h3 style="margin: 0 0 8px;">Behandlung abschließen</h3>
+            <h3 style="margin: 0 0 8px;">Behandlung Abschließen</h3>
             <p style="margin: 0 0 12px; font-size: 0.92rem;">
               Wenn die Behandlung vollständig dokumentiert ist, hier
               klicken — der Patient wird aus der Triage-Liste entfernt.
@@ -1142,7 +1142,7 @@ if ('serviceWorker' in navigator) {
             <div id="finish-status" class="finish-status"></div>
             <button class="btn primary lg" id="btn-finish-treatment"
                     type="button" style="margin-top: 8px;">
-              ✓ Behandlung abschließen
+              Behandlung Abschließen
             </button>
           </div>
         </section>
@@ -1592,11 +1592,18 @@ if ('serviceWorker' in navigator) {
         }
       } else {
         finishSection.classList.remove('finished');
+        const activeBy = data.started_by
+          ? ' · aktiv bei ' + escapeHtml(data.started_by)
+          : '';
+        const startedAt = data.started_at_label
+          ? ' seit ' + escapeHtml(data.started_at_label)
+          : '';
         finishStatus.innerHTML =
-          '<span class="badge totp-off">Triage-Status: ' + escapeHtml(data.status || '') + '</span>';
+          '<span class="badge totp-on">Aktiv</span> '
+          + '<span class="muted">' + startedAt + activeBy + '</span>';
         if (btnFinish) {
           btnFinish.disabled = false;
-          btnFinish.textContent = '✓ Behandlung abschließen';
+          btnFinish.textContent = 'Behandlung Abschließen';
         }
       }
     } catch (_) {

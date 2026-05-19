@@ -40,18 +40,33 @@
   </div>
   <div class="btn-row">
     {% if triage and triage.status == 'in_behandlung' %}
+      {% set active_by = triage.started_by_full_name or triage.started_by_username or triage.behandler_full_name or triage.behandler_username %}
+      <span class="badge totp-on">
+        Aktiv{% if active_by %}: {{ active_by }}{% endif %}
+      </span>
       <form method="post"
             action="{{ url_for('triage_finish', tid=triage.id) }}"
             style="display:inline-block;"
             onsubmit="return confirm('Behandlung wirklich abschließen? Der Eintrag verschwindet damit aus der Triage-Liste.');">
         <button class="btn" type="submit" style="font-weight: 600;">
-          ✓ Behandlung beenden
+          Behandlung Abschließen
         </button>
       </form>
     {% endif %}
     {% if is_owner or not current_user.is_zentral_only %}
-      <a class="btn secondary small"
-         href="{{ url_for('central_index') }}#{{ protocol.id }}">Bearbeiten</a>
+      {% if triage and triage.status == 'in_behandlung' %}
+        <form method="post"
+              action="{{ url_for('triage_open', tid=triage.id) }}"
+              style="display:inline-block;"
+              {% if triage.treatment_started_by != current_user.id %}
+                onsubmit="return confirm('Es ist bereits jemand aktiv. Möchtest du den Patienten übernehmen und das Protokoll öffnen?');"
+              {% endif %}>
+          <button class="btn secondary small" type="submit">Übernehmen &amp; bearbeiten</button>
+        </form>
+      {% else %}
+        <a class="btn secondary small"
+           href="{{ url_for('central_index') }}#{{ protocol.id }}">Bearbeiten</a>
+      {% endif %}
     {% endif %}
     {% if current_user.can_export_pdf %}
       <a class="btn small"
@@ -245,8 +260,9 @@
     {{ kv("Angemeldet von",
           triage.anmelder_full_name or triage.anmelder_username or '—') }}
     {{ kv("Behandlung gestartet", format_dt(triage.treatment_started_at)) }}
-    {{ kv("Behandelt von",
-          triage.behandler_full_name or triage.behandler_username
+    {{ kv("Übernommen von",
+          triage.started_by_full_name or triage.started_by_username
+          or triage.behandler_full_name or triage.behandler_username
           or triage.behandler_name_summary or '—') }}
     {% if triage.treatment_finished_at %}
       {{ kv("Behandlung beendet", format_dt(triage.treatment_finished_at)) }}
@@ -274,7 +290,7 @@
   {% if triage.status == 'in_behandlung' %}
     <p class="muted" style="margin: 12px 0 0; font-size: 0.85rem;">
       <strong>Tipp:</strong> Wenn die Behandlung fertig ist, oben auf
-      „✓ Behandlung beenden" klicken — der Patient verschwindet damit
+      „Behandlung Abschließen" klicken — der Patient verschwindet damit
       automatisch aus der Triage-Liste.
     </p>
   {% endif %}

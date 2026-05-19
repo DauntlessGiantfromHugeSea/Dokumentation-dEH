@@ -59,8 +59,9 @@
       {% endif %}
       {% if not current_user.is_triage_intake %}
       <div class="triage-actions">
-        <form method="post" action="{{ url_for('triage_start', tid=t.id) }}"
-              style="display: inline-block;">
+        <form method="post" action="{{ url_for('triage_open', tid=t.id) }}"
+              style="display: inline-block;"
+              onsubmit="return confirm('Möchtest du den Patienten übernehmen und ein Notfallprotokoll öffnen?');">
           <button class="btn" type="submit">Behandlung starten →</button>
         </form>
         <form method="post" action="{{ url_for('triage_cancel', tid=t.id) }}"
@@ -89,6 +90,7 @@
         <th>Ankunft</th>
         <th>SK</th>
         <th>Name</th>
+        <th>Aktiv</th>
         <th>Bericht</th>
         {% if not current_user.is_triage_intake %}
           <th class="right">Aktion</th>
@@ -108,6 +110,15 @@
         </td>
         <td>{{ t.patient_name_resolved or t.name or '—' }}</td>
         <td>
+          <span class="badge totp-on">aktiv</span>
+          {% set started_by = t.started_by_full_name or t.started_by_username %}
+          {% if started_by %}
+            <span class="muted">bei {{ started_by }}</span>
+          {% else %}
+            <span class="muted">noch nicht zugewiesen</span>
+          {% endif %}
+        </td>
+        <td>
           {% if t.protocol_laufende_nr %}
             <a href="{{ url_for('central_detail', pid=t.treatment_protocol_id) }}">
               {{ t.protocol_laufende_nr }}
@@ -116,10 +127,20 @@
         </td>
         {% if not current_user.is_triage_intake %}
         <td class="right">
+          {% set started_by = t.started_by_full_name or t.started_by_username %}
+          <form method="post" action="{{ url_for('triage_open', tid=t.id) }}"
+                style="display: inline-block;"
+                {% if t.treatment_started_by != current_user.id %}
+                  onsubmit="return confirm('{% if started_by %}Es ist bereits jemand aktiv. Möchtest du den Patienten übernehmen und das Protokoll öffnen?{% else %}Möchtest du den Patienten übernehmen und das Protokoll öffnen?{% endif %}');"
+                {% endif %}>
+            <button class="btn small secondary" type="submit">
+              {% if t.treatment_protocol_id %}Protokoll weiterführen{% else %}Protokoll öffnen{% endif %}
+            </button>
+          </form>
           <form method="post" action="{{ url_for('triage_finish', tid=t.id) }}"
                 style="display: inline-block;"
                 onsubmit="return confirm('Behandlung von „{{ t.patient_name_resolved or t.name or 'Patient' }}“ wirklich abschließen?');">
-            <button class="btn small" type="submit">Behandlung abschließen</button>
+            <button class="btn small" type="submit">Behandlung Abschließen</button>
           </form>
         </td>
         {% endif %}
@@ -166,6 +187,12 @@
           {% else %}—{% endif %}
         </td>
         <td class="right">
+          {% if t.treatment_protocol_id %}
+            <a class="btn small secondary"
+               href="{{ url_for('central_detail', pid=t.treatment_protocol_id) }}">
+              Protokoll öffnen
+            </a>
+          {% endif %}
           <form method="post" action="{{ url_for('triage_reopen', tid=t.id) }}"
                 style="display: inline-block;"
                 onsubmit="return confirm('Behandlung von „{{ t.patient_name_resolved or t.name or 'Patient' }}“ wieder öffnen?');">

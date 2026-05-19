@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS triage_entries (
     status                   TEXT NOT NULL DEFAULT 'wartend',
                               -- 'wartend' | 'in_behandlung' | 'abgeschlossen' | 'abgebrochen'
     treatment_started_at     TEXT,
+    treatment_started_by     INTEGER REFERENCES users(id),
     treatment_finished_at    TEXT,
     treatment_protocol_id    INTEGER REFERENCES central_protocols(id)
                               ON DELETE SET NULL,
@@ -298,6 +299,10 @@ def init_db(db_path: Path) -> None:
         if "treatment_finished_at" not in triage_cols:
             conn.execute(
                 "ALTER TABLE triage_entries ADD COLUMN treatment_finished_at TEXT"
+            )
+        if "treatment_started_by" not in triage_cols:
+            conn.execute(
+                "ALTER TABLE triage_entries ADD COLUMN treatment_started_by INTEGER"
             )
 
         default_event_id = get_default_event_id(conn)
@@ -1745,12 +1750,15 @@ def get_triage_for_protocol(conn, protocol_id: int) -> Optional[dict]:
         SELECT t.*,
                u_anm.username     AS anmelder_username,
                u_anm.full_name    AS anmelder_full_name,
+               u_start.username   AS started_by_username,
+               u_start.full_name  AS started_by_full_name,
                cp.created_by      AS protocol_created_by,
                u_beh.username     AS behandler_username,
                u_beh.full_name    AS behandler_full_name,
                cp.name_summary    AS behandler_name_summary
         FROM triage_entries t
         LEFT JOIN users u_anm           ON u_anm.id = t.created_by
+        LEFT JOIN users u_start         ON u_start.id = t.treatment_started_by
         LEFT JOIN central_protocols cp  ON cp.id = t.treatment_protocol_id
         LEFT JOIN users u_beh           ON u_beh.id = cp.created_by
         WHERE t.treatment_protocol_id = ?
@@ -1874,10 +1882,13 @@ def list_triage_active(conn, limit: int = 50,
     return conn.execute(
         """
         SELECT t.*, p.name AS patient_name_resolved,
-               cp.laufende_nr AS protocol_laufende_nr
+               cp.laufende_nr AS protocol_laufende_nr,
+               u.username AS started_by_username,
+               u.full_name AS started_by_full_name
         FROM triage_entries t
         LEFT JOIN patients p ON p.id = t.patient_id
         LEFT JOIN central_protocols cp ON cp.id = t.treatment_protocol_id
+        LEFT JOIN users u ON u.id = t.treatment_started_by
         WHERE t.status = 'in_behandlung'
           AND (? IS NULL OR t.event_id = ?)
         ORDER BY datetime(t.arrival_at) DESC
@@ -1921,10 +1932,13 @@ def list_triage_recently_finished(conn, limit: int = 10,
     return conn.execute(
         """
         SELECT t.*, p.name AS patient_name_resolved,
-               cp.laufende_nr AS protocol_laufende_nr
+               cp.laufende_nr AS protocol_laufende_nr,
+               u.username AS started_by_username,
+               u.full_name AS started_by_full_name
         FROM triage_entries t
         LEFT JOIN patients p ON p.id = t.patient_id
         LEFT JOIN central_protocols cp ON cp.id = t.treatment_protocol_id
+        LEFT JOIN users u ON u.id = t.treatment_started_by
         WHERE t.status = 'abgeschlossen'
           AND (? IS NULL OR t.event_id = ?)
         ORDER BY datetime(COALESCE(t.treatment_finished_at, t.arrival_at)) DESC
@@ -1935,21 +1949,26 @@ def list_triage_recently_finished(conn, limit: int = 10,
 
 
 def start_triage_treatment(conn, tid: int,
-                            protocol_id: Optional[int] = None) -> bool:
+                            protocol_id: Optional[int] = None,
+                            started_by: Optional[int] = None) -> bool:
     cur = conn.execute(
         """
         UPDATE triage_entries
         SET status = 'in_behandlung',
-            treatment_started_at = datetime('now'),
+            treatment_started_at = COALESCE(treatment_started_at,
+                                             datetime('now')),
+            treatment_started_by = CASE WHEN ? IS NOT NULL
+                                        THEN ? ELSE treatment_started_by END,
             treatment_protocol_id = COALESCE(?, treatment_protocol_id)
-        WHERE id = ? AND status = 'wartend'
+        WHERE id = ? AND status IN ('wartend', 'in_behandlung')
         """,
-        (protocol_id, tid),
+        (started_by, started_by, protocol_id, tid),
     )
     return cur.rowcount > 0
 
 
-def link_triage_to_central_protocol(conn, tid: int, protocol_id: int) -> None:
+def link_triage_to_central_protocol(conn, tid: int, protocol_id: int,
+                                    started_by: Optional[int] = None) -> None:
     conn.execute(
         """
         UPDATE triage_entries
@@ -1957,10 +1976,11 @@ def link_triage_to_central_protocol(conn, tid: int, protocol_id: int) -> None:
             status = CASE WHEN status = 'wartend'
                           THEN 'in_behandlung' ELSE status END,
             treatment_started_at = COALESCE(treatment_started_at,
-                                             datetime('now'))
+                                             datetime('now')),
+            treatment_started_by = COALESCE(?, treatment_started_by)
         WHERE id = ?
         """,
-        (protocol_id, tid),
+        (protocol_id, started_by, tid),
     )
 
 
