@@ -68,7 +68,7 @@ def _patient_header(patient, days, exporter_label, blanko):
     name = (patient.get("name") or "").strip()
     geb = (patient.get("geburtsdatum") or "").strip()
     stamm = (patient.get("stammnummer") or "").strip()
-    period = f"{_fmt_date(days[0])} – {_fmt_date(days[-1])}.{days[-1].year}"
+    period = f"{days[0].strftime('%d.%m.')} – {days[-1].strftime('%d.%m.%Y')}"
 
     title_para = Paragraph(
         "Medikamenten-Vergabe-Protokoll"
@@ -79,8 +79,14 @@ def _patient_header(patient, days, exporter_label, blanko):
     if name: sub_lines.append(f"<b>Patient/in:</b> {name}")
     else: sub_lines.append(
         "<b>Patient/in:</b> ______________________________________")
-    if geb: sub_lines.append(f"<b>Geb.:</b> {_fmt_date(geb)}")
-    else: sub_lines.append("<b>Geb.:</b> __________")
+    if geb:
+        try:
+            d = _date.fromisoformat(str(geb)[:10])
+            sub_lines.append(f"<b>Geb.:</b> {d.strftime('%d.%m.%Y')}")
+        except Exception:
+            sub_lines.append(f"<b>Geb.:</b> {geb}")
+    else:
+        sub_lines.append("<b>Geb.:</b> __________")
     if stamm: sub_lines.append(f"<b>Stamm-Nr.:</b> {stamm}")
     sub_lines.append(f"<b>Zeitraum:</b> {period}")
     sub_para = Paragraph(" &nbsp;·&nbsp; ".join(sub_lines), S_TXT)
@@ -98,30 +104,30 @@ def _build_grid_header(days):
     # Zweite Zeile: leerer Kopf-Cell + 4 Slot-Mini-Spalten je Tag
     sub = [Paragraph("", S_SLOT)]
     for _ in days:
-        sub.append(Paragraph("M&nbsp;·&nbsp;Mi&nbsp;·&nbsp;A&nbsp;·&nbsp;N",
+        sub.append(Paragraph("M&nbsp;&nbsp;Mi&nbsp;&nbsp;A&nbsp;&nbsp;N",
                               S_SLOT))
-    sub.append(Paragraph("✎ Datum / Uhrzeit / Slot", S_SLOT))
+    sub.append(Paragraph("Datum / Uhrzeit", S_SLOT))
     return [top, sub]
 
 
 def _slot_cell(med, day_iso, slot, admin_map, blanko):
-    """Eine kleine Mini-Zelle: ✓ wenn vergeben, sonst Quadrat zum Abhaken."""
-    if med and slot in (
-        # Schedule: nur Slots zeigen, die im Plan sind, sonst Strich
-        "morgens" if med.get("morgens") else "",
-        "mittags" if med.get("mittags") else "",
-        "abends"  if med.get("abends")  else "",
-        "nachts"  if med.get("nachts")  else "",
-    ):
-        if not blanko and med:
-            rec = admin_map.get((med["id"], day_iso, slot))
-            if rec:
-                by = (rec.get("by_full_name") or rec.get("by_username")
-                      or "").split(" ")[0][:7]
-                return Paragraph(f"✓<br/><font size=5>{by}</font>", S_TICK)
-        return Paragraph("☐", S_SLOT)
-    # nicht im Schedule
-    return Paragraph("·", S_SLOT)
+    """Mini-Zelle pro Slot. Leer = noch nicht gegeben (die Zellen-Border
+    selbst dient als ankreuzbares Kästchen). „✓" mit Initialen wenn schon
+    vergeben. Strich „–" nur wenn klar nicht im Plan und KEIN Blanko."""
+    # Blanko: alle Slots sind „leer & ankreuzbar" — die Zellenborder ist
+    # der visuelle Kreuz-Kasten. Nichts rendern.
+    if blanko or not med:
+        return Paragraph("", S_SLOT)
+    in_plan = bool(med.get(slot))
+    if not in_plan:
+        return Paragraph("–", S_SLOT)
+    rec = admin_map.get((med["id"], day_iso, slot))
+    if rec:
+        by = (rec.get("by_full_name") or rec.get("by_username")
+              or "").split(" ")[0][:7]
+        return Paragraph(f"<b>✓</b><br/><font size=5>{by}</font>", S_TICK)
+    # Plan vorhanden, aber noch nicht gegeben → leere Zelle (Border = Kasten)
+    return Paragraph("", S_SLOT)
 
 
 def _med_grid(meds, days, admin_map, blanko):
@@ -148,10 +154,11 @@ def _med_grid(meds, days, admin_map, blanko):
             if lag:
                 cell.append(Paragraph(f"<i>Lagerung:</i> {lag}", S_SMALL))
         else:
-            # Leere Zeile fürs Handschriftliche
-            cell = [Paragraph("&nbsp;", S_TXT),
-                    Paragraph("Dosierung: ______________", S_SMALL),
-                    Paragraph("Lagerung: ______________", S_SMALL)]
+            # Leere Zeile fürs Handschriftliche — Underscores knapper,
+            # damit sie in die 44mm-Spalte passen.
+            cell = [Paragraph("____________________", S_TXT_BOLD),
+                    Paragraph("Dosis: __________", S_SMALL),
+                    Paragraph("Lager.: __________", S_SMALL)]
 
         row = [cell]
         for d in days:
@@ -162,29 +169,31 @@ def _med_grid(meds, days, admin_map, blanko):
                                                admin_map, blanko)])
             # Mini-Tabelle der 4 Slots nebeneinander
             slot_tbl = Table([[c[0] for c in slot_cells]],
-                             colWidths=[7.0 * mm] * 4,
-                             rowHeights=[10 * mm])
+                             colWidths=[5.7 * mm] * 4,
+                             rowHeights=[11 * mm])
             slot_tbl.setStyle(TableStyle([
-                ("BOX", (0, 0), (-1, -1), 0.25, BORDER_SOFT),
-                ("INNERGRID", (0, 0), (-1, -1), 0.25, BORDER_SOFT),
+                ("BOX", (0, 0), (-1, -1), 0.4, BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.3, BORDER),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 1),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 1),
                 ("TOPPADDING", (0, 0), (-1, -1), 1),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
             ]))
             row.append(slot_tbl)
-        # Bei-Bedarf-Spalte: freies Feld
+        # Bei-Bedarf-Spalte: freies Feld zum Eintragen
         row.append(Paragraph(
-            ("__________________<br/>__________________<br/>"
-             "__________________") if not med
-            else ("__________________<br/>__________________"),
+            "_____________<br/>_____________<br/>_____________",
             S_SMALL))
         rows.append(row)
 
-    col_widths = ([56 * mm]
-                  + [30 * mm] * len(days)
-                  + [38 * mm])
+    # Spaltenbreiten: A4 landscape = 297mm, minus 10mm Marge je Seite
+    # → 277mm verfügbar. Med + 7×Tage + Bedarf muss exakt reinpassen.
+    col_widths = ([44 * mm]                    # Medikament
+                  + [28 * mm] * len(days)      # 7 Tage à 28mm = 196mm
+                  + [37 * mm])                 # Bei Bedarf
+    # Summe: 44 + 196 + 37 = 277mm ✓
     tbl = Table(rows, colWidths=col_widths, repeatRows=2)
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 1), BG_HEAD),
@@ -244,10 +253,10 @@ def _legend_and_footer(patient_extra, exporter_label, blanko):
         S_SMALL))
     parts.append(Spacer(1, 4))
     parts.append(Paragraph(
-        "Legende: <b>☐</b> noch nicht gegeben &nbsp;·&nbsp; "
-        "<b>✓</b> gegeben (mit Initialen) &nbsp;·&nbsp; "
-        "<b>·</b> nicht im Plan &nbsp;·&nbsp; "
-        "<b>M</b> = morgens, <b>Mi</b> = mittags, "
+        "<b>Legende:</b> leeres Kästchen = noch nicht gegeben "
+        "&nbsp;·&nbsp; <b>✓</b> gegeben (mit Initialen) "
+        "&nbsp;·&nbsp; <b>–</b> nicht im Plan "
+        "&nbsp;·&nbsp; <b>M</b> = morgens, <b>Mi</b> = mittags, "
         "<b>A</b> = abends, <b>N</b> = nachts", S_SMALL))
     return parts
 
