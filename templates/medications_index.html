@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Medikamentenpläne{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Medikamentenpläne</h1>
+    <p class="tagline">
+      Pro Person ein Plan — täglich abhaken, ausdrucken oder als
+      Blanko-PDF für den Stift exportieren.
+    </p>
+  </div>
+  <div class="btn-row">
+    <a class="btn small secondary" href="{{ url_for('medications_blanko_pdf') }}"
+       target="_blank">Blanko-PDF herunterladen</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Person für Plan wählen</div>
+  <form method="get" action="" id="goPatient" class="stack">
+    <label class="field">
+      Patient
+      <select name="patient_id" required id="patientSelect">
+        <option value="">— bitte wählen —</option>
+        {% for p in all_patients %}
+          <option value="{{ p.id }}">
+            {{ p.name }} · geb. {{ format_dt(p.geburtsdatum) }}
+            {% if p.stammnummer %}· {{ p.stammnummer }}{% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <div><button class="btn" type="submit">Plan öffnen</button></div>
+  </form>
+  <script>
+    document.getElementById('goPatient').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var v = document.getElementById('patientSelect').value;
+      if (v) window.location = '/medications/patient/' + v;
+    });
+  </script>
+</div>
+
+<div class="card">
+  <div class="card-header">Personen mit aktivem Medikamentenplan
+    ({{ patients_with_meds|length }})</div>
+  {% if patients_with_meds %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Geburtsdatum</th>
+          <th>Stamm-Nr.</th>
+          <th class="right">Medikamente</th>
+          <th>Zuletzt geändert</th>
+          <th class="right">Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in patients_with_meds %}
+        <tr>
+          <td><strong>{{ p.name }}</strong></td>
+          <td>{{ format_dt(p.geburtsdatum) }}</td>
+          <td>{{ p.stammnummer or '—' }}</td>
+          <td class="right">{{ p.med_count }}</td>
+          <td>{{ format_dt(p.last_added) }}</td>
+          <td class="right">
+            <a class="btn small secondary"
+               href="{{ url_for('medications_patient', patient_id=p.id) }}">Öffnen</a>
+            <a class="btn small"
+               href="{{ url_for('medications_plan_pdf', patient_id=p.id) }}"
+               target="_blank">PDF</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Noch keine Medikamentenpläne hinterlegt — wähle oben
+      eine Person, um den ersten anzulegen.</p>
+  {% endif %}
+</div>
+{% endblock %}

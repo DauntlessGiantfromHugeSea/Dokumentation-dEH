@@ -1631,6 +1631,242 @@ def create_app(test_config: dict | None = None) -> Flask:
             return {"error": "not found"}, 404
         return summary
 
+    # ----- Medikamentenplan (admin-only) -----
+
+    @app.route("/medications")
+    @login_required
+    def medications_index():
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        patients = models.list_patients_with_medications(db)
+        all_patients = models.list_patients(db, event_id=None)
+        return render_template(
+            "medications_index.html",
+            patients_with_meds=patients,
+            all_patients=all_patients,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/medications/patient/<int:patient_id>")
+    @login_required
+    def medications_patient(patient_id: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        patient = models.get_patient(db, patient_id)
+        if not patient:
+            abort(404)
+        meds = models.list_medications_for_patient(db, patient_id,
+                                                    include_inactive=True)
+        # 7-Tage-Fenster ab today (oder ab `start` querystring)
+        from datetime import date, timedelta
+        try:
+            start = date.fromisoformat(
+                request.args.get("start") or date.today().isoformat()
+            )
+        except ValueError:
+            start = date.today()
+        days = [start + timedelta(days=i) for i in range(7)]
+        admins = models.list_administrations_for_patient(
+            db, patient_id,
+            date_from=days[0].isoformat(),
+            date_to=days[-1].isoformat(),
+        )
+        # Map zur schnellen Lookup: (medication_id, day, slot) -> row
+        admin_map = {(a["medication_id"], a["day_date"], a["slot"]): a
+                     for a in admins}
+        return render_template(
+            "medications_patient.html",
+            patient=patient,
+            meds=meds,
+            days=days,
+            slots=models.MEDICATION_SLOTS,
+            slot_labels=models.MEDICATION_SLOT_LABELS,
+            admin_map=admin_map,
+            start=start,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/medications/patient/<int:patient_id>/add",
+               methods=["POST"])
+    @login_required
+    def medications_add(patient_id: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        if not models.get_patient(db, patient_id):
+            abort(404)
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            flash("Name des Medikaments fehlt.", "error")
+            return redirect(url_for("medications_patient",
+                                     patient_id=patient_id))
+        models.create_medication(
+            db,
+            patient_id=patient_id,
+            name=name,
+            dosage=request.form.get("dosage"),
+            morgens=bool(request.form.get("morgens")),
+            mittags=bool(request.form.get("mittags")),
+            abends=bool(request.form.get("abends")),
+            nachts=bool(request.form.get("nachts")),
+            bei_bedarf=bool(request.form.get("bei_bedarf")),
+            lagerung=request.form.get("lagerung"),
+            notes=request.form.get("notes"),
+            start_date=(request.form.get("start_date") or "").strip() or None,
+            end_date=(request.form.get("end_date") or "").strip() or None,
+            created_by=current_user.id,
+        )
+        db.commit()
+        flash(f"Medikament „{name}“ hinzugefügt.", "success")
+        return redirect(url_for("medications_patient",
+                                 patient_id=patient_id))
+
+    @app.route("/medications/<int:mid>/delete", methods=["POST"])
+    @login_required
+    def medications_delete(mid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        med = models.get_medication(db, mid)
+        if not med:
+            abort(404)
+        patient_id = med["patient_id"]
+        models.delete_medication(db, mid)
+        db.commit()
+        flash(f"Medikament „{med['name']}“ entfernt.", "success")
+        return redirect(url_for("medications_patient",
+                                 patient_id=patient_id))
+
+    @app.route("/medications/<int:mid>/toggle-active", methods=["POST"])
+    @login_required
+    def medications_toggle_active(mid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        med = models.get_medication(db, mid)
+        if not med:
+            abort(404)
+        models.set_medication_active(db, mid, not med["active"])
+        db.commit()
+        return redirect(url_for("medications_patient",
+                                 patient_id=med["patient_id"]))
+
+    @app.route("/medications/<int:mid>/administer", methods=["POST"])
+    @login_required
+    def medications_administer(mid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        med = models.get_medication(db, mid)
+        if not med:
+            abort(404)
+        day = (request.form.get("day") or "").strip()
+        slot = (request.form.get("slot") or "").strip()
+        action = (request.form.get("action") or "give").strip()
+        if slot not in models.MEDICATION_SLOTS or not day:
+            return {"error": "invalid slot or day"}, 400
+        if action == "undo":
+            models.remove_medication_administration(
+                db, medication_id=mid, day_date=day, slot=slot)
+        else:
+            models.record_medication_administration(
+                db, medication_id=mid, day_date=day, slot=slot,
+                administered_by=current_user.id)
+        db.commit()
+        return {"ok": True}
+
+    @app.route("/medications/patient/<int:patient_id>/plan.pdf")
+    @login_required
+    def medications_plan_pdf(patient_id: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        patient = models.get_patient(db, patient_id)
+        if not patient:
+            abort(404)
+        from datetime import date, timedelta
+        try:
+            start = date.fromisoformat(
+                request.args.get("start") or date.today().isoformat()
+            )
+        except ValueError:
+            start = date.today()
+        days = [start + timedelta(days=i) for i in range(7)]
+        meds = models.list_medications_for_patient(db, patient_id,
+                                                    include_inactive=False)
+        admins = models.list_administrations_for_patient(
+            db, patient_id,
+            date_from=days[0].isoformat(),
+            date_to=days[-1].isoformat(),
+        )
+        admin_map = {(a["medication_id"], a["day_date"], a["slot"]):
+                     dict(a) for a in admins}
+        from medication_plan_pdf import render_medication_plan_pdf
+        pdf_bytes = render_medication_plan_pdf(
+            patient=dict(patient),
+            medications=[dict(m) for m in meds],
+            days=days,
+            admin_map=admin_map,
+            exporter_label=(current_user.full_name
+                            or current_user.username),
+            patient_extra={
+                "allergies_text": patient["allergies_text"],
+                "emergency_contact_name":
+                    patient["emergency_contact_name"],
+                "emergency_contact_phone":
+                    patient["emergency_contact_phone"],
+                "emergency_contact_relation":
+                    patient["emergency_contact_relation"],
+            },
+        )
+        name_safe = (patient["name"] or "Patient").replace(" ", "_")
+        filename = f"Medikamentenplan_{name_safe}_{start.isoformat()}.pdf"
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{filename}"'},
+        )
+
+    @app.route("/medications/blanko.pdf")
+    @login_required
+    def medications_blanko_pdf():
+        """Blanko-Plan ohne Patientendaten — eine Seite, eine Person.
+        Querystring `name` und `geburtsdatum` werden optional übernommen,
+        damit man dasselbe Endpoint auch mit vorgefülltem Header nutzen kann.
+        """
+        if not current_user.is_admin:
+            abort(403)
+        from datetime import date, timedelta
+        try:
+            start = date.fromisoformat(
+                request.args.get("start") or date.today().isoformat()
+            )
+        except ValueError:
+            start = date.today()
+        days = [start + timedelta(days=i) for i in range(7)]
+        from medication_plan_pdf import render_medication_plan_pdf
+        pdf_bytes = render_medication_plan_pdf(
+            patient={
+                "name": (request.args.get("name") or "").strip(),
+                "geburtsdatum":
+                    (request.args.get("geburtsdatum") or "").strip(),
+                "stammnummer": "",
+            },
+            medications=[],
+            days=days,
+            admin_map={},
+            exporter_label=(current_user.full_name
+                            or current_user.username),
+            blanko=True,
+        )
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="Medikamentenplan_Blanko_{start.isoformat()}.pdf"'},
+        )
+
     # ----- Account (any logged-in user) -----
 
     @app.route("/account/password", methods=["GET", "POST"])

@@ -65,6 +65,9 @@
           <a href="{{ url_for('patient_list') }}">Personen</a>
           <a href="{{ url_for('export_form') }}">Export</a>
         {% endif %}
+        {% if current_user.is_admin %}
+          <a href="{{ url_for('medications_index') }}">Medikamente</a>
+        {% endif %}
       </nav>
       <span class="user">
         {% if available_events|length > 1 %}

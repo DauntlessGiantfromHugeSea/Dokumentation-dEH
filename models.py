@@ -190,6 +190,39 @@ CREATE TABLE IF NOT EXISTS triage_entries (
 
 CREATE INDEX IF NOT EXISTS idx_triage_status ON triage_entries(status);
 CREATE INDEX IF NOT EXISTS idx_triage_category ON triage_entries(category);
+
+CREATE TABLE IF NOT EXISTS medications (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id    INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    dosage        TEXT,
+    morgens       INTEGER NOT NULL DEFAULT 0,
+    mittags       INTEGER NOT NULL DEFAULT 0,
+    abends        INTEGER NOT NULL DEFAULT 0,
+    nachts        INTEGER NOT NULL DEFAULT 0,
+    bei_bedarf    INTEGER NOT NULL DEFAULT 0,
+    lagerung      TEXT,
+    notes         TEXT,
+    start_date    TEXT,
+    end_date      TEXT,
+    active        INTEGER NOT NULL DEFAULT 1,
+    created_by    INTEGER REFERENCES users(id),
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_medications_patient ON medications(patient_id);
+
+CREATE TABLE IF NOT EXISTS medication_administrations (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    medication_id    INTEGER NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
+    day_date         TEXT NOT NULL,   -- YYYY-MM-DD
+    slot             TEXT NOT NULL,   -- 'morgens' | 'mittags' | 'abends' | 'nachts' | 'bedarf'
+    administered_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    administered_by  INTEGER REFERENCES users(id),
+    notes            TEXT,
+    UNIQUE(medication_id, day_date, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_med_admin_med ON medication_administrations(medication_id);
+CREATE INDEX IF NOT EXISTS idx_med_admin_day ON medication_administrations(day_date);
 """
 
 
@@ -1991,3 +2024,137 @@ def cancel_triage_entry(conn, tid: int) -> bool:
         (tid,),
     )
     return cur.rowcount > 0
+
+
+# ---------- Medikamenten-Plan ----------
+
+MEDICATION_SLOTS = ("morgens", "mittags", "abends", "nachts", "bedarf")
+MEDICATION_SLOT_LABELS = {
+    "morgens": "Morgens",
+    "mittags": "Mittags",
+    "abends": "Abends",
+    "nachts": "Nachts",
+    "bedarf": "B.B.",  # Bei Bedarf
+}
+
+
+def create_medication(conn, *, patient_id: int, name: str,
+                      dosage: Optional[str] = None,
+                      morgens: bool = False, mittags: bool = False,
+                      abends: bool = False, nachts: bool = False,
+                      bei_bedarf: bool = False,
+                      lagerung: Optional[str] = None,
+                      notes: Optional[str] = None,
+                      start_date: Optional[str] = None,
+                      end_date: Optional[str] = None,
+                      created_by: Optional[int] = None) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO medications
+          (patient_id, name, dosage, morgens, mittags, abends, nachts,
+           bei_bedarf, lagerung, notes, start_date, end_date, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (patient_id, name.strip(), (dosage or "").strip() or None,
+         1 if morgens else 0, 1 if mittags else 0,
+         1 if abends else 0, 1 if nachts else 0,
+         1 if bei_bedarf else 0,
+         (lagerung or "").strip() or None,
+         (notes or "").strip() or None,
+         start_date or None, end_date or None, created_by),
+    )
+    return cur.lastrowid
+
+
+def list_medications_for_patient(conn, patient_id: int,
+                                  include_inactive: bool = False
+                                  ) -> list[sqlite3.Row]:
+    sql = "SELECT * FROM medications WHERE patient_id = ?"
+    if not include_inactive:
+        sql += " AND active = 1"
+    sql += " ORDER BY name COLLATE NOCASE"
+    return conn.execute(sql, (patient_id,)).fetchall()
+
+
+def get_medication(conn, mid: int) -> Optional[sqlite3.Row]:
+    return conn.execute("SELECT * FROM medications WHERE id = ?",
+                        (mid,)).fetchone()
+
+
+def delete_medication(conn, mid: int) -> bool:
+    cur = conn.execute("DELETE FROM medications WHERE id = ?", (mid,))
+    return cur.rowcount > 0
+
+
+def set_medication_active(conn, mid: int, active: bool) -> bool:
+    cur = conn.execute(
+        "UPDATE medications SET active = ? WHERE id = ?",
+        (1 if active else 0, mid),
+    )
+    return cur.rowcount > 0
+
+
+def record_medication_administration(conn, *, medication_id: int,
+                                      day_date: str, slot: str,
+                                      administered_by: Optional[int],
+                                      notes: Optional[str] = None) -> bool:
+    """Trägt eine Vergabe ein. Idempotent über UNIQUE(med,day,slot) —
+    erneuter Eintrag schlägt fehl und wird gemeldet."""
+    try:
+        conn.execute(
+            """
+            INSERT INTO medication_administrations
+              (medication_id, day_date, slot, administered_by, notes)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (medication_id, day_date, slot, administered_by,
+             (notes or "").strip() or None),
+        )
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+
+def remove_medication_administration(conn, *, medication_id: int,
+                                      day_date: str, slot: str) -> bool:
+    cur = conn.execute(
+        """
+        DELETE FROM medication_administrations
+        WHERE medication_id = ? AND day_date = ? AND slot = ?
+        """,
+        (medication_id, day_date, slot),
+    )
+    return cur.rowcount > 0
+
+
+def list_administrations_for_patient(conn, patient_id: int,
+                                      date_from: str, date_to: str
+                                      ) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT a.*, u.username AS by_username, u.full_name AS by_full_name
+        FROM medication_administrations a
+        JOIN medications m ON m.id = a.medication_id
+        LEFT JOIN users u ON u.id = a.administered_by
+        WHERE m.patient_id = ?
+          AND a.day_date BETWEEN ? AND ?
+        ORDER BY a.day_date, a.slot, a.administered_at
+        """,
+        (patient_id, date_from, date_to),
+    ).fetchall()
+
+
+def list_patients_with_medications(conn) -> list[sqlite3.Row]:
+    """Patienten, die einen aktiven Medikationsplan haben — für die
+    Admin-Übersicht /medications."""
+    return conn.execute(
+        """
+        SELECT p.id, p.name, p.geburtsdatum, p.stammnummer,
+               COUNT(m.id) AS med_count,
+               MAX(m.created_at) AS last_added
+        FROM patients p
+        JOIN medications m ON m.patient_id = p.id AND m.active = 1
+        GROUP BY p.id
+        ORDER BY p.name COLLATE NOCASE
+        """,
+    ).fetchall()

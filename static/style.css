@@ -426,6 +426,75 @@ h3 {
   margin-top: 4px;
 }
 
+/* Medikamenten-Grid */
+.med-grid-wrap { overflow-x: auto; }
+.med-grid {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  width: 100%;
+  min-width: 980px;
+}
+.med-grid th, .med-grid td {
+  border: 1px solid var(--border);
+  padding: 6px;
+  text-align: center;
+  vertical-align: middle;
+  background: var(--surface);
+}
+.med-grid thead th {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+.med-grid .day-head { padding: 8px 4px; border-bottom: 2px solid var(--accent); }
+.med-grid .day-head.today { background: var(--accent-light); }
+.med-grid .slot-head { font-size: 0.7rem; font-weight: 500; padding: 4px 2px; color: var(--muted); }
+.med-grid .med-cell {
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--surface-soft);
+  min-width: 200px;
+}
+.med-grid tr.inactive .med-cell { opacity: 0.6; }
+.med-grid .slot-cell { padding: 2px; min-width: 32px; }
+.med-grid .slot-cell.not-in-plan { background: rgba(0, 0, 0, 0.02); }
+.med-grid .not-scheduled { color: var(--muted-soft); }
+.slot-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--t-fast), border-color var(--t-fast),
+              transform 0.06s ease;
+  color: var(--muted);
+}
+.slot-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.slot-btn.given {
+  background: var(--success-light);
+  border-color: var(--success);
+  color: var(--success);
+  font-weight: 700;
+}
+.slot-btn.given:hover {
+  background: #d6ecdf;
+}
+.slot-btn:active { transform: scale(0.92); }
+.med-grid .bedarf-cell { text-align: center; padding: 6px; min-width: 80px; }
+.med-grid .actions-cell { white-space: nowrap; padding: 6px; min-width: 80px; }
+.med-grid .actions-cell .btn { padding: 4px 8px; min-width: 28px; }
+
 /* ============ Tabellen ============ */
 
 table.data {

@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}Medikamentenplan — {{ patient.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Medikamentenplan — {{ patient.name }}</h1>
+    <p class="tagline">
+      geb. {{ format_dt(patient.geburtsdatum) }}
+      {% if patient.stammnummer %}· Stamm-Nr. {{ patient.stammnummer }}{% endif %}
+    </p>
+  </div>
+  <div class="btn-row">
+    <a class="btn small secondary"
+       href="{{ url_for('medications_index') }}">← Übersicht</a>
+    <a class="btn small"
+       href="{{ url_for('medications_plan_pdf', patient_id=patient.id, start=start.isoformat()) }}"
+       target="_blank">Plan als PDF</a>
+    <a class="btn small secondary"
+       href="{{ url_for('medications_blanko_pdf', name=patient.name, geburtsdatum=patient.geburtsdatum, start=start.isoformat()) }}"
+       target="_blank">Blanko-Plan</a>
+  </div>
+</div>
+
+{# ---------- Add medication ---------- #}
+<div class="card">
+  <div class="card-header">Medikament hinzufügen</div>
+  <form method="post"
+        action="{{ url_for('medications_add', patient_id=patient.id) }}"
+        class="stack">
+    <div class="row cols-2-1">
+      <label class="field">
+        Name <span class="req">*</span>
+        <input name="name" required autocomplete="off"
+               placeholder="z. B. Salbutamol Spray">
+      </label>
+      <label class="field">
+        Dosierung
+        <input name="dosage" autocomplete="off"
+               placeholder="z. B. 2 Hub bei Bedarf">
+      </label>
+    </div>
+    <div class="row" style="grid-template-columns: repeat(5, 1fr); gap: 8px;">
+      <label class="checkbox-row">
+        <input type="checkbox" name="morgens" value="1"> Morgens
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="mittags" value="1"> Mittags
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="abends" value="1"> Abends
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="nachts" value="1"> Nachts
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="bei_bedarf" value="1"> Bei Bedarf
+      </label>
+    </div>
+    <div class="row three">
+      <label class="field">
+        Lagerung
+        <input name="lagerung" autocomplete="off"
+               placeholder="z. B. Kühlschrank, Sanitätsraum">
+      </label>
+      <label class="field">
+        Anfangs-Datum
+        <input name="start_date" type="date">
+      </label>
+      <label class="field">
+        End-Datum
+        <input name="end_date" type="date">
+      </label>
+    </div>
+    <label class="field">
+      Notizen / Hinweise
+      <textarea name="notes" rows="2"
+                placeholder="z. B. nicht zusammen mit Milchprodukten"></textarea>
+    </label>
+    <div><button class="btn" type="submit">Medikament speichern</button></div>
+  </form>
+</div>
+
+{# ---------- 7-Tage-Grid ---------- #}
+<div class="card">
+  <div class="card-header">
+    7-Tage-Vergabe
+    <span class="muted" style="color:rgba(255,255,255,0.85);font-weight:400;">
+      {{ format_dt(days[0].isoformat()) }} – {{ format_dt(days[-1].isoformat()) }}
+    </span>
+  </div>
+  {% if not meds %}
+    <p class="muted">Noch keine Medikamente hinterlegt — füge oben eines hinzu.</p>
+  {% else %}
+    <div class="med-grid-wrap">
+      <table class="med-grid">
+        <thead>
+          <tr>
+            <th rowspan="2" style="min-width: 200px;">Medikament</th>
+            {% for d in days %}
+              <th colspan="4" class="day-head{% if d == today_date %} today{% endif %}">
+                {{ ('Mo','Di','Mi','Do','Fr','Sa','So')[d.weekday()] }}
+                <span class="muted" style="font-weight:400;">{{ '%02d.%02d' | format(d.day, d.month) }}</span>
+              </th>
+            {% endfor %}
+            <th rowspan="2">B.B.</th>
+            <th rowspan="2">Aktion</th>
+          </tr>
+          <tr>
+            {% for d in days %}
+              <th class="slot-head">M</th>
+              <th class="slot-head">Mi</th>
+              <th class="slot-head">A</th>
+              <th class="slot-head">N</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in meds %}
+          <tr class="{% if not m.active %}inactive{% endif %}">
+            <td class="med-cell">
+              <strong>{{ m.name }}</strong>
+              {% if m.dosage %}<br><span class="muted">{{ m.dosage }}</span>{% endif %}
+              {% if m.lagerung %}<br><small class="muted">Lagerung: {{ m.lagerung }}</small>{% endif %}
+              {% if m.notes %}<br><small class="muted">{{ m.notes }}</small>{% endif %}
+              {% if not m.active %}
+                <br><span class="badge muted-badge">pausiert</span>
+              {% endif %}
+            </td>
+            {% for d in days %}
+              {% for slot in ('morgens','mittags','abends','nachts') %}
+                {% set in_plan = m[slot] %}
+                {% set day_iso = d.isoformat() %}
+                {% set rec = admin_map.get((m.id, day_iso, slot)) %}
+                <td class="slot-cell{% if not in_plan %} not-in-plan{% endif %}">
+                  {% if in_plan %}
+                    <button type="button"
+                            class="slot-btn{% if rec %} given{% endif %}"
+                            data-mid="{{ m.id }}" data-day="{{ day_iso }}"
+                            data-slot="{{ slot }}"
+                            title="{% if rec %}gegeben{% if rec.by_full_name or rec.by_username %} von {{ rec.by_full_name or rec.by_username }}{% endif %} um {{ format_dt(rec.administered_at) }}{% else %}als gegeben markieren{% endif %}">
+                      {% if rec %}✓{% else %}☐{% endif %}
+                    </button>
+                  {% else %}
+                    <span class="not-scheduled">·</span>
+                  {% endif %}
+                </td>
+              {% endfor %}
+            {% endfor %}
+            <td class="bedarf-cell">
+              {% if m.bei_bedarf %}
+                <button type="button" class="btn small secondary slot-btn-bedarf"
+                        data-mid="{{ m.id }}">+ B.B.</button>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td class="actions-cell">
+              <form method="post"
+                    action="{{ url_for('medications_toggle_active', mid=m.id) }}"
+                    style="display:inline-block;">
+                <button class="btn small secondary" type="submit"
+                        title="Pausieren / Reaktivieren">
+                  {% if m.active %}⏸{% else %}▶{% endif %}
+                </button>
+              </form>
+              <form method="post"
+                    action="{{ url_for('medications_delete', mid=m.id) }}"
+                    style="display:inline-block;"
+                    onsubmit="return confirm('Medikament „{{ m.name }}“ wirklich löschen? Alle eingetragenen Vergaben werden mitgelöscht.');">
+                <button class="btn small danger" type="submit"
+                        title="Löschen">🗑</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+// Klick auf Slot toggelt Vergabe ohne Page-Reload.
+(function () {
+  document.querySelectorAll('.slot-btn').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      var mid = btn.dataset.mid;
+      var day = btn.dataset.day;
+      var slot = btn.dataset.slot;
+      var given = btn.classList.contains('given');
+      var body = new URLSearchParams({
+        day: day, slot: slot,
+        action: given ? 'undo' : 'give',
+      });
+      btn.disabled = true;
+      try {
+        var res = await fetch('/medications/' + mid + '/administer', {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: body.toString(),
+        });
+        if (!res.ok) { btn.disabled = false; return; }
+        if (given) {
+          btn.classList.remove('given');
+          btn.textContent = '☐';
+          btn.title = 'als gegeben markieren';
+        } else {
+          btn.classList.add('given');
+          btn.textContent = '✓';
+          btn.title = 'jetzt gegeben';
+        }
+      } catch (_) {}
+      btn.disabled = false;
+    });
+  });
+  // Bei-Bedarf: Bestätigung + Eintrag mit slot='bedarf' fürs heutige Datum
+  document.querySelectorAll('.slot-btn-bedarf').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      if (!confirm('Vergabe „Bei Bedarf" jetzt eintragen?')) return;
+      var mid = btn.dataset.mid;
+      var today = new Date().toISOString().slice(0, 10);
+      var body = new URLSearchParams({ day: today, slot: 'bedarf', action: 'give' });
+      btn.disabled = true;
+      try {
+        var res = await fetch('/medications/' + mid + '/administer', {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: body.toString(),
+        });
+        if (res.ok) {
+          btn.textContent = '✓ ' + new Date().toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'});
+          btn.classList.remove('secondary');
+        }
+      } catch (_) {}
+      btn.disabled = false;
+    });
+  });
+})();
+</script>
+{% endblock %}
