@@ -17,7 +17,7 @@
       try {
         var t = localStorage.getItem('theme');
         if (t === 'hc') document.documentElement.setAttribute('data-theme', 'hc');
-      } catch (_) { /* localStorage gesperrt — egal */ }
+      } catch (_) {}
     })();
   </script>
 </head>
@@ -25,99 +25,169 @@
   {% if current_user.is_authenticated and not request.args.get('embed') %}
   <header class="topbar">
     <a class="brand" href="{% if current_user.is_triage_intake %}{{ url_for('triage_new') }}{% elif current_user.can_view_decentral %}{{ url_for('dashboard') }}{% else %}{{ url_for('central_index') }}{% endif %}">Erste Hilfe</a>
+
     {% if current_user.is_triage_intake %}
-      {# Kiosk-Mode: nur Anmelden + Logout #}
+      {# Kiosk-Mode: nur Anmelden + User-Menü #}
       <nav>
         <a href="{{ url_for('triage_new') }}">+ Anmelden</a>
       </nav>
-      <span class="user">
-        {% if available_events|length > 1 %}
-          <form method="post" action="{{ url_for('event_switch') }}" class="event-switch">
-            <input type="hidden" name="next" value="{{ request.full_path }}">
-            <select name="event_id" onchange="this.form.submit()" title="Veranstaltung wechseln">
-              {% for e in available_events %}
-                <option value="{{ e.id }}" {% if current_event and e.id == current_event.id %}selected{% endif %}>
-                  {{ e.name }}
-                </option>
-              {% endfor %}
-            </select>
-          </form>
-        {% elif current_event %}
-          <span class="event-pill">{{ current_event.name }}</span>
-        {% endif %}
-        <span class="muted" style="color: rgba(255,255,255,0.85);">Anmelde-Kiosk</span>
-        <button type="button" class="theme-toggle" id="themeToggle"
-                title="Hochkontrast umschalten">☀ Kontrast</button>
-        <a class="topbar-icon" href="{{ url_for('docs_index') }}"
-           title="Hilfe" aria-label="Hilfe">?</a>
-        <a href="{{ url_for('logout') }}">Abmelden</a>
-      </span>
+      <div class="topbar-spacer"></div>
+      <div class="user-menu" data-menu>
+        <button type="button" class="user-menu-trigger" data-menu-trigger>
+          <span class="muted">Anmelde-Kiosk</span> ▾
+        </button>
+        <div class="user-menu-panel" data-menu-panel>
+          <div class="menu-section-label">Konto</div>
+          <button type="button" class="menu-item theme-toggle" id="themeToggle">
+            ☀ Kontrast umschalten
+          </button>
+          <a class="menu-item" href="{{ url_for('docs_index') }}">Hilfe</a>
+          <a class="menu-item danger" href="{{ url_for('logout') }}">Abmelden</a>
+        </div>
+      </div>
     {% else %}
       <nav>
         {% if current_user.can_view_decentral %}
           <a href="{{ url_for('dashboard') }}">Dashboard</a>
-          <a href="{{ url_for('index') }}">Berichte</a>
         {% endif %}
+
+        {# Berichte-Dropdown: alles rund um dEH/zEH-Dokumentation #}
+        {% if current_user.can_view_decentral %}
+          <div class="nav-dropdown" data-menu>
+            <button type="button" class="nav-dropdown-trigger" data-menu-trigger>
+              Berichte ▾
+            </button>
+            <div class="nav-dropdown-panel" data-menu-panel>
+              <a class="menu-item" href="{{ url_for('index') }}">Alle Berichte</a>
+              {% if can_create_in_current_event %}
+                <a class="menu-item" href="{{ url_for('protocol_new_chooser') }}">+ Neuer Bericht</a>
+              {% endif %}
+              <a class="menu-item" href="{{ url_for('patient_list') }}">Personen</a>
+              {% if can_create_in_current_event %}
+                <a class="menu-item" href="{{ url_for('export_form') }}">Export</a>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+
         <a href="{{ url_for('triage_list') }}">Triage</a>
         <a href="{{ url_for('central_index') }}">Zentral</a>
-        {% if current_user.can_view_decentral and can_create_in_current_event %}
-          <a href="{{ url_for('protocol_new_chooser') }}">Neuer Bericht</a>
-          <a href="{{ url_for('patient_list') }}">Personen</a>
-          <a href="{{ url_for('export_form') }}">Export</a>
-        {% endif %}
+
+        {# MANV-Dropdown #}
+        <div class="nav-dropdown" data-menu>
+          <button type="button" class="nav-dropdown-trigger" data-menu-trigger>
+            MANV ▾
+          </button>
+          <div class="nav-dropdown-panel" data-menu-panel>
+            <a class="menu-item" href="{{ url_for('manv_index') }}">Vorfälle</a>
+            {% if current_user.is_admin %}
+              <a class="menu-item" href="{{ url_for('manv_pool') }}">📦 Sticker-Vorrat</a>
+            {% endif %}
+          </div>
+        </div>
+
         {% if current_user.is_admin %}
           <a href="{{ url_for('medications_index') }}">Medikamente</a>
         {% endif %}
-        <a href="{{ url_for('manv_index') }}">MANV</a>
       </nav>
-      <span class="user">
-        {% if available_events|length > 1 %}
-          <form method="post" action="{{ url_for('event_switch') }}" class="event-switch">
-            <input type="hidden" name="next" value="{{ request.full_path }}">
-            <select name="event_id" onchange="this.form.submit()" title="Veranstaltung wechseln">
-              {% for e in available_events %}
-                <option value="{{ e.id }}" {% if current_event and e.id == current_event.id %}selected{% endif %}>
-                  {{ e.name }}
-                </option>
-              {% endfor %}
-            </select>
-          </form>
-        {% elif current_event %}
-          <span class="event-pill">{{ current_event.name }}</span>
-        {% endif %}
-        <button type="button" class="theme-toggle" id="themeToggle"
-                title="Hochkontrast umschalten">☀ Kontrast</button>
-        <a href="{{ url_for('account_password') }}">{{ current_user.full_name or current_user.username }}</a>
-        {% if current_user.is_admin %}
-          <a class="topbar-icon" href="{{ url_for('admin_users') }}"
-             title="Einstellungen" aria-label="Einstellungen">⚙</a>
-        {% endif %}
-        <a class="topbar-icon" href="{{ url_for('docs_index') }}"
-           title="Hilfe" aria-label="Hilfe">?</a>
-        <a href="{{ url_for('logout') }}">Abmelden</a>
-      </span>
+
+      <div class="topbar-spacer"></div>
+
+      {# User-Menü rechts: alles persönliche + Admin + Event-Switch im Dropdown #}
+      <div class="user-menu" data-menu>
+        <button type="button" class="user-menu-trigger" data-menu-trigger>
+          <span class="user-name">{{ current_user.full_name or current_user.username }}</span> ▾
+        </button>
+        <div class="user-menu-panel" data-menu-panel>
+          {% if current_event %}
+            <div class="menu-section-label">Aktives Event</div>
+            <div class="menu-current-event">
+              {{ current_event.name }}
+            </div>
+            {% if available_events|length > 1 %}
+              <form method="post" action="{{ url_for('event_switch') }}" class="menu-event-switch">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <select name="event_id" onchange="this.form.submit()">
+                  {% for e in available_events %}
+                    <option value="{{ e.id }}" {% if e.id == current_event.id %}selected{% endif %}>
+                      {{ e.name }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </form>
+            {% endif %}
+            <div class="menu-separator"></div>
+          {% endif %}
+          <div class="menu-section-label">Konto</div>
+          <a class="menu-item" href="{{ url_for('account_password') }}">Passwort & 2FA</a>
+          <button type="button" class="menu-item theme-toggle" id="themeToggle">
+            ☀ Kontrast umschalten
+          </button>
+          <a class="menu-item" href="{{ url_for('docs_index') }}">Hilfe</a>
+          {% if current_user.is_admin %}
+            <div class="menu-separator"></div>
+            <div class="menu-section-label">Administration</div>
+            <a class="menu-item" href="{{ url_for('admin_users') }}">⚙ Benutzer-Verwaltung</a>
+          {% endif %}
+          <div class="menu-separator"></div>
+          <a class="menu-item danger" href="{{ url_for('logout') }}">Abmelden</a>
+        </div>
+      </div>
     {% endif %}
   </header>
+
   <script>
+  // Dropdowns: Klick öffnet, Klick außerhalb schließt, Esc schließt
   (function () {
-    var btn = document.getElementById('themeToggle');
-    if (!btn) return;
-    function refresh() {
-      var t = document.documentElement.getAttribute('data-theme');
-      btn.textContent = t === 'hc' ? '☾ Standard' : '☀ Kontrast';
+    var menus = document.querySelectorAll('[data-menu]');
+    function closeAll(except) {
+      menus.forEach(function (m) {
+        if (m !== except) m.classList.remove('open');
+      });
     }
-    refresh();
-    btn.addEventListener('click', function () {
-      var cur = document.documentElement.getAttribute('data-theme');
-      if (cur === 'hc') {
-        document.documentElement.removeAttribute('data-theme');
-        try { localStorage.setItem('theme', 'default'); } catch (_) {}
-      } else {
-        document.documentElement.setAttribute('data-theme', 'hc');
-        try { localStorage.setItem('theme', 'hc'); } catch (_) {}
+    menus.forEach(function (menu) {
+      var trigger = menu.querySelector('[data-menu-trigger]');
+      if (!trigger) return;
+      trigger.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var isOpen = menu.classList.contains('open');
+        closeAll();
+        if (!isOpen) menu.classList.add('open');
+      });
+    });
+    document.addEventListener('click', function (e) {
+      // wenn Klick außerhalb von einem offenen Menü → schließen
+      var inMenu = false;
+      menus.forEach(function (m) {
+        if (m.classList.contains('open') && m.contains(e.target)) inMenu = true;
+      });
+      if (!inMenu) closeAll();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeAll();
+    });
+
+    // Theme-Toggle (innerhalb User-Menü)
+    var btn = document.getElementById('themeToggle');
+    if (btn) {
+      function refresh() {
+        var t = document.documentElement.getAttribute('data-theme');
+        btn.textContent = t === 'hc' ? '☾ Standard-Theme' : '☀ Kontrast umschalten';
       }
       refresh();
-    });
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var cur = document.documentElement.getAttribute('data-theme');
+        if (cur === 'hc') {
+          document.documentElement.removeAttribute('data-theme');
+          try { localStorage.setItem('theme', 'default'); } catch (_) {}
+        } else {
+          document.documentElement.setAttribute('data-theme', 'hc');
+          try { localStorage.setItem('theme', 'hc'); } catch (_) {}
+        }
+        refresh();
+      });
+    }
   })();
   </script>
   {% endif %}

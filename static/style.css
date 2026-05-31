@@ -198,59 +198,65 @@ header.topbar nav a.active {
   color: #fff;
   background: rgba(255, 255, 255, 0.18);
 }
-header.topbar .user {
-  font-size: 0.88rem;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-  flex-shrink: 0;
+/* Topbar-Spacer drückt das User-Menü nach rechts (statt flex: 1 auf nav) */
+header.topbar .topbar-spacer {
+  flex: 1 1 auto;
 }
-header.topbar .event-switch { margin: 0; }
-header.topbar .event-switch select,
-header.topbar .event-pill {
-  border: 1px solid rgba(255,255,255,0.35);
-  border-radius: 6px;
-  background: rgba(255,255,255,0.12);
-  color: #fff;
-  padding: 5px 8px;
-  font-size: 0.86rem;
+header.topbar nav { flex: 0 1 auto; }
+
+/* ===== Nav-Dropdown (Berichte ▾, MANV ▾) ===== */
+.nav-dropdown {
+  position: relative;
+  display: inline-flex;
 }
-header.topbar .event-switch select option { color: #222; }
-header.topbar .user a {
-  color: rgba(255, 255, 255, 0.85);
-  padding: 6px 9px;
+.nav-dropdown-trigger {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 7px 10px;
   border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-weight: 500;
+  white-space: nowrap;
   transition: background var(--t-fast), color var(--t-fast);
 }
-header.topbar .user a:hover {
+.nav-dropdown-trigger:hover,
+.nav-dropdown.open .nav-dropdown-trigger {
+  background: rgba(255, 255, 255, 0.18);
   color: #fff;
-  background: rgba(255, 255, 255, 0.12);
-  text-decoration: none;
 }
-
-header.topbar .topbar-icon {
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 999px;
-  font-weight: 700;
-  line-height: 1;
+.nav-dropdown-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 200px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 6px 0;
+  z-index: 60;
 }
+.nav-dropdown.open .nav-dropdown-panel { display: block; }
 
-/* Theme-Toggle (Sonne/Hochkontrast) */
-.theme-toggle {
+/* ===== User-Menü rechts ===== */
+.user-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.user-menu-trigger {
   appearance: none;
   background: rgba(255, 255, 255, 0.10);
   border: 1px solid rgba(255, 255, 255, 0.22);
   color: #fff;
   font: inherit;
-  font-size: 0.85rem;
-  padding: 6px 10px;
+  font-size: 0.88rem;
+  padding: 7px 14px;
   border-radius: var(--radius-pill);
   cursor: pointer;
   display: inline-flex;
@@ -258,10 +264,110 @@ header.topbar .topbar-icon {
   gap: 6px;
   transition: background var(--t-fast), border-color var(--t-fast);
   white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.theme-toggle:hover {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.35);
+.user-menu-trigger:hover,
+.user-menu.open .user-menu-trigger {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+.user-menu-trigger .user-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-menu-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 250px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 6px 0;
+  z-index: 60;
+}
+.user-menu.open .user-menu-panel { display: block; }
+
+/* ===== Menu-Items (in beiden Dropdown-Typen verwendet) ===== */
+.menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 9px 16px;
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--t-fast);
+}
+.menu-item:hover {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  text-decoration: none;
+}
+.menu-item.danger { color: var(--error); }
+.menu-item.danger:hover {
+  background: var(--error-light);
+  color: var(--error);
+}
+.menu-section-label {
+  padding: 6px 16px 2px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.menu-current-event {
+  padding: 4px 16px 8px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--accent-dark);
+}
+.menu-event-switch {
+  padding: 0 16px 8px;
+}
+.menu-event-switch select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.88rem;
+  background: var(--surface);
+  color: var(--text);
+}
+.menu-separator {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+/* Theme-Toggle als Menu-Item (für die Variante im User-Menü) */
+.menu-item.theme-toggle {
+  border: 0;
+  color: var(--text);
+  font-size: 0.92rem;
+  padding: 9px 16px;
+  border-radius: 0;
+  background: transparent;
+  white-space: nowrap;
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+.menu-item.theme-toggle:hover {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
 }
 
 main { max-width: 1100px; margin: 32px auto; padding: 0 24px; }
