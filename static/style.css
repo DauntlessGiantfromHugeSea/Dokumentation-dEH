@@ -1740,6 +1740,126 @@ details.inline-action:not([open]) .inline-form { display: none; }
 }
 .perm-row input[type="checkbox"] { transform: scale(1.05); }
 
+/* ============ Benutzer-Verwaltung: Card-Liste ============ */
+.user-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.user-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow var(--t-base);
+}
+.user-card:hover { box-shadow: var(--shadow-sm); }
+
+.user-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--border);
+  flex-wrap: wrap;
+}
+.user-card-name {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 1.05rem;
+  flex-wrap: wrap;
+}
+.user-card-name strong { font-size: 1.1rem; }
+.user-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.user-card-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+.user-action-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.user-action-group.full-row { grid-column: 1 / -1; }
+.user-action-label {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.user-action-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.user-action-form input[type="text"],
+.user-action-form input[type="password"],
+.user-action-form select {
+  flex: 1 1 140px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  min-width: 0;
+}
+.user-action-form input:focus,
+.user-action-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.user-action-form .btn { flex-shrink: 0; }
+
+.user-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+details.user-detail {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+details.user-detail > summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  margin-bottom: 8px;
+}
+details.user-detail > summary::-webkit-details-marker { display: none; }
+details.user-detail .perm-form {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+details.user-detail .perm-form .perm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
 /* ============ Triage / PRIOR ============ */
 
 .triage-grid {

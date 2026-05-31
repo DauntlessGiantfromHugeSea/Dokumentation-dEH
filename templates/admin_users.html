@@ -207,94 +207,106 @@
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header">Bestehende Benutzer</div>
-        <table class="data">
-          <thead>
-            <tr>
-              <th>Benutzername</th>
-              <th>Voller Name</th>
-              <th>Rolle</th>
-              <th>Berechtigung</th>
-              <th>2FA</th>
-              <th>Angelegt</th>
-              <th class="right">Aktionen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for u in users %}
-            <tr>
-              <td><strong>{{ u.username }}</strong>
-                {% if u.id == current_user.id %}<span class="badge">du</span>{% endif %}
-              </td>
-              <td>{{ u.full_name or '—' }}</td>
-              <td>
-                {% if u.is_admin %}<span class="badge admin">Admin</span>
-                {% else %}<span class="muted">Benutzer</span>{% endif %}
-              </td>
-              <td>
-                {% if u.role == 'zentral_writer' %}
-                  <span class="badge">Nur Zentral schreiben</span>
-                {% elif u.role == 'triage_intake' %}
-                  <span class="badge">Anmelde-Kiosk</span>
-                {% else %}
-                  <span class="muted">Voll (Lesen + Schreiben)</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if not u.totp_required %}
-                  <span class="badge totp-off">deaktiviert</span>
-                {% elif u.totp_confirmed %}
-                  <span class="badge totp-on">aktiv</span>
-                {% else %}
-                  <span class="muted">offen</span>
-                {% endif %}
-              </td>
-              <td>{{ format_dt(u.created_at) }}</td>
-              <td class="right action-cell">
-                <details class="inline-action">
-                  <summary class="btn small secondary">Passwort</summary>
-                  <form method="post"
-                        action="{{ url_for('admin_user_reset_password', user_id=u.id) }}"
-                        class="inline-form">
-                    <input name="new_password" type="text" required minlength="6"
-                           placeholder="Neues Passwort">
-                    <button class="btn small" type="submit">Setzen</button>
-                  </form>
-                </details>
-                {% if u.id != current_user.id %}
-                  <form method="post"
-                        action="{{ url_for('admin_user_set_role', user_id=u.id) }}"
-                        class="inline-form">
-                    <select name="role" onchange="this.form.submit()">
-                      <option value="full" {% if u.role == 'full' %}selected{% endif %}>Voll</option>
-                      <option value="zentral_writer" {% if u.role == 'zentral_writer' %}selected{% endif %}>Nur Zentral</option>
-                      <option value="triage_intake" {% if u.role == 'triage_intake' %}selected{% endif %}>Anmelde-Kiosk</option>
-                    </select>
-                  </form>
-                  <form method="post"
-                        action="{{ url_for('admin_user_toggle_admin', user_id=u.id) }}"
-                        class="inline-form">
-                    <button class="btn small secondary" type="submit">
-                      {% if u.is_admin %}Admin entziehen{% else %}Admin geben{% endif %}
-                    </button>
-                  </form>
-                  <form method="post"
-                        action="{{ url_for('admin_user_toggle_totp_required', user_id=u.id) }}"
-                        class="inline-form"
-                        onsubmit="return confirm('2FA für „{{ u.username }}“ {% if u.totp_required %}deaktivieren? Sie/er meldet sich dann nur mit Passwort an.{% else %}wieder aktivieren?{% endif %}');">
-                    <button class="btn small secondary" type="submit">
-                      {% if u.totp_required %}2FA deaktivieren{% else %}2FA aktivieren{% endif %}
-                    </button>
-                  </form>
-                  <form method="post"
-                        action="{{ url_for('admin_user_reset_totp', user_id=u.id) }}"
-                        class="inline-form"
-                        onsubmit="return confirm('2FA für „{{ u.username }}“ zurücksetzen? Beim nächsten Login muss neu eingerichtet werden.');">
-                    <button class="btn small secondary" type="submit">2FA zurücksetzen</button>
-                  </form>
-                  <details class="inline-action">
-                    <summary class="btn small secondary">Berechtigungen</summary>
+      <div class="user-card-list">
+        {% for u in users %}
+        <div class="user-card">
+          {# ===== Kopf: Username + Status-Badges ===== #}
+          <div class="user-card-head">
+            <div class="user-card-name">
+              <strong>{{ u.username }}</strong>
+              {% if u.id == current_user.id %}<span class="badge">du</span>{% endif %}
+              <span class="muted" style="font-weight:400;">
+                {{ u.full_name or '—' }}
+              </span>
+            </div>
+            <div class="user-card-badges">
+              {% if u.is_admin %}
+                <span class="badge admin">Admin</span>
+              {% else %}
+                <span class="badge">Benutzer</span>
+              {% endif %}
+              {% if u.role == 'zentral_writer' %}
+                <span class="badge">Nur Zentral schreiben</span>
+              {% elif u.role == 'triage_intake' %}
+                <span class="badge">Anmelde-Kiosk</span>
+              {% else %}
+                <span class="badge type-d">Voll</span>
+              {% endif %}
+              {% if not u.totp_required %}
+                <span class="badge totp-off">2FA aus</span>
+              {% elif u.totp_confirmed %}
+                <span class="badge totp-on">2FA aktiv</span>
+              {% else %}
+                <span class="badge totp-off">2FA offen</span>
+              {% endif %}
+              <span class="muted" style="font-size:0.78rem;">
+                seit {{ format_dt(u.created_at) }}
+              </span>
+            </div>
+          </div>
+
+          {# ===== Aktionen-Grid: 4 logische Gruppen ===== #}
+          <div class="user-card-actions">
+
+            {# Gruppe 1: Passwort #}
+            <div class="user-action-group">
+              <div class="user-action-label">Passwort</div>
+              <form method="post"
+                    action="{{ url_for('admin_user_reset_password', user_id=u.id) }}"
+                    class="user-action-form">
+                <input name="new_password" type="text" required minlength="6"
+                       placeholder="Neues Passwort">
+                <button class="btn small" type="submit">Setzen</button>
+              </form>
+            </div>
+
+            {% if u.id != current_user.id %}
+              {# Gruppe 2: Rolle + Admin-Status #}
+              <div class="user-action-group">
+                <div class="user-action-label">Rolle &amp; Status</div>
+                <form method="post"
+                      action="{{ url_for('admin_user_set_role', user_id=u.id) }}"
+                      class="user-action-form">
+                  <select name="role" onchange="this.form.submit()">
+                    <option value="full" {% if u.role == 'full' %}selected{% endif %}>Voll (Lesen + Schreiben)</option>
+                    <option value="zentral_writer" {% if u.role == 'zentral_writer' %}selected{% endif %}>Nur Zentral schreiben</option>
+                    <option value="triage_intake" {% if u.role == 'triage_intake' %}selected{% endif %}>Anmelde-Kiosk</option>
+                  </select>
+                </form>
+                <form method="post"
+                      action="{{ url_for('admin_user_toggle_admin', user_id=u.id) }}"
+                      class="user-action-form">
+                  <button class="btn small secondary" type="submit">
+                    {% if u.is_admin %}↓ Admin entziehen{% else %}↑ Admin geben{% endif %}
+                  </button>
+                </form>
+              </div>
+
+              {# Gruppe 3: 2FA #}
+              <div class="user-action-group">
+                <div class="user-action-label">Zwei-Faktor-Auth (2FA)</div>
+                <form method="post"
+                      action="{{ url_for('admin_user_toggle_totp_required', user_id=u.id) }}"
+                      class="user-action-form"
+                      onsubmit="return confirm('2FA für „{{ u.username }}“ {% if u.totp_required %}deaktivieren? Sie/er meldet sich dann nur mit Passwort an.{% else %}wieder aktivieren?{% endif %}');">
+                  <button class="btn small secondary" type="submit">
+                    {% if u.totp_required %}2FA deaktivieren{% else %}2FA aktivieren{% endif %}
+                  </button>
+                </form>
+                <form method="post"
+                      action="{{ url_for('admin_user_reset_totp', user_id=u.id) }}"
+                      class="user-action-form"
+                      onsubmit="return confirm('2FA für „{{ u.username }}“ zurücksetzen? Beim nächsten Login muss neu eingerichtet werden.');">
+                  <button class="btn small secondary" type="submit">2FA zurücksetzen</button>
+                </form>
+              </div>
+
+              {# Gruppe 4: Detail-Toggles (Berechtigungen + Events + Löschen) #}
+              <div class="user-action-group full-row">
+                <div class="user-action-label">Detail-Einstellungen</div>
+                <div class="user-detail-row">
+                  <details class="user-detail">
+                    <summary class="btn small secondary">📋 Berechtigungen</summary>
                     <form method="post"
                           action="{{ url_for('admin_user_set_permissions', user_id=u.id) }}"
                           class="perm-form">
@@ -324,8 +336,8 @@
                       </p>
                     </form>
                   </details>
-                  <details class="inline-action">
-                    <summary class="btn small secondary">Veranstaltungen</summary>
+                  <details class="user-detail">
+                    <summary class="btn small secondary">🎪 Veranstaltungen</summary>
                     <form method="post"
                           action="{{ url_for('admin_user_set_events', user_id=u.id) }}"
                           class="perm-form">
@@ -357,16 +369,25 @@
                   </details>
                   <form method="post"
                         action="{{ url_for('admin_user_delete', user_id=u.id) }}"
-                        class="inline-form"
+                        class="user-action-form"
                         onsubmit="return confirm('Benutzer „{{ u.username }}“ wirklich löschen?');">
-                    <button class="btn small danger" type="submit">Löschen</button>
+                    <button class="btn small danger" type="submit">
+                      🗑 Benutzer löschen
+                    </button>
                   </form>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+                </div>
+              </div>
+            {% else %}
+              <div class="user-action-group">
+                <p class="muted" style="margin:0;font-size:0.85rem;">
+                  Eigenes Konto — Rolle / Admin / 2FA / Löschen sind hier
+                  ausgeblendet, um Selbst-Aussperrer zu vermeiden.
+                </p>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
       </div>
     </section>
 
