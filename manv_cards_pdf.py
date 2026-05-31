@@ -746,35 +746,34 @@ def _draw_anhaengekarte_sticker(c, x, y, w, h, card, base_url):
 
 
 def render_anhaengekarte_stickers_pdf(*, event, cards, base_url,
-                                        cols=1, rows=2):
-    """Sticker-Bogen — A4 portrait, je Bogen 2 A6-quer-Sticker (148×105mm,
-    untereinander). Jeder Sticker deckt die obere Section (Personalia +
-    Patienten-Nr-Box) einer DRK-Anhängekarte ab und wird genau darauf
-    geklebt.
+                                        cols=2, rows=2):
+    """Sticker-Bogen: A4 portrait, 4 Sticker pro Bogen (2×2 Grid).
 
-    Cols/Rows-Argumente bleiben für Rückwärtskompatibilität, Default ist
-    1×2 (=2 Sticker pro Bogen, A6 quer 148×105mm)."""
+    Layout-Trick: Drucker arbeitet im Hochformat (A4 portrait), aber
+    der Sticker-Inhalt ist quer orientiert (Personalia links, Pat-Nr
+    rechts — Standard-DRK-Layout für die obere Karten-Section).
+
+    Pro Sticker-Slot: A6 portrait (105×148mm). Inhalt wird darin um
+    90° rotiert gezeichnet, sodass er als landscape (148×105mm) lesbar
+    wird, wenn man den ausgeschnittenen Sticker um 90° dreht.
+
+    → Auf die obere Section der DRK-Anhängekarte (A5 portrait) kleben.
+    """
     from reportlab.lib.pagesizes import A4 as _A4_PORT
     PAGE_W, PAGE_H = _A4_PORT       # 210×297mm
-    # Fixe Sticker-Größe = A6 landscape (148×105mm). Bei alternativem
-    # Layout (z.B. 2 Spalten) skalieren wir die Höhe noch passend.
-    STICKER_W = 148 * mm
-    STICKER_H = 105 * mm
 
-    cols = max(1, min(int(cols or 1), 2))
-    rows = max(1, min(int(rows or 2), 3))
+    # Fixe Slot-Größe: A6 portrait (105×148mm). Inhalt ist landscape.
+    SLOT_W = 105 * mm        # A6 portrait Breite
+    SLOT_H = 148.5 * mm      # A6 portrait Höhe (297mm/2 für saubere A4-Aufteilung)
+    CONTENT_W = SLOT_H       # 148mm — landscape Breite (entspricht Slot-Höhe)
+    CONTENT_H = SLOT_W       # 105mm — landscape Höhe (entspricht Slot-Breite)
+
+    # 2×2 Grid (vorerst fix — kommt aus dem User-Wunsch)
+    cols = 2
+    rows = 2
     per_page = cols * rows
-
-    # Bei mehr als 1 Spalte muss der Sticker schmaler werden, damit beide
-    # nebeneinander passen — wir halten dann das Seitenverhältnis bei.
-    if cols == 2:
-        STICKER_W = (PAGE_W - 6 * mm) / 2
-        STICKER_H = STICKER_W * 105 / 148
-
-    total_w = cols * STICKER_W
-    total_h = rows * STICKER_H
-    margin_x = (PAGE_W - total_w) / 2
-    margin_y_top = (PAGE_H - total_h) / 2
+    margin_x = (PAGE_W - cols * SLOT_W) / 2
+    margin_y_top = (PAGE_H - rows * SLOT_H) / 2
 
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=_A4_PORT)
@@ -793,10 +792,22 @@ def render_anhaengekarte_stickers_pdf(*, event, cards, base_url,
         for i, card in enumerate(page_cards):
             col = i % cols
             row = i // cols
-            x = margin_x + col * STICKER_W
-            y = PAGE_H - margin_y_top - (row + 1) * STICKER_H
-            _draw_anhaengekarte_sticker(c, x, y, STICKER_W, STICKER_H,
+            # Slot-Position in Page-Koordinaten (Ursprung unten-links)
+            slot_x = margin_x + col * SLOT_W
+            slot_y = PAGE_H - margin_y_top - (row + 1) * SLOT_H
+
+            # Sticker um 90° gegen den Uhrzeigersinn drehen, sodass
+            # landscape-Inhalt im portrait-Slot landet.
+            c.saveState()
+            # Ursprung an die untere-rechte Ecke des Slots, dann rotieren —
+            # nach rotate(90) zeigt die neue x-Achse nach oben (= entlang
+            # der Slot-Höhe), neue y-Achse nach links (= entlang Slot-Breite).
+            c.translate(slot_x + SLOT_W, slot_y)
+            c.rotate(90)
+            # Jetzt in einem 148×105mm-Koordinatensystem zeichnen
+            _draw_anhaengekarte_sticker(c, 0, 0, CONTENT_W, CONTENT_H,
                                           card, base_url)
+            c.restoreState()
         c.showPage()
     c.save()
     return buf.getvalue()

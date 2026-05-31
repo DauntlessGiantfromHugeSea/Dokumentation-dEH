@@ -294,42 +294,64 @@ header.topbar nav { flex: 0 1 auto; }
 }
 .user-menu.open .user-menu-panel { display: block; }
 
-/* ===== Menu-Items (in beiden Dropdown-Typen verwendet) ===== */
-.menu-item {
+/* ===== Menu-Items (in beiden Dropdown-Typen verwendet)
+   Höhere Spezifität als `header.topbar nav a`, damit die Topbar-Regel
+   (weiße Schrift) hier nicht durchschlägt. ===== */
+.nav-dropdown-panel .menu-item,
+.user-menu-panel .menu-item,
+header.topbar .nav-dropdown-panel a.menu-item,
+header.topbar .user-menu-panel a.menu-item {
   display: block;
   width: 100%;
   text-align: left;
   background: transparent;
   border: 0;
-  padding: 9px 16px;
+  padding: 10px 16px;
   font: inherit;
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   color: var(--text);
   cursor: pointer;
   text-decoration: none;
-  transition: background var(--t-fast);
+  transition: background var(--t-fast), color var(--t-fast);
+  border-radius: 0;
+  white-space: nowrap;
 }
-.menu-item:hover {
+.nav-dropdown-panel .menu-item:hover,
+.user-menu-panel .menu-item:hover,
+header.topbar .nav-dropdown-panel a.menu-item:hover,
+header.topbar .user-menu-panel a.menu-item:hover {
   background: var(--accent-soft);
   color: var(--accent-dark);
   text-decoration: none;
 }
-.menu-item.danger { color: var(--error); }
-.menu-item.danger:hover {
+.nav-dropdown-panel .menu-item.danger,
+.user-menu-panel .menu-item.danger,
+header.topbar .nav-dropdown-panel a.menu-item.danger,
+header.topbar .user-menu-panel a.menu-item.danger {
+  color: var(--error);
+}
+.nav-dropdown-panel .menu-item.danger:hover,
+.user-menu-panel .menu-item.danger:hover,
+header.topbar .nav-dropdown-panel a.menu-item.danger:hover,
+header.topbar .user-menu-panel a.menu-item.danger:hover {
   background: var(--error-light);
   color: var(--error);
 }
+.nav-dropdown-panel .menu-section-label,
+.user-menu-panel .menu-section-label,
 .menu-section-label {
-  padding: 6px 16px 2px;
+  padding: 8px 16px 4px;
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--muted);
   font-weight: 600;
 }
+.nav-dropdown-panel .menu-current-event,
+.user-menu-panel .menu-current-event,
 .menu-current-event {
   padding: 4px 16px 8px;
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--accent-dark);
 }
@@ -352,12 +374,13 @@ header.topbar nav { flex: 0 1 auto; }
   margin: 6px 0;
 }
 
-/* Theme-Toggle als Menu-Item (für die Variante im User-Menü) */
-.menu-item.theme-toggle {
+/* Theme-Toggle als Menu-Item (innerhalb der Dropdown-Panels) */
+.nav-dropdown-panel button.menu-item.theme-toggle,
+.user-menu-panel button.menu-item.theme-toggle {
   border: 0;
   color: var(--text);
-  font-size: 0.92rem;
-  padding: 9px 16px;
+  font-size: 0.95rem;
+  padding: 10px 16px;
   border-radius: 0;
   background: transparent;
   white-space: nowrap;
@@ -365,7 +388,8 @@ header.topbar nav { flex: 0 1 auto; }
   width: 100%;
   text-align: left;
 }
-.menu-item.theme-toggle:hover {
+.nav-dropdown-panel button.menu-item.theme-toggle:hover,
+.user-menu-panel button.menu-item.theme-toggle:hover {
   background: var(--accent-soft);
   color: var(--accent-dark);
 }

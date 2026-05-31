@@ -229,6 +229,15 @@ CREATE TABLE IF NOT EXISTS manv_events (
     name          TEXT NOT NULL,
     card_prefix   TEXT NOT NULL,           -- e.g. "MANV-3"
     status        TEXT NOT NULL DEFAULT 'aktiv',  -- 'aktiv' | 'abgeschlossen'
+    -- Alarmierung: Vorfall wird vorab angelegt, ist aber für User unsichtbar
+    -- bis is_alarmiert=1. Beim Alarmieren sehen alle User das Event.
+    is_alarmiert  INTEGER NOT NULL DEFAULT 0,
+    alarm_at      TEXT,
+    alarm_by      INTEGER REFERENCES users(id),
+    -- Operative Felder (admin-editierbar, kann jederzeit ergänzt werden)
+    situation     TEXT,        -- was ist passiert
+    einsatzort    TEXT,        -- wo
+    lage_bild     TEXT,        -- aktuelles Lagebild
     started_at    TEXT NOT NULL DEFAULT (datetime('now')),
     closed_at     TEXT,
     notes         TEXT,
