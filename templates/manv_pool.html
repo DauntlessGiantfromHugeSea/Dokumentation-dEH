@@ -126,7 +126,7 @@
   <div class="card-header">Karten im Vorrat ({{ pool_cards|length }})</div>
   <table class="data">
     <thead>
-      <tr><th>Code</th><th>Token</th><th>Angelegt</th></tr>
+      <tr><th>Code</th><th>Token</th><th>Angelegt</th><th class="right"></th></tr>
     </thead>
     <tbody>
       {% for c in pool_cards %}
@@ -134,6 +134,16 @@
         <td><code>{{ c.card_no }}</code></td>
         <td><code class="muted">{{ c.qr_token }}</code></td>
         <td>{{ format_dt(c.created_at) }}</td>
+        <td class="right">
+          <form method="post"
+                action="{{ url_for('manv_card_delete', cid=c.id) }}"
+                style="display:inline-block;"
+                onsubmit="return confirm('Pool-Sticker {{ c.card_no|e }} loeschen?');">
+            <button class="btn small" type="submit"
+                    style="background: var(--error); border-color: var(--error); color: #fff;"
+                    title="Sticker aus dem Pool löschen">🗑</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

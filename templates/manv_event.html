@@ -268,6 +268,21 @@
           <td class="right">
             <a class="btn small secondary"
                href="{{ url_for('manv_card', cid=c.id) }}">Öffnen</a>
+            {% if current_user.is_admin
+                  and c.status in ('blank', 'gesichtet')
+                  and not c.central_protocol_id
+                  and not c.patient_id
+                  and not c.sichtung_kategorie
+                  and not c.vorname and not c.name %}
+              <form method="post"
+                    action="{{ url_for('manv_card_delete', cid=c.id) }}"
+                    style="display:inline-block; margin-left:4px;"
+                    onsubmit="return confirm('Karte {{ c.card_no|e }} loeschen?');">
+                <button class="btn small" type="submit"
+                        style="background: var(--error); border-color: var(--error); color: #fff;"
+                        title="Unbenutzte Karte löschen">🗑</button>
+              </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

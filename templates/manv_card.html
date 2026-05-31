@@ -19,13 +19,16 @@
   </div>
   <div class="btn-row">
     {% if card.central_protocol_id %}
-      <a class="btn small" href="{{ url_for('central_detail', pid=card.central_protocol_id) }}">
-        Zugehöriger Bericht öffnen
+      <a class="btn" href="{{ url_for('central_detail', pid=card.central_protocol_id) }}">
+        📄 Zugehöriges Notfallprotokoll öffnen
       </a>
     {% else %}
       <form method="post" action="{{ url_for('manv_card_promote', cid=card.id) }}"
             style="display:inline-block;">
-        <button class="btn small" type="submit">→ Zentrales Notfallprotokoll</button>
+        <button class="btn lg" type="submit"
+                style="background: var(--accent); border-color: var(--accent); color: #fff;">
+          🩹 Behandlung starten — Notfallprotokoll anlegen
+        </button>
       </form>
     {% endif %}
   </div>
@@ -248,4 +251,26 @@
     </p>
   </div>
 </div>
+
+{# ===== Gefahrenzone: Karte löschen (nur Admin, nur unbenutzt) ===== #}
+{% if current_user.is_admin
+      and not card.central_protocol_id
+      and not card.patient_id
+      and card.status in ('blank', 'gesichtet') %}
+<div class="card" style="border-left: 4px solid var(--error); margin-top: 18px;">
+  <div class="card-header" style="background: var(--error);">⚠ Karte löschen</div>
+  <p style="margin: 0 0 12px;">
+    Nur für Test-Karten ohne Inhalt — sobald Sichtung, Personalia oder
+    eine Bemerkung eingetragen ist, lehnt der Server die Löschung ab.
+    Verlinkte Protokolle/Patienten bleiben in jedem Fall erhalten.
+  </p>
+  <form method="post" action="{{ url_for('manv_card_delete', cid=card.id) }}"
+        onsubmit="return confirm('MANV-Karte {{ card.card_no|e }} wirklich loeschen?');">
+    <button class="btn small" type="submit"
+            style="background: var(--error); border-color: var(--error); color: #fff;">
+      🗑 Karte löschen
+    </button>
+  </form>
+</div>
+{% endif %}
 {% endblock %}

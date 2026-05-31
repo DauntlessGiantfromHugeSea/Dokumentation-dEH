@@ -2638,6 +2638,36 @@ def get_alarmiertes_manv_event(conn) -> Optional[sqlite3.Row]:
     ).fetchone()
 
 
+def list_manv_waiting_for_treatment(conn) -> list[sqlite3.Row]:
+    """MANV-Karten des aktuell alarmierten Vorfalls, die gesichtet sind
+    (SK1/SK2/SK3 — also behandlungspflichtig) aber noch kein zentrales
+    Notfallprotokoll haben. Erscheinen in der Triage-Liste damit das
+    Behandlerteam sie wie normale Wartepatienten aufrufen kann."""
+    event = get_alarmiertes_manv_event(conn)
+    if not event:
+        return []
+    return conn.execute(
+        """
+        SELECT c.*, e.name AS event_name, e.id AS manv_event_id
+        FROM manv_cards c
+        JOIN manv_events e ON e.id = c.manv_event_id
+        WHERE c.manv_event_id = ?
+          AND c.central_protocol_id IS NULL
+          AND c.sichtung_kategorie IN ('I', 'II', 'III')
+          AND c.status != 'abgeschlossen'
+        ORDER BY
+            CASE c.sichtung_kategorie
+                WHEN 'I' THEN 1
+                WHEN 'II' THEN 2
+                WHEN 'III' THEN 3
+                ELSE 4
+            END ASC,
+            datetime(c.created_at) ASC
+        """,
+        (event["id"],),
+    ).fetchall()
+
+
 def get_manv_event(conn, eid: int) -> Optional[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM manv_events WHERE id = ?", (eid,)
@@ -2858,6 +2888,40 @@ def manv_card_link_protocol(conn, cid: int, protocol_id: int) -> bool:
         (protocol_id, cid),
     )
     return True
+
+
+def delete_manv_card_if_unused(conn, cid: int) -> tuple[bool, str]:
+    """Löscht eine MANV-Karte nur wenn sie noch nichts „enthält":
+    keine Sichtung, kein verknüpftes Protokoll, kein Patient, keine
+    eingetragenen Personalia/Diagnose/Bemerkungen. Gibt (ok, grund)
+    zurück; bei ok=False steht in grund warum nicht."""
+    card = conn.execute(
+        "SELECT * FROM manv_cards WHERE id=?", (cid,)
+    ).fetchone()
+    if not card:
+        return False, "Karte nicht gefunden"
+    if card["central_protocol_id"]:
+        return False, "Notfallprotokoll bereits verknüpft"
+    if card["patient_id"]:
+        return False, "Patient bereits verknüpft"
+    if card["status"] not in ("blank", "gesichtet"):
+        return False, (f"Status '{card['status']}' "
+                       "- Karte wird bereits behandelt")
+    # Hat die Karte Inhalt? Sichtung / Personalia / Diagnose / Bemerkung
+    has_content = any(card[c] for c in (
+        "sichtung_kategorie", "vorname", "name", "geburtsdatum",
+        "alter_jahre", "geschlecht", "nationalitaet",
+        "diag_lokalisation", "bemerkungen",
+    ) if c in card.keys())
+    try:
+        sichtungen = _json.loads(card["sichtungen_json"] or "[]")
+    except Exception:
+        sichtungen = []
+    if has_content or sichtungen:
+        return False, ("Karte enthaelt bereits Daten - bitte "
+                       "stattdessen Status auf 'abgeschlossen' setzen")
+    conn.execute("DELETE FROM manv_cards WHERE id=?", (cid,))
+    return True, ""
 
 
 def get_active_manv_event(conn) -> Optional[sqlite3.Row]:

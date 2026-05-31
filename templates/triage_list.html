@@ -21,6 +21,63 @@
   Aktualisiert sich automatisch alle 15 Sekunden.
 </p>
 
+{% if manv_waiting %}
+<div class="card" style="border-left: 4px solid var(--error); margin-bottom: 18px;">
+  <div class="card-header" style="background: var(--error);">
+    🚨 MANV — Online-Karten zur Behandlung ({{ manv_waiting|length }})
+  </div>
+  <p class="muted" style="font-size: 0.88rem; margin: 0 0 12px;">
+    Aus dem alarmierten MANV-Vorfall: Patienten mit Sichtung, für die
+    noch kein Notfallprotokoll läuft. Sortiert nach Sichtungs-Kategorie.
+  </p>
+  <div class="triage-grid">
+    {% for c in manv_waiting %}
+      {% set sk_class = 'SK1' if c.sichtung_kategorie == 'I'
+                     else ('SK2' if c.sichtung_kategorie == 'II'
+                     else 'SK3') %}
+      <div class="triage-card cat-{{ sk_class }}">
+        <div class="triage-card-top">
+          <span class="triage-cat cat-badge-{{ sk_class }}">
+            {% if c.sichtung_kategorie == 'I' %}SK I · rot
+            {% elif c.sichtung_kategorie == 'II' %}SK II · gelb
+            {% else %}SK III · grün{% endif %}
+          </span>
+          <span class="badge" style="background: var(--error); color: #fff;">
+            MANV
+          </span>
+        </div>
+        <div class="triage-name">
+          {% set fullname = ((c.vorname or '') ~ ' ' ~ (c.name or '')).strip() %}
+          {{ fullname or '— Name unbekannt —' }}
+          {% if c.geburtsdatum %}
+            <span class="muted">· geb. {{ format_dt(c.geburtsdatum) }}</span>
+          {% endif %}
+          <span class="badge">{{ c.card_no }}</span>
+        </div>
+        {% if c.diag_lokalisation or c.bemerkungen %}
+          <p class="triage-notes">
+            {{ c.diag_lokalisation or '' }}
+            {% if c.diag_lokalisation and c.bemerkungen %} · {% endif %}
+            {{ c.bemerkungen or '' }}
+          </p>
+        {% endif %}
+        {% if not current_user.is_triage_intake %}
+        <div class="triage-actions">
+          <form method="post" action="{{ url_for('manv_card_promote', cid=c.id) }}"
+                style="display: inline-block;"
+                onsubmit="return confirm('MANV-Patient übernehmen und Notfallprotokoll öffnen?');">
+            <button class="btn" type="submit">Behandlung starten →</button>
+          </form>
+          <a class="btn small secondary"
+             href="{{ url_for('manv_card', cid=c.id) }}">Karte ansehen</a>
+        </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% if waiting %}
 <div class="triage-grid">
   {% for t in waiting %}
@@ -74,7 +131,7 @@
     </div>
   {% endfor %}
 </div>
-{% else %}
+{% elif not manv_waiting %}
 <div class="empty">
   Aktuell wartet niemand. Neue Patienten über
   „<a href="{{ url_for('triage_new') }}">+ Patient anmelden</a>" erfassen.

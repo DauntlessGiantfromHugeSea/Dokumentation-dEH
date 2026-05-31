@@ -1027,11 +1027,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             (event_id,),
         ).fetchone()
         max_triage_id = row["max_id"] if row else 0
+        manv_waiting = models.list_manv_waiting_for_treatment(db)
         return render_template(
             "triage_list.html",
             waiting=waiting,
             active=active,
             recently_finished=recently_finished,
+            manv_waiting=manv_waiting,
             indicator_lookup=models.PRIOR_INDICATOR_BY_KEY,
             format_dt=models.format_dt,
             max_triage_id=max_triage_id,
@@ -2443,6 +2445,29 @@ def create_app(test_config: dict | None = None) -> Flask:
             db.commit()
             flash(f"Karten-Status: {new_status}", "success")
         return redirect(url_for("manv_card", cid=cid))
+
+    @app.route("/manv/card/<int:cid>/delete", methods=["POST"])
+    @login_required
+    def manv_card_delete(cid: int):
+        """Unbenutzte MANV-Karte löschen — admin-only, nur wenn kein
+        Protokoll dranhängt und nichts ausgefüllt wurde."""
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        card = models.get_manv_card(db, cid)
+        if not card:
+            abort(404)
+        event_id = card["manv_event_id"]
+        ok, reason = models.delete_manv_card_if_unused(db, cid)
+        if ok:
+            db.commit()
+            flash("MANV-Karte gelöscht.", "success")
+        else:
+            flash(f"Karte kann nicht gelöscht werden: {reason}", "error")
+            return redirect(url_for("manv_card", cid=cid))
+        if event_id:
+            return redirect(url_for("manv_event", eid=event_id))
+        return redirect(url_for("manv_pool"))
 
     @app.route("/manv/card/<int:cid>/promote", methods=["POST"])
     @login_required
