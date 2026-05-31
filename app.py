@@ -2381,6 +2381,222 @@ def create_app(test_config: dict | None = None) -> Flask:
             manv_card_id=cid,
         ))
 
+    # ----- Einsatzbefehle + Einsatztagebuch (admin-only) -----
+
+    @app.route("/einsatzbefehle")
+    @login_required
+    def einsatzbefehle_index():
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        # Pro aktuellem Event filtern, falls vorhanden
+        active_event_id = _current_event_id()
+        befehle = models.list_einsatzbefehle(db, event_id=active_event_id)
+        return render_template(
+            "einsatzbefehle_index.html",
+            befehle=befehle,
+            current_event_id=active_event_id,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/einsatzbefehle/new", methods=["POST"])
+    @login_required
+    def einsatzbefehle_new():
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        fields = {f: request.form.get(f)
+                   for f in models.EINSATZBEFEHL_FIELDS}
+        eid, uid = models.create_einsatzbefehl(
+            db,
+            event_id=_current_event_id(),
+            created_by=current_user.id,
+            **fields,
+        )
+        db.commit()
+        flash(f"Einsatzbefehl angelegt — ID {uid}.", "success")
+        return redirect(url_for("einsatzbefehl_detail", eid=eid))
+
+    @app.route("/einsatzbefehle/<int:eid>", methods=["GET", "POST"])
+    @login_required
+    def einsatzbefehl_detail(eid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        befehl = models.get_einsatzbefehl(db, eid)
+        if not befehl:
+            abort(404)
+        if request.method == "POST":
+            fields = {f: request.form.get(f)
+                       for f in models.EINSATZBEFEHL_FIELDS}
+            models.update_einsatzbefehl(db, eid, fields)
+            db.commit()
+            flash("Einsatzbefehl aktualisiert.", "success")
+            return redirect(url_for("einsatzbefehl_detail", eid=eid))
+        tagebuecher = models.list_einsatztagebuch_for_befehl(db, eid)
+        return render_template(
+            "einsatzbefehl_edit.html",
+            befehl=befehl,
+            tagebuecher=tagebuecher,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/einsatzbefehle/<int:eid>/delete", methods=["POST"])
+    @login_required
+    def einsatzbefehl_delete(eid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        befehl = models.get_einsatzbefehl(db, eid)
+        if not befehl:
+            abort(404)
+        models.delete_einsatzbefehl(db, eid)
+        db.commit()
+        flash(f"Einsatzbefehl {befehl['eindeutige_id']} gelöscht.", "success")
+        return redirect(url_for("einsatzbefehle_index"))
+
+    @app.route("/einsatzbefehle/<int:eid>/pdf")
+    @login_required
+    def einsatzbefehl_pdf(eid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        befehl = models.get_einsatzbefehl(db, eid)
+        if not befehl:
+            abort(404)
+        from einsatzbefehl_pdf import render_einsatzbefehl_pdf
+        pdf_bytes = render_einsatzbefehl_pdf(
+            befehl=dict(befehl),
+            exporter_label=(current_user.full_name or current_user.username),
+        )
+        fname = f"Einsatzbefehl_{befehl['eindeutige_id']}.pdf"
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{fname}"'},
+        )
+
+    # --- Einsatztagebuch ---
+
+    @app.route("/einsatzbefehle/<int:eid>/tagebuch/new", methods=["POST"])
+    @login_required
+    def einsatztagebuch_new(eid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        if not models.get_einsatzbefehl(db, eid):
+            abort(404)
+        tid = models.create_einsatztagebuch(
+            db, einsatzbefehl_id=eid,
+            einrichtung_einheit=request.form.get("einrichtung_einheit"),
+            einsatz_anlass=request.form.get("einsatz_anlass"),
+            created_by=current_user.id,
+        )
+        db.commit()
+        flash("Einsatztagebuch angelegt.", "success")
+        return redirect(url_for("einsatztagebuch_detail", tid=tid))
+
+    @app.route("/einsatztagebuch/<int:tid>", methods=["GET", "POST"])
+    @login_required
+    def einsatztagebuch_detail(tid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        tagebuch = models.get_einsatztagebuch(db, tid)
+        if not tagebuch:
+            abort(404)
+        if request.method == "POST":
+            models.update_einsatztagebuch(
+                db, tid,
+                einrichtung_einheit=request.form.get("einrichtung_einheit"),
+                einsatz_anlass=request.form.get("einsatz_anlass"),
+            )
+            db.commit()
+            flash("Tagebuch-Kopfdaten aktualisiert.", "success")
+            return redirect(url_for("einsatztagebuch_detail", tid=tid))
+        eintraege = models.list_tagebuch_eintraege(db, tid)
+        return render_template(
+            "einsatztagebuch_detail.html",
+            tagebuch=tagebuch,
+            eintraege=eintraege,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/einsatztagebuch/<int:tid>/eintrag", methods=["POST"])
+    @login_required
+    def einsatztagebuch_add_eintrag(tid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        if not models.get_einsatztagebuch(db, tid):
+            abort(404)
+        darstellung = (request.form.get("darstellung") or "").strip()
+        if not darstellung:
+            flash("Darstellung ist Pflicht.", "error")
+            return redirect(url_for("einsatztagebuch_detail", tid=tid))
+        models.add_tagebuch_eintrag(
+            db, tagebuch_id=tid,
+            ea=request.form.get("ea") or "",
+            taktische_zeit=request.form.get("taktische_zeit"),
+            darstellung=darstellung,
+            vollzug=request.form.get("vollzug"),
+            anlage=request.form.get("anlage"),
+            created_by=current_user.id,
+        )
+        db.commit()
+        return redirect(url_for("einsatztagebuch_detail", tid=tid))
+
+    @app.route("/einsatztagebuch/<int:tid>/eintrag/<int:eintrag_id>/delete",
+               methods=["POST"])
+    @login_required
+    def einsatztagebuch_delete_eintrag(tid: int, eintrag_id: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        models.delete_tagebuch_eintrag(db, eintrag_id)
+        db.commit()
+        return redirect(url_for("einsatztagebuch_detail", tid=tid))
+
+    @app.route("/einsatztagebuch/<int:tid>/delete", methods=["POST"])
+    @login_required
+    def einsatztagebuch_delete(tid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        tagebuch = models.get_einsatztagebuch(db, tid)
+        if not tagebuch:
+            abort(404)
+        eb_id = tagebuch["einsatzbefehl_id"]
+        models.delete_einsatztagebuch(db, tid)
+        db.commit()
+        flash("Einsatztagebuch gelöscht.", "success")
+        return redirect(url_for("einsatzbefehl_detail", eid=eb_id))
+
+    @app.route("/einsatztagebuch/<int:tid>/pdf")
+    @login_required
+    def einsatztagebuch_pdf(tid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        tagebuch = models.get_einsatztagebuch(db, tid)
+        if not tagebuch:
+            abort(404)
+        befehl = models.get_einsatzbefehl(db, tagebuch["einsatzbefehl_id"])
+        eintraege = models.list_tagebuch_eintraege(db, tid)
+        from einsatzbefehl_pdf import render_einsatztagebuch_pdf
+        pdf_bytes = render_einsatztagebuch_pdf(
+            tagebuch=dict(tagebuch),
+            befehl=dict(befehl) if befehl else {},
+            eintraege=[dict(e) for e in eintraege],
+            exporter_label=(current_user.full_name or current_user.username),
+        )
+        fname = f"Einsatztagebuch_{befehl['eindeutige_id'] if befehl else tid}.pdf"
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{fname}"'},
+        )
+
     # ----- Account (any logged-in user) -----
 
     @app.route("/account/password", methods=["GET", "POST"])

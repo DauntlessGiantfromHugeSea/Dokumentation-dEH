@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Einsatztagebuch{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Einsatztagebuch</h1>
+    <p class="tagline">
+      zum Einsatzbefehl
+      <code>{{ tagebuch.befehl_uid }}</code>
+      {% if tagebuch.befehl_fuer %}({{ tagebuch.befehl_fuer }}){% endif %}
+    </p>
+  </div>
+  <div class="btn-row">
+    <a class="btn small secondary"
+       href="{{ url_for('einsatzbefehl_detail', eid=tagebuch.einsatzbefehl_id) }}">
+      ← zum Einsatzbefehl
+    </a>
+    <a class="btn" target="_blank"
+       href="{{ url_for('einsatztagebuch_pdf', tid=tagebuch.id) }}">📄 PDF</a>
+    <details class="inline-action">
+      <summary class="btn small danger">Löschen</summary>
+      <form method="post"
+            action="{{ url_for('einsatztagebuch_delete', tid=tagebuch.id) }}"
+            class="inline-form"
+            onsubmit="return confirm('Tagebuch wirklich löschen? Alle Einträge gehen verloren.');">
+        <button class="btn small danger" type="submit">Endgültig löschen</button>
+      </form>
+    </details>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Kopfdaten</div>
+  <form method="post" action="{{ url_for('einsatztagebuch_detail', tid=tagebuch.id) }}"
+        class="stack">
+    <div class="row">
+      <label class="field">
+        Einrichtung / Einheit
+        <input name="einrichtung_einheit"
+               value="{{ tagebuch.einrichtung_einheit or '' }}">
+      </label>
+      <label class="field">
+        Einsatz / Anlass
+        <input name="einsatz_anlass"
+               value="{{ tagebuch.einsatz_anlass or '' }}">
+      </label>
+    </div>
+    <div><button class="btn small" type="submit">Speichern</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header">Neuen Eintrag hinzufügen</div>
+  <form method="post"
+        action="{{ url_for('einsatztagebuch_add_eintrag', tid=tagebuch.id) }}"
+        class="stack">
+    <div class="row" style="grid-template-columns: 60px 80px 120px 1fr; gap:10px;">
+      <label class="field">
+        E/A
+        <select name="ea">
+          <option value="">—</option>
+          <option value="E">E (Eingang)</option>
+          <option value="A">A (Ausgang)</option>
+        </select>
+      </label>
+      <label class="field">
+        Vollzug
+        <input name="vollzug" placeholder="✓ / Datum">
+      </label>
+      <label class="field">
+        Takt. Zeit
+        <input name="taktische_zeit" placeholder="14:35">
+      </label>
+      <label class="field">
+        Anlage
+        <input name="anlage" placeholder="z. B. Foto-1">
+      </label>
+    </div>
+    <label class="field">
+      Darstellung der Ereignisse, Maßnahmen, Überlegungen
+      <textarea name="darstellung" rows="3" required></textarea>
+    </label>
+    <div><button class="btn" type="submit">+ Eintrag speichern</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header">Einträge ({{ eintraege|length }})</div>
+  {% if eintraege %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>lfd. Nr.</th>
+          <th>E/A</th>
+          <th>Takt. Zeit</th>
+          <th>Darstellung</th>
+          <th>Vollzug</th>
+          <th>Anlage</th>
+          <th class="right"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in eintraege %}
+        <tr>
+          <td><strong>{{ e.lfd_nr }}</strong></td>
+          <td>{{ e.ea or '—' }}</td>
+          <td>{{ e.taktische_zeit or '—' }}</td>
+          <td style="white-space:pre-wrap;max-width:480px;">{{ e.darstellung }}</td>
+          <td>{{ e.vollzug or '—' }}</td>
+          <td>{{ e.anlage or '—' }}</td>
+          <td class="right">
+            <form method="post"
+                  action="{{ url_for('einsatztagebuch_delete_eintrag', tid=tagebuch.id, eintrag_id=e.id) }}"
+                  style="display:inline-block;"
+                  onsubmit="return confirm('Eintrag #{{ e.lfd_nr }} löschen?');">
+              <button class="btn small danger" type="submit">🗑</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Noch keine Einträge.</p>
+  {% endif %}
+</div>
+{% endblock %}

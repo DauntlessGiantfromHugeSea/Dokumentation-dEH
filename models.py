@@ -299,6 +299,58 @@ CREATE TABLE IF NOT EXISTS manv_cards (
 CREATE INDEX IF NOT EXISTS idx_manv_cards_event ON manv_cards(manv_event_id);
 CREATE INDEX IF NOT EXISTS idx_manv_cards_status ON manv_cards(status);
 CREATE INDEX IF NOT EXISTS idx_manv_cards_kategorie ON manv_cards(sichtung_kategorie);
+
+CREATE TABLE IF NOT EXISTS einsatzbefehle (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id          INTEGER REFERENCES events(id) ON DELETE SET NULL,
+    eindeutige_id     TEXT NOT NULL UNIQUE,    -- z.B. EB-20260531-A4F1B2C8
+    befehlende_stelle TEXT,
+    takt_zeit         TEXT,                    -- Datum/Uhrzeit Freitext
+    befehl_fuer       TEXT,
+    lage              TEXT,
+    auftrag           TEXT,
+    auftragsort       TEXT,
+    ansprechpartner   TEXT,
+    kontaktnummer     TEXT,
+    durchfuehrung     TEXT,
+    versorgung        TEXT,
+    verbindung        TEXT,
+    rueck_bezeichnung TEXT,
+    rueck_rufname     TEXT,
+    rueck_funkgruppe  TEXT,
+    rueck_telefon     TEXT,
+    erstellt_von_text TEXT,                    -- freie Text-Eingabe ("Name, Funktion")
+    created_by        INTEGER REFERENCES users(id),
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_einsatzbefehle_event ON einsatzbefehle(event_id);
+
+CREATE TABLE IF NOT EXISTS einsatztagebuch (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    einsatzbefehl_id    INTEGER NOT NULL REFERENCES einsatzbefehle(id) ON DELETE CASCADE,
+    einrichtung_einheit TEXT,
+    einsatz_anlass      TEXT,
+    blatt_nr            INTEGER NOT NULL DEFAULT 1,
+    blatt_von           INTEGER NOT NULL DEFAULT 1,
+    created_by          INTEGER REFERENCES users(id),
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_einsatztagebuch_befehl ON einsatztagebuch(einsatzbefehl_id);
+
+CREATE TABLE IF NOT EXISTS einsatztagebuch_eintraege (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    tagebuch_id     INTEGER NOT NULL REFERENCES einsatztagebuch(id) ON DELETE CASCADE,
+    lfd_nr          INTEGER NOT NULL,
+    ea              TEXT,                       -- E (Eingang) | A (Ausgang)
+    taktische_zeit  TEXT,
+    darstellung     TEXT NOT NULL,
+    vollzug         TEXT,
+    anlage          TEXT,
+    created_by      INTEGER REFERENCES users(id),
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_eintraege_tagebuch ON einsatztagebuch_eintraege(tagebuch_id);
 """
 
 
@@ -2787,3 +2839,220 @@ def manv_event_stats(conn, event_id: int) -> dict:
         by_status[r["status"]] = r["n"]
     total = sum(r["n"] for r in rows)
     return {"by_kategorie": by_cat, "by_status": by_status, "total": total}
+
+
+# ---------- Einsatzbefehle + Einsatztagebuch ----------
+
+EINSATZBEFEHL_FIELDS = (
+    "befehlende_stelle", "takt_zeit", "befehl_fuer",
+    "lage", "auftrag", "auftragsort", "ansprechpartner", "kontaktnummer",
+    "durchfuehrung", "versorgung", "verbindung",
+    "rueck_bezeichnung", "rueck_rufname", "rueck_funkgruppe", "rueck_telefon",
+    "erstellt_von_text",
+)
+
+
+def _generate_einsatzbefehl_id() -> str:
+    """Eindeutige lange ID — Datum + 8 Hex-Zeichen.
+    Format: EB-YYYYMMDD-XXXXXXXX (z.B. EB-20260531-A4F1B2C8)."""
+    import secrets as _secrets
+    from datetime import datetime as _dt
+    today = _dt.now().strftime("%Y%m%d")
+    suffix = _secrets.token_hex(4).upper()  # 8 Hex
+    return f"EB-{today}-{suffix}"
+
+
+def create_einsatzbefehl(conn, *, event_id: Optional[int],
+                          created_by: Optional[int] = None,
+                          **fields) -> tuple[int, str]:
+    """Legt einen Einsatzbefehl an. fields = beliebige Auswahl aus
+    EINSATZBEFEHL_FIELDS. Liefert (id, eindeutige_id)."""
+    # Eindeutige ID — bei (sehr unwahrscheinlicher) Kollision 3 Versuche
+    for _ in range(3):
+        unique = _generate_einsatzbefehl_id()
+        existing = conn.execute(
+            "SELECT 1 FROM einsatzbefehle WHERE eindeutige_id=?", (unique,)
+        ).fetchone()
+        if not existing:
+            break
+    cols = ["event_id", "eindeutige_id", "created_by"]
+    vals = [event_id, unique, created_by]
+    for f in EINSATZBEFEHL_FIELDS:
+        if f in fields:
+            cols.append(f)
+            v = fields[f]
+            vals.append((v or "").strip() or None if isinstance(v, str) else v)
+    placeholders = ",".join("?" for _ in cols)
+    col_sql = ",".join(cols)
+    cur = conn.execute(
+        f"INSERT INTO einsatzbefehle ({col_sql}) VALUES ({placeholders})",
+        vals,
+    )
+    return cur.lastrowid, unique
+
+
+def get_einsatzbefehl(conn, eid: int) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT e.*, ev.name AS event_name, ev.prefix AS event_prefix,
+               u.username AS creator_username, u.full_name AS creator_full
+        FROM einsatzbefehle e
+        LEFT JOIN events ev ON ev.id = e.event_id
+        LEFT JOIN users u ON u.id = e.created_by
+        WHERE e.id = ?
+        """, (eid,),
+    ).fetchone()
+
+
+def list_einsatzbefehle(conn, *,
+                         event_id: Optional[int] = None
+                         ) -> list[sqlite3.Row]:
+    sql = """
+        SELECT e.*, ev.name AS event_name, ev.prefix AS event_prefix,
+               u.username AS creator_username, u.full_name AS creator_full,
+               (SELECT COUNT(*) FROM einsatztagebuch
+                WHERE einsatzbefehl_id = e.id) AS tagebuch_count
+        FROM einsatzbefehle e
+        LEFT JOIN events ev ON ev.id = e.event_id
+        LEFT JOIN users u ON u.id = e.created_by
+        WHERE 1=1
+    """
+    params: list = []
+    if event_id is not None:
+        sql += " AND e.event_id = ?"
+        params.append(event_id)
+    sql += " ORDER BY datetime(e.created_at) DESC"
+    return conn.execute(sql, params).fetchall()
+
+
+def update_einsatzbefehl(conn, eid: int, fields: dict) -> bool:
+    cols = [f for f in fields if f in EINSATZBEFEHL_FIELDS]
+    if not cols:
+        return False
+    set_sql = ", ".join(f"{c}=?" for c in cols)
+    params = []
+    for c in cols:
+        v = fields[c]
+        params.append((v or "").strip() or None if isinstance(v, str) else v)
+    params.append(eid)
+    conn.execute(
+        f"UPDATE einsatzbefehle SET {set_sql}, "
+        f"updated_at=datetime('now') WHERE id=?", params,
+    )
+    return True
+
+
+def delete_einsatzbefehl(conn, eid: int) -> bool:
+    cur = conn.execute("DELETE FROM einsatzbefehle WHERE id=?", (eid,))
+    return cur.rowcount > 0
+
+
+# --- Einsatztagebuch ---
+
+def create_einsatztagebuch(conn, *, einsatzbefehl_id: int,
+                            einrichtung_einheit: Optional[str] = None,
+                            einsatz_anlass: Optional[str] = None,
+                            created_by: Optional[int] = None) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO einsatztagebuch
+          (einsatzbefehl_id, einrichtung_einheit, einsatz_anlass, created_by)
+        VALUES (?, ?, ?, ?)
+        """,
+        (einsatzbefehl_id,
+         (einrichtung_einheit or "").strip() or None,
+         (einsatz_anlass or "").strip() or None,
+         created_by),
+    )
+    return cur.lastrowid
+
+
+def get_einsatztagebuch(conn, tid: int) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT t.*, e.eindeutige_id AS befehl_uid,
+               e.befehl_fuer AS befehl_fuer,
+               u.username AS creator_username,
+               u.full_name AS creator_full
+        FROM einsatztagebuch t
+        LEFT JOIN einsatzbefehle e ON e.id = t.einsatzbefehl_id
+        LEFT JOIN users u ON u.id = t.created_by
+        WHERE t.id = ?
+        """, (tid,),
+    ).fetchone()
+
+
+def list_einsatztagebuch_for_befehl(conn, einsatzbefehl_id: int
+                                     ) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT t.*,
+               (SELECT COUNT(*) FROM einsatztagebuch_eintraege
+                WHERE tagebuch_id = t.id) AS eintrag_count
+        FROM einsatztagebuch t
+        WHERE einsatzbefehl_id = ?
+        ORDER BY datetime(created_at) DESC
+        """, (einsatzbefehl_id,),
+    ).fetchall()
+
+
+def update_einsatztagebuch(conn, tid: int, *,
+                            einrichtung_einheit: Optional[str] = None,
+                            einsatz_anlass: Optional[str] = None) -> bool:
+    conn.execute(
+        "UPDATE einsatztagebuch SET einrichtung_einheit=?, einsatz_anlass=? "
+        "WHERE id=?",
+        ((einrichtung_einheit or "").strip() or None,
+         (einsatz_anlass or "").strip() or None, tid),
+    )
+    return True
+
+
+def delete_einsatztagebuch(conn, tid: int) -> bool:
+    cur = conn.execute("DELETE FROM einsatztagebuch WHERE id=?", (tid,))
+    return cur.rowcount > 0
+
+
+def add_tagebuch_eintrag(conn, *, tagebuch_id: int, ea: str,
+                          taktische_zeit: Optional[str],
+                          darstellung: str,
+                          vollzug: Optional[str] = None,
+                          anlage: Optional[str] = None,
+                          created_by: Optional[int] = None) -> int:
+    # Nächste lfd_nr berechnen
+    row = conn.execute(
+        "SELECT COALESCE(MAX(lfd_nr), 0) AS m "
+        "FROM einsatztagebuch_eintraege WHERE tagebuch_id=?",
+        (tagebuch_id,),
+    ).fetchone()
+    next_nr = (row["m"] if row else 0) + 1
+    cur = conn.execute(
+        """
+        INSERT INTO einsatztagebuch_eintraege
+          (tagebuch_id, lfd_nr, ea, taktische_zeit, darstellung,
+           vollzug, anlage, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (tagebuch_id, next_nr, (ea or "").strip().upper()[:1] or None,
+         (taktische_zeit or "").strip() or None,
+         (darstellung or "").strip(),
+         (vollzug or "").strip() or None,
+         (anlage or "").strip() or None,
+         created_by),
+    )
+    return cur.lastrowid
+
+
+def list_tagebuch_eintraege(conn, tagebuch_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT * FROM einsatztagebuch_eintraege
+        WHERE tagebuch_id = ? ORDER BY lfd_nr
+        """, (tagebuch_id,),
+    ).fetchall()
+
+
+def delete_tagebuch_eintrag(conn, eintrag_id: int) -> bool:
+    cur = conn.execute(
+        "DELETE FROM einsatztagebuch_eintraege WHERE id=?", (eintrag_id,))
+    return cur.rowcount > 0

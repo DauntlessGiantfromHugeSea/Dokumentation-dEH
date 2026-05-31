@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Einsatzbefehl {{ befehl.eindeutige_id }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Einsatzbefehl
+      <code style="font-size:0.6em;background:var(--accent-soft);color:var(--accent-dark);padding:4px 10px;border-radius:6px;">
+        {{ befehl.eindeutige_id }}
+      </code>
+    </h1>
+    <p class="tagline">
+      Erstellt {{ format_dt(befehl.created_at) }}
+      {% if befehl.creator_full or befehl.creator_username %}
+        von {{ befehl.creator_full or befehl.creator_username }}
+      {% endif %}
+    </p>
+  </div>
+  <div class="btn-row">
+    <a class="btn small secondary" href="{{ url_for('einsatzbefehle_index') }}">← Übersicht</a>
+    <a class="btn" target="_blank"
+       href="{{ url_for('einsatzbefehl_pdf', eid=befehl.id) }}">📄 PDF</a>
+    <details class="inline-action">
+      <summary class="btn small danger">Löschen</summary>
+      <form method="post" action="{{ url_for('einsatzbefehl_delete', eid=befehl.id) }}"
+            class="inline-form"
+            onsubmit="return confirm('Einsatzbefehl {{ befehl.eindeutige_id }} wirklich löschen? Alle Tagebücher werden mitgelöscht.');">
+        <button class="btn small danger" type="submit">Endgültig löschen</button>
+      </form>
+    </details>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('einsatzbefehl_detail', eid=befehl.id) }}"
+      class="stack">
+
+<div class="card">
+  <div class="card-header">Kopfdaten</div>
+  <div class="row">
+    <label class="field">
+      Befehlende Stelle
+      <input name="befehlende_stelle" value="{{ befehl.befehlende_stelle or '' }}">
+    </label>
+    <label class="field">
+      Takt. Zeit
+      <input name="takt_zeit" value="{{ befehl.takt_zeit or '' }}"
+             placeholder="z. B. 31.05.2026 14:30">
+    </label>
+  </div>
+  <label class="field">
+    Befehl für
+    <input name="befehl_fuer" value="{{ befehl.befehl_fuer or '' }}">
+  </label>
+</div>
+
+<div class="card">
+  <div class="card-header" style="background: #f4c430; color: #222;">Lage</div>
+  <label class="field">
+    Lage
+    <textarea name="lage" rows="4">{{ befehl.lage or '' }}</textarea>
+  </label>
+</div>
+
+<div class="card">
+  <div class="card-header" style="background: #f4c430; color: #222;">Auftrag</div>
+  <label class="field">
+    Auftrag
+    <textarea name="auftrag" rows="4">{{ befehl.auftrag or '' }}</textarea>
+  </label>
+  <label class="field">
+    Auftragsort
+    <input name="auftragsort" value="{{ befehl.auftragsort or '' }}">
+  </label>
+  <div class="row">
+    <label class="field">
+      Ansprechpartner vor Ort
+      <input name="ansprechpartner" value="{{ befehl.ansprechpartner or '' }}">
+    </label>
+    <label class="field">
+      Kontaktnummer vor Ort
+      <input name="kontaktnummer" value="{{ befehl.kontaktnummer or '' }}">
+    </label>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header" style="background: #f4c430; color: #222;">Durchführung</div>
+  <label class="field">
+    <textarea name="durchfuehrung" rows="4">{{ befehl.durchfuehrung or '' }}</textarea>
+  </label>
+</div>
+
+<div class="card">
+  <div class="card-header" style="background: #f4c430; color: #222;">Versorgung</div>
+  <label class="field">
+    <textarea name="versorgung" rows="3">{{ befehl.versorgung or '' }}</textarea>
+  </label>
+</div>
+
+<div class="card">
+  <div class="card-header" style="background: #f4c430; color: #222;">Verbindung und Führung</div>
+  <label class="field">
+    Verbindung
+    <textarea name="verbindung" rows="3">{{ befehl.verbindung or '' }}</textarea>
+  </label>
+</div>
+
+<div class="card">
+  <div class="card-header" style="background: #f4c430; color: #222;">Rückwärtige Führungseinrichtung</div>
+  <div class="row">
+    <label class="field">
+      Bezeichnung
+      <input name="rueck_bezeichnung" value="{{ befehl.rueck_bezeichnung or '' }}">
+    </label>
+    <label class="field">
+      Rufname
+      <input name="rueck_rufname" value="{{ befehl.rueck_rufname or '' }}">
+    </label>
+  </div>
+  <div class="row">
+    <label class="field">
+      Funkgruppe / Kanal
+      <input name="rueck_funkgruppe" value="{{ befehl.rueck_funkgruppe or '' }}">
+    </label>
+    <label class="field">
+      Telefon
+      <input name="rueck_telefon" value="{{ befehl.rueck_telefon or '' }}">
+    </label>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Befehl erstellt von</div>
+  <label class="field">
+    Name + Funktion
+    <input name="erstellt_von_text" value="{{ befehl.erstellt_von_text or '' }}"
+           placeholder="z. B. Max Müller, Einsatzleiter">
+  </label>
+</div>
+
+<div class="btn-row">
+  <button class="btn lg" type="submit">💾 Änderungen speichern</button>
+  <a class="btn secondary" target="_blank"
+     href="{{ url_for('einsatzbefehl_pdf', eid=befehl.id) }}">PDF anschauen</a>
+</div>
+</form>
+
+{# ===== Einsatztagebücher ===== #}
+<div class="card" style="margin-top:24px;">
+  <div class="card-header">
+    Einsatztagebücher ({{ tagebuecher|length }})
+  </div>
+  <form method="post" action="{{ url_for('einsatztagebuch_new', eid=befehl.id) }}"
+        class="row" style="grid-template-columns: 1fr 1fr auto; gap: 10px;">
+    <label class="field">
+      Einrichtung / Einheit
+      <input name="einrichtung_einheit"
+             placeholder="z. B. Sanitätsdienst Camp Süd">
+    </label>
+    <label class="field">
+      Einsatz / Anlass
+      <input name="einsatz_anlass"
+             placeholder="z. B. Tagesdienst 31.05.">
+    </label>
+    <div style="align-self: end;">
+      <button class="btn" type="submit">+ Tagebuch anlegen</button>
+    </div>
+  </form>
+  {% if tagebuecher %}
+    <table class="data" style="margin-top:14px;">
+      <thead>
+        <tr>
+          <th>Einrichtung / Einheit</th>
+          <th>Einsatz / Anlass</th>
+          <th>Einträge</th>
+          <th>Angelegt</th>
+          <th class="right">Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tagebuecher %}
+        <tr>
+          <td>{{ t.einrichtung_einheit or '—' }}</td>
+          <td>{{ t.einsatz_anlass or '—' }}</td>
+          <td>{{ t.eintrag_count or 0 }}</td>
+          <td>{{ format_dt(t.created_at) }}</td>
+          <td class="right">
+            <a class="btn small secondary"
+               href="{{ url_for('einsatztagebuch_detail', tid=t.id) }}">Öffnen</a>
+            <a class="btn small" target="_blank"
+               href="{{ url_for('einsatztagebuch_pdf', tid=t.id) }}">PDF</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted" style="margin-top:12px;">
+      Noch kein Tagebuch für diesen Einsatzbefehl. Oben anlegen, dann
+      Einträge mit lfd. Nr., Zeit und Vollzug ergänzen.
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

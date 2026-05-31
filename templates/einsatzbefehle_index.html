@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Einsatzbefehle{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Einsatzbefehle</h1>
+    <p class="tagline">
+      Strukturierte Einsatzbefehle anlegen, drucken und Einsatztagebuch führen.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Neuen Einsatzbefehl anlegen</div>
+  <form method="post" action="{{ url_for('einsatzbefehle_new') }}" class="stack">
+    <div class="row">
+      <label class="field">
+        Befehlende Stelle
+        <input name="befehlende_stelle" placeholder="z. B. Einsatzleitung Camp">
+      </label>
+      <label class="field">
+        Takt. Zeit
+        <input name="takt_zeit" placeholder="z. B. 31.05.2026 14:30">
+      </label>
+    </div>
+    <label class="field">
+      Befehl für
+      <input name="befehl_fuer" placeholder="z. B. Sanitätsdienst Camp Süd">
+    </label>
+    <p class="muted" style="font-size:0.85rem;margin:0;">
+      Die restlichen Felder (Lage, Auftrag, Durchführung, …) lassen sich
+      nach dem Anlegen auf der Detail-Seite ausfüllen und jederzeit
+      bearbeiten. Eine eindeutige ID wird automatisch vergeben.
+    </p>
+    <div><button class="btn" type="submit">+ Einsatzbefehl anlegen</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header">Vorhandene Einsatzbefehle ({{ befehle|length }})</div>
+  {% if befehle %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Befehl für</th>
+          <th>Lage / Auftrag</th>
+          <th>Tagebücher</th>
+          <th>Erstellt</th>
+          <th class="right">Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in befehle %}
+        <tr>
+          <td><code>{{ b.eindeutige_id }}</code></td>
+          <td>{{ b.befehl_fuer or '—' }}</td>
+          <td>
+            {% if b.auftrag %}
+              <span class="muted">{{ b.auftrag[:80] }}{% if b.auftrag|length > 80 %}…{% endif %}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ b.tagebuch_count or 0 }}</td>
+          <td>
+            {{ format_dt(b.created_at) }}<br>
+            <small class="muted">{{ b.creator_full or b.creator_username or '—' }}</small>
+          </td>
+          <td class="right">
+            <a class="btn small secondary"
+               href="{{ url_for('einsatzbefehl_detail', eid=b.id) }}">Öffnen</a>
+            <a class="btn small" target="_blank"
+               href="{{ url_for('einsatzbefehl_pdf', eid=b.id) }}">PDF</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Noch keine Einsatzbefehle.</p>
+  {% endif %}
+</div>
+{% endblock %}

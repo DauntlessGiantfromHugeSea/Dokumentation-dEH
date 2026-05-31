@@ -88,6 +88,7 @@
 
         {% if current_user.is_admin %}
           <a href="{{ url_for('medications_index') }}">Medikamente</a>
+          <a href="{{ url_for('einsatzbefehle_index') }}">Einsatzbefehle</a>
         {% endif %}
       </nav>
 

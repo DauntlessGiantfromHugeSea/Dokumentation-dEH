@@ -98,4 +98,91 @@ docker run -d --name camp-doku -p 8000:8000 \
     <dd>Für echten Betrieb Pflicht, weil Passwörter und medizinische Daten übertragen werden.</dd>
   </dl>
 </div>
+
+<div class="card docs-card">
+  <h2>MANV — Vorbereitung &amp; Alarmierung</h2>
+  <p class="muted" style="margin-top:0;">
+    Massenanfall-von-Verletzten-Workflow. Komplett vorab vorbereitet, im
+    Ernstfall ein Klick.
+  </p>
+  <dl class="docs-dl">
+    <dt>1. Sticker-Vorrat vorbereiten</dt>
+    <dd>
+      <code>MANV → 📦 Sticker-Vorrat</code> →
+      „+ N neue Sticker erzeugen" (z. B. 100 Stück) →
+      <strong>Sticker-PDF</strong> drucken (4 A6-Sticker pro A4, im
+      Querformat-Inhalt rotiert) → ausschneiden und auf Blanko-
+      Umhängekarten kleben. Lagern bis zum Bedarf.
+    </dd>
+    <dt>2. Blanko-Umhängekarten</dt>
+    <dd>
+      <code>MANV → 📦 Sticker-Vorrat → 📄 Blanko-PDF</code> liefert
+      eine doppelseitige A4-Karte. Vorab in großer Stückzahl drucken,
+      Sticker drüberkleben — Karten sind event-übergreifend nutzbar.
+    </dd>
+    <dt>3. MANV-Vorfall anlegen (im Voraus oder spontan)</dt>
+    <dd>
+      <code>MANV → Vorfälle</code> → <strong>+ Anlegen</strong>. Felder
+      (Name, Karten-Präfix, Situation, Einsatzort, Lagebild) sind alle
+      jederzeit nachpflegbar. Vorfall ist zunächst <em>„geplant"</em> —
+      User sehen ihn noch nicht.
+    </dd>
+    <dt>4. 🚨 ALARMIEREN</dt>
+    <dd>
+      Auf der Vorfall-Detail-Seite den großen roten Button
+      <strong>„🚨 JETZT ALARMIEREN"</strong> klicken. Genau ein Vorfall
+      darf gleichzeitig alarmiert sein — neue Alarmierung schließt
+      vorherige automatisch ab. Alle User sehen den Vorfall sofort.
+    </dd>
+    <dt>5. Im Einsatz</dt>
+    <dd>
+      Helfer scannen die Sticker → Karten landen automatisch im
+      alarmierten Vorfall. Mehrere Sichtungen werden auf der Karte
+      mit Zeit + Sichter protokolliert. Übersichtsprotokoll-PDF
+      (DRK-Format) wird automatisch aus den Karten befüllt.
+    </dd>
+    <dt>6. Alarmierung aufheben</dt>
+    <dd>
+      Versehentlich alarmiert? Im Vorfall-Detail
+      <em>„Alarmierung aufheben"</em>. Daten bleiben, Vorfall ist
+      wieder im Status „geplant" und für User unsichtbar.
+    </dd>
+  </dl>
+</div>
+
+<div class="card docs-card">
+  <h2>Einsatzbefehl &amp; Einsatztagebuch</h2>
+  <p class="muted" style="margin-top:0;">
+    Strukturierte Einsatzbefehle mit eindeutiger ID, Druck als A4-PDF,
+    optional Einsatztagebuch dazu.
+  </p>
+  <dl class="docs-dl">
+    <dt>Anlegen</dt>
+    <dd>
+      <code>Einsatzbefehle</code> (im Hauptmenü, admin-only) →
+      <strong>+ Einsatzbefehl anlegen</strong>. Kopfdaten genügen am
+      Anfang — Lage / Auftrag / Durchführung / Versorgung / Verbindung /
+      Rückwärtige Führungseinrichtung lassen sich danach jederzeit
+      pflegen.
+    </dd>
+    <dt>Eindeutige ID</dt>
+    <dd>
+      Format <code>EB-YYYYMMDD-XXXXXXXX</code> (Datum + 8 Hex), wird
+      automatisch vergeben und erscheint im PDF oben rechts.
+    </dd>
+    <dt>PDF</dt>
+    <dd>
+      Einseitiges A4-Layout, kein Druck-Verschnitt. Button
+      <strong>📄 PDF</strong> auf der Detail-Seite.
+    </dd>
+    <dt>Einsatztagebuch</dt>
+    <dd>
+      Zu jedem Einsatzbefehl kann ein (oder mehrere) Tagebücher
+      angelegt werden. Spaltenformat <em>lfd. Nr. / E/A / Taktische
+      Zeit / Darstellung / Vollzug / Anlage</em>. Einträge laufen
+      automatisch durch, PDF passt sich mehrseitig an die Eintragsanzahl
+      an.
+    </dd>
+  </dl>
+</div>
 {% endblock %}
