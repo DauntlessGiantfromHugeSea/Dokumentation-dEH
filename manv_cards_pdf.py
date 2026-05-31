@@ -629,18 +629,17 @@ def _draw_anhaengekarte_sticker(c, x, y, w, h, card, base_url):
     obere Section der DRK-Anhängekarte abbildet: Titel + Personalia-Linien
     + Patienten-Nr-Box mit QR. Bleibt handschriftlich ausfüllbar.
 
-    Wird auf die obere Hälfte der DRK-Karte geklebt."""
-    pad = 3
+    Wird auf die obere Hälfte der DRK-Karte geklebt. Größerer Innenrand
+    damit kleine Druck-Verschiebungen nicht den Inhalt anschneiden;
+    keine sichtbare Schneidelinie (Bogen ist Etiketten-Papier)."""
+    pad = 6
     inner_x = x + pad
     inner_y = y + pad
     inner_w = w - 2 * pad
     inner_h = h - 2 * pad
 
-    # Schneidelinie (gestrichelt) am Rand
-    c.setStrokeColor(BORDER_LIGHT); c.setLineWidth(0.3)
-    c.setDash(2, 2)
-    c.rect(x, y, w, h, stroke=1, fill=0)
-    c.setDash()
+    # KEINE Schneidelinie — Bogen ist Etiketten-Papier, die Etiketten
+    # haben ihren eigenen physischen Rand.
 
     # === Titel-Block (eigene Höhe, dünne Trennlinie nach unten) ===
     title_h = 11 * mm

@@ -1582,6 +1582,15 @@ details.inline-action:not([open]) .inline-form { display: none; }
 /* ============ Responsive ============ */
 
 /* Tablet */
+/* ============ Tablet / iPad ============ */
+@media (max-width: 1100px) {
+  /* Dropdowns dürfen nicht über den rechten Bildschirmrand ragen */
+  .user-menu-panel { right: 0; min-width: 240px; max-width: 90vw; }
+  .nav-dropdown-panel { min-width: 200px; max-width: 90vw; }
+  /* Sticky topbar bleibt erhalten, aber leicht kompakter */
+  header.topbar { gap: 12px; padding: 10px 16px; }
+}
+
 @media (max-width: 900px) {
   main {
     width: 100%;
@@ -1597,10 +1606,39 @@ details.inline-action:not([open]) .inline-form { display: none; }
     -webkit-overflow-scrolling: touch;
   }
   header.topbar::-webkit-scrollbar { display: none; }
-  header.topbar .brand { position: sticky; left: 0; z-index: 2; }
-  header.topbar nav { gap: 4px; flex-wrap: nowrap; }
-  header.topbar nav a { font-size: 0.88rem; }
-  header.topbar .user { font-size: 0.82rem; }
+  header.topbar .brand { position: sticky; left: 0; z-index: 2; flex-shrink: 0; }
+  header.topbar .topbar-spacer { display: none; }
+  header.topbar nav { gap: 4px; flex-wrap: nowrap; flex-shrink: 0; }
+  header.topbar nav a {
+    font-size: 0.9rem;
+    padding: 8px 12px;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+  header.topbar .user-menu { flex-shrink: 0; }
+  header.topbar .nav-dropdown-trigger {
+    font-size: 0.9rem;
+    padding: 8px 12px;
+    min-height: 36px;
+  }
+  /* User-Menu auf Tablet: rechts in der scrollbaren Topbar fixiert */
+  header.topbar .user-menu-trigger { font-size: 0.88rem; padding: 8px 14px; }
+  /* Dropdown-Panels: nach unten falls Topbar gescrollt wurde */
+  .nav-dropdown-panel,
+  .user-menu-panel {
+    position: fixed;
+    top: 58px;
+    right: 10px;
+    left: auto;
+    min-width: 240px;
+    max-width: calc(100vw - 20px);
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  .nav-dropdown-panel { left: 10px; right: 10px; }
+
   .toolbar { gap: 8px; padding: 10px 12px; }
   .toolbar label.field { min-width: 0; flex: 1 1 140px; }
   .protocol-meta { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
@@ -1635,9 +1673,19 @@ details.inline-action:not([open]) .inline-form { display: none; }
   table.data thead,
   table.data tbody,
   table.data tr { width: max-content; min-width: 100%; }
+
+  /* User-Card-Actions: 2-Spalten auf Tablet */
+  .user-card-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* MANV / Einsatzbefehl-Layouts: 1-Spaltig */
+  .triage-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .akte-stats { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+
+  /* Med-Grid-Wrap: horizontale Scrollbar */
+  .med-grid-wrap { margin: 0 -10px; padding: 0 10px; }
 }
 
-/* Phone */
+/* ============ Phone ============ */
 @media (max-width: 640px) {
   h1 { font-size: 1.25rem; }
   h2 { font-size: 1.05rem; }
@@ -1648,8 +1696,25 @@ details.inline-action:not([open]) .inline-form { display: none; }
   }
   header.topbar .brand { font-size: 1rem; }
   header.topbar nav { gap: 4px; }
-  header.topbar nav a { font-size: 0.85rem; padding: 5px 8px; }
-  header.topbar .user a { margin-left: 0; }
+  header.topbar nav a {
+    font-size: 0.88rem;
+    padding: 7px 11px;
+    min-height: 34px;
+  }
+  header.topbar .nav-dropdown-trigger {
+    font-size: 0.88rem;
+    padding: 7px 11px;
+    min-height: 34px;
+  }
+  /* User-Menu-Trigger zeigt auf Phone nur den Vornamen / max. 1 Wort */
+  header.topbar .user-menu-trigger {
+    max-width: 130px;
+    font-size: 0.85rem;
+    padding: 7px 10px;
+  }
+  header.topbar .user-menu-trigger .user-name {
+    max-width: 90px;
+  }
 
   form.stack .row,
   form.stack .row.two,
@@ -1701,21 +1766,54 @@ details.inline-action:not([open]) .inline-form { display: none; }
   table.data th, table.data td { padding: 7px 9px; font-size: 0.85rem; }
   table.data .right { white-space: nowrap; }
 
-  .btn { padding: 7px 14px; }
-  .btn.small { padding: 4px 9px; }
-  .btn-row { flex-wrap: wrap; gap: 6px; }
+  /* Touch-Targets: min. 36×36, Buttons spürbar fingertauglich */
+  .btn { padding: 9px 16px; min-height: 38px; }
+  .btn.small { padding: 7px 12px; min-height: 32px; }
+  .btn.lg { padding: 12px 20px; font-size: 1rem; }
+  .btn-row { flex-wrap: wrap; gap: 8px; }
+
+  /* Forms: Inputs deutlich größer auf Phone (iOS zoomt sonst ein) */
+  label.field input,
+  label.field textarea,
+  label.field select {
+    font-size: 16px;
+    padding: 11px 13px;
+  }
 
   .chooser-card { padding: 16px; }
   .chooser-grid { grid-template-columns: 1fr; gap: 12px; }
   .login-wrap { margin: 18px 12px; }
+
+  /* User-Cards: 1-Spaltig */
+  .user-card-actions { grid-template-columns: 1fr; }
+  .user-card { padding: 14px; }
+
+  /* MANV-Triage-Grid: 1-Spaltig auf Phone */
+  .triage-grid { grid-template-columns: 1fr; }
+
+  /* Akte-Stats: 2-Spaltig (statt 3-4) auf Phone */
+  .akte-stats { grid-template-columns: repeat(2, 1fr); }
+
+  /* Quick-Cat-Buttons (Triage): 1 pro Reihe besser tippbar */
+  .quick-cat { grid-template-columns: 1fr; }
+
+  /* Dropdown-Panels nehmen fast die volle Breite */
+  .nav-dropdown-panel,
+  .user-menu-panel {
+    left: 8px !important;
+    right: 8px !important;
+    min-width: 0;
+    max-width: calc(100vw - 16px);
+  }
+  .menu-item { padding: 12px 16px; min-height: 44px; }
 }
 
-/* Very narrow */
+/* ============ Very narrow ============ */
 @media (max-width: 420px) {
   .card-header-badge { font-size: 0.72rem; padding: 1px 6px; }
-  header.topbar .event-switch select,
-  header.topbar .event-pill { max-width: 150px; }
-  .theme-toggle { max-width: 42px; overflow: hidden; }
+  /* User-Menu-Trigger zeigt nur die ersten Buchstaben */
+  header.topbar .user-menu-trigger .user-name { max-width: 60px; }
+  header.topbar .brand { font-size: 0.95rem; }
 }
 
 /* Permissions form layout (admin user list) */
