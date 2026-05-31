@@ -122,6 +122,24 @@
       <div><button class="btn small" type="submit">Speichern</button></div>
     </form>
   </div>
+
+  {# ===== Gefahrenzone: Vorfall löschen (nur Admin) ===== #}
+  <div class="card" style="border-left: 4px solid var(--error); margin-top: 18px;">
+    <div class="card-header" style="background: var(--error);">⚠ Vorfall löschen</div>
+    <p style="margin: 0 0 12px;">
+      Endgültig löschen — für Test-Vorfälle. Benutzte Karten
+      (Triage-Einträge, Patienten) bleiben erhalten und fallen in die
+      Karten-Übersicht zurück; nur dieser Vorfall mit Lagebild &amp;
+      Zuordnung verschwindet.
+    </p>
+    <form method="post" action="{{ url_for('manv_event_close', eid=event.id) }}"
+          onsubmit="return confirm('MANV-Vorfall „{{ event.name|e }}“ wirklich löschen? Diese Aktion lässt sich nicht rückgängig machen.');">
+      <button class="btn small" type="submit" name="action" value="delete"
+              style="background: var(--error); border-color: var(--error); color: #fff;">
+        🗑 Vorfall endgültig löschen
+      </button>
+    </form>
+  </div>
 {% else %}
   {# Read-only-Anzeige für nicht-Admins #}
   {% if event.situation or event.einsatzort or event.lage_bild %}

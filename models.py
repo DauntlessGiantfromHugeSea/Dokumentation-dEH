@@ -2880,32 +2880,36 @@ def close_all_active_manv_events(conn, *, except_id: Optional[int] = None) -> in
 
 # --- Sticker-Pool (Vorbereitung vor dem Einsatz) ---
 
-def _next_pool_code_n(conn) -> int:
-    """Höchste vergebene EH-Nr +1. Pool-Codes sind global laufend."""
-    row = conn.execute(
-        "SELECT card_no FROM manv_cards "
-        "WHERE card_no LIKE 'EH-%' "
-        "ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    if not row:
-        return 1
-    try:
-        return int(row["card_no"].split("-", 1)[1]) + 1
-    except Exception:
-        return 1
+# Alphabet für zufällige Pool-Codes: Kleinbuchstaben + Ziffern, ohne
+# leicht verwechselbare Zeichen (0/o/O, 1/l/I).
+POOL_CODE_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"
+POOL_CODE_LEN = 10
+
+
+def _gen_pool_code(conn) -> str:
+    """Generiert einen zufälligen 10-Zeichen Code (z. B. 'c382j2i8aq')
+    und stellt sicher, dass er noch nicht vergeben ist."""
+    import secrets as _secrets
+    for _ in range(20):
+        code = "".join(_secrets.choice(POOL_CODE_ALPHABET)
+                       for _ in range(POOL_CODE_LEN))
+        if not conn.execute(
+            "SELECT 1 FROM manv_cards WHERE card_no = ?", (code,),
+        ).fetchone():
+            return code
+    raise RuntimeError("Could not generate unique pool card code")
 
 
 def create_sticker_pool(conn, *, count: int,
                          created_by: Optional[int] = None
                          ) -> list[sqlite3.Row]:
-    """Legt N Pool-Karten (ohne Event-Bindung) an mit fortlaufenden Codes
-    'EH-000001'..'EH-NNNNNN' und je zufälligem QR-Token. Liefert die Rows."""
+    """Legt N Pool-Karten (ohne Event-Bindung) an mit zufälligen
+    10-Zeichen Codes (Kleinbuchstaben + Ziffern, ohne 0/o/1/l) und je
+    zufälligem QR-Token. Liefert die Rows."""
     import secrets as _secrets
     new_ids = []
-    start = _next_pool_code_n(conn)
-    for i in range(count):
-        n = start + i
-        code = f"EH-{n:06d}"
+    for _ in range(count):
+        code = _gen_pool_code(conn)
         token = _secrets.token_hex(8)  # 16 hex chars = 2^64 möglich
         for _ in range(3):
             if not conn.execute(
