@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Scanner — Admin{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Barcode-Scanner</h1>
+    <p class="tagline">
+      Code unter einem PDF-Protokoll mit der Webcam scannen oder per
+      Hand eintippen — System sucht den passenden Datensatz und öffnet
+      Detail / Akte.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Webcam-Scanner</div>
+  <p class="muted" style="font-size:0.9rem;margin:0 0 10px;">
+    Browser-Zugriff auf die Kamera erlauben (am besten Rückkamera bei
+    Mobilgeräten). Erkennt Code128, Code39, EAN, QR.
+  </p>
+  <div id="scanWrap" style="position:relative;max-width:480px;margin:0 auto;">
+    <video id="scanVideo" style="width:100%;border-radius:var(--radius);background:#000;" muted playsinline></video>
+  </div>
+  <div id="scanStatus" class="muted" style="text-align:center;margin-top:10px;font-size:0.9rem;">
+    Klick auf <strong>„Kamera starten"</strong> ↓
+  </div>
+  <div class="btn-row" style="justify-content:center;margin-top:8px;">
+    <button class="btn" type="button" id="btnStart">▶ Kamera starten</button>
+    <button class="btn small secondary" type="button" id="btnStop" disabled>■ Stoppen</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Manuell eintippen</div>
+  <form id="manualForm" class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
+    <label class="field">
+      Code
+      <input id="manualInput" type="text" autocomplete="off"
+             placeholder="z. B. ZEH-000042, DEH-000017, EH-000003, Stammnummer">
+    </label>
+    <div style="align-self: end;">
+      <button class="btn" type="submit">Suchen</button>
+    </div>
+  </form>
+  <div id="manualResult" style="margin-top:12px;"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/html5-qrcode.min.js"></script>
+<script>
+(function () {
+  const status = document.getElementById('scanStatus');
+  const btnStart = document.getElementById('btnStart');
+  const btnStop = document.getElementById('btnStop');
+  const result = document.getElementById('manualResult');
+  let scanner = null;
+  let lastCode = null;
+  let lastAt = 0;
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function lookup(code) {
+    status.textContent = 'Suche „' + code + '" …';
+    try {
+      const res = await fetch('/admin/scan/lookup?code=' + encodeURIComponent(code),
+                              { credentials: 'same-origin' });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        status.innerHTML = '✓ Gefunden — öffne ' + escapeHtml(data.kind) + ' …';
+        window.location = data.url;
+        return;
+      }
+      status.innerHTML = '<span style="color:var(--error);">' +
+        escapeHtml(data.message || 'Nicht gefunden') + '</span>';
+    } catch (e) {
+      status.innerHTML = '<span style="color:var(--error);">Netzwerkfehler</span>';
+    }
+  }
+
+  // Manueller Form-Submit
+  document.getElementById('manualForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const code = document.getElementById('manualInput').value.trim();
+    if (code) lookup(code);
+  });
+
+  // Webcam-Scanner
+  btnStart.addEventListener('click', async () => {
+    if (!window.Html5Qrcode) {
+      status.textContent = 'Scanner-Bibliothek nicht geladen (Offline?)';
+      return;
+    }
+    try {
+      // Wrap div anlegen (html5-qrcode braucht <div>, kein <video>)
+      let wrap = document.getElementById('scanCamWrap');
+      if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.id = 'scanCamWrap';
+        wrap.style.cssText = 'width:100%;max-width:480px;margin:0 auto;';
+        document.getElementById('scanWrap').replaceWith(wrap);
+      }
+      scanner = new Html5Qrcode('scanCamWrap');
+      const config = { fps: 10, qrbox: { width: 280, height: 140 },
+                        formatsToSupport: [
+                          Html5QrcodeSupportedFormats.CODE_128,
+                          Html5QrcodeSupportedFormats.CODE_39,
+                          Html5QrcodeSupportedFormats.QR_CODE,
+                          Html5QrcodeSupportedFormats.EAN_13,
+                          Html5QrcodeSupportedFormats.EAN_8,
+                        ] };
+      await scanner.start({ facingMode: 'environment' }, config,
+        (decodedText) => {
+          // Throttle: gleicher Code innerhalb 3s ignorieren
+          const now = Date.now();
+          if (decodedText === lastCode && now - lastAt < 3000) return;
+          lastCode = decodedText; lastAt = now;
+          status.textContent = 'Erkannt: ' + decodedText;
+          lookup(decodedText);
+        },
+        () => {} // ignore decode errors
+      );
+      btnStart.disabled = true; btnStop.disabled = false;
+      status.textContent = 'Kamera aktiv — Code unter PDF zeigen';
+    } catch (e) {
+      status.innerHTML = '<span style="color:var(--error);">'
+        + escapeHtml(e.message || String(e)) + '</span>';
+    }
+  });
+
+  btnStop.addEventListener('click', async () => {
+    if (scanner) {
+      try { await scanner.stop(); await scanner.clear(); } catch (_) {}
+      scanner = null;
+    }
+    btnStart.disabled = false; btnStop.disabled = true;
+    status.textContent = 'Kamera gestoppt';
+  });
+})();
+</script>
+{% endblock %}
