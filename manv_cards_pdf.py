@@ -622,6 +622,95 @@ def _draw_card_back(c, card, event):
             line_y -= 6
 
 
+# ============ QR-Aufkleber-Bogen (A4 portrait) ============
+
+def render_qr_stickers_pdf(*, event, cards, base_url, cols=3, rows=8,
+                            include_event_name=True):
+    """Bogen mit QR-Aufklebern: ein Sticker pro MANV-Karte, zum
+    Ausdrucken (am besten auf selbstklebendes Etiketten-Papier) und
+    Aufkleben auf die echten DRK-Anhängekarten.
+
+    Default: 3×8 = 24 Aufkleber pro A4-Seite, ca. 63×30mm pro Sticker.
+    Schneidemarkierungen helfen beim Zerlegen wenn man normales Papier
+    nimmt.
+    """
+    from reportlab.lib.pagesizes import A4 as _A4_PORT
+    PAGE_W, PAGE_H = _A4_PORT
+    margin = 8 * mm
+
+    cols = max(1, min(int(cols or 3), 6))
+    rows = max(1, min(int(rows or 8), 12))
+    cell_w = (PAGE_W - 2 * margin) / cols
+    cell_h = (PAGE_H - 2 * margin) / rows
+
+    per_page = cols * rows
+    total_pages = (len(cards) + per_page - 1) // per_page if cards else 1
+
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=_A4_PORT)
+    c.setTitle(f"MANV-QR-Aufkleber {event.get('card_prefix','')}")
+
+    def draw_sticker(x, y, w, h, card):
+        # Sticker-Rand (gestrichelt = Schneidelinie)
+        c.setStrokeColor(BORDER_LIGHT); c.setLineWidth(0.3)
+        c.setDash(2, 2)
+        c.rect(x, y, w, h, stroke=1, fill=0)
+        c.setDash()  # reset
+        # Layout: QR links (quadratisch, so groß wie Höhe), Text rechts
+        pad = 3
+        qr_size = min(h - 2 * pad, w * 0.42)
+        qr_x = x + pad
+        qr_y = y + (h - qr_size) / 2
+        qr_url = f"{base_url}/manv/scan/{card['qr_token']}"
+        _draw_qr(c, qr_x, qr_y, qr_size, qr_url)
+        # Text rechts vom QR
+        tx = qr_x + qr_size + 3
+        tw = x + w - tx - 2
+        # Karten-Nr. groß
+        c.setFont("Helvetica-Bold", 12); c.setFillColor(colors.black)
+        c.drawString(tx, y + h - 10, card["card_no"])
+        # Event-Name darunter klein
+        cur_text_y = y + h - 16
+        if include_event_name and event.get("name"):
+            c.setFont("Helvetica", 6.5); c.setFillColor(TEXT_MUTED)
+            c.drawString(tx, cur_text_y, str(event["name"])[:30])
+            cur_text_y -= 4
+        # Hinweistext + QR-Token
+        c.setFont("Helvetica", 5.5); c.setFillColor(TEXT_MUTED)
+        c.drawString(tx, cur_text_y, "Scan → digitale Karte")
+        c.drawString(tx, y + 3, f"Token: {str(card.get('qr_token',''))[:12]}")
+
+    if not cards:
+        # Leere Seite mit Hinweis (sollte nicht passieren, aber sicher ist sicher)
+        c.setFont("Helvetica", 12); c.setFillColor(colors.black)
+        c.drawCentredString(PAGE_W / 2, PAGE_H / 2,
+                             "Keine Karten zum Drucken")
+        c.save()
+        return buf.getvalue()
+
+    for page_idx in range(total_pages):
+        page_cards = cards[page_idx * per_page:(page_idx + 1) * per_page]
+        # Sticker zeichnen — von oben links nach rechts unten
+        for i, card in enumerate(page_cards):
+            col = i % cols
+            row = i // cols
+            x = margin + col * cell_w
+            y = PAGE_H - margin - (row + 1) * cell_h
+            draw_sticker(x, y, cell_w, cell_h, card)
+        # Footer mit Seitenzahl + Anweisung
+        c.setFont("Helvetica", 6.5); c.setFillColor(TEXT_MUTED)
+        c.drawString(margin, margin - 4,
+                      f"MANV „{event.get('name','')}\" · "
+                      f"Aufkleber-Bogen — auf die "
+                      f"„Patienten-Nr aufkleben\"-Stelle der DRK-Karte kleben")
+        c.drawRightString(PAGE_W - margin, margin - 4,
+                           f"Seite {page_idx + 1} von {total_pages}")
+        c.showPage()
+
+    c.save()
+    return buf.getvalue()
+
+
 def render_manv_cards_pdf(*, event, cards, base_url):
     """Pro Karte 2 PDF-Seiten (vorne + hinten). Duplex-Druck → fertige
     doppelseitige A5-Karte."""

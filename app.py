@@ -2017,6 +2017,54 @@ def create_app(test_config: dict | None = None) -> Flask:
                      f'attachment; filename="{fname}"'},
         )
 
+    @app.route("/manv/event/<int:eid>/stickers.pdf")
+    @login_required
+    def manv_stickers_pdf(eid: int):
+        """QR-Aufkleber-Bogen — wird auf Etiketten-Papier gedruckt und
+        auf die echten DRK-Anhängekarten geklebt."""
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        event = models.get_manv_event(db, eid)
+        if not event:
+            abort(404)
+        try:
+            id_from = int(request.args.get("from") or 0)
+            id_to = int(request.args.get("to") or 0)
+        except ValueError:
+            id_from = id_to = 0
+        if request.args.get("status") == "blank":
+            cards = models.list_manv_cards(db, eid, status="blank")
+        elif id_from and id_to:
+            cards = [c for c in models.list_manv_cards(db, eid)
+                     if id_from <= c["id"] <= id_to]
+        else:
+            cards = models.list_manv_cards(db, eid)
+        cards = cards[:200]
+        if not cards:
+            flash("Keine Karten zum Drucken gefunden.", "error")
+            return redirect(url_for("manv_event", eid=eid))
+        try:
+            cols = int(request.args.get("cols") or 3)
+            rows = int(request.args.get("rows") or 8)
+        except ValueError:
+            cols, rows = 3, 8
+        from manv_cards_pdf import render_qr_stickers_pdf
+        scheme = "https" if request.is_secure else "http"
+        base_url = f"{scheme}://{request.host}"
+        pdf_bytes = render_qr_stickers_pdf(
+            event=dict(event),
+            cards=[dict(c) for c in cards],
+            base_url=base_url,
+            cols=cols, rows=rows,
+        )
+        fname = f"MANV_{event['card_prefix']}_QR-Aufkleber.pdf"
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{fname}"'},
+        )
+
     @app.route("/manv/event/<int:eid>/uebersicht.pdf")
     @login_required
     def manv_uebersicht_pdf(eid: int):
