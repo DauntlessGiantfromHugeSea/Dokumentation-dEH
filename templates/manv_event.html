@@ -28,8 +28,8 @@
         🏷 Anhängekarten-Sticker
       </a>
       <a class="btn small secondary" target="_blank"
-         href="{{ url_for('manv_print_pdf', eid=event.id) }}">
-        📄 Volle Blanko-Karten
+         href="{{ url_for('static', filename='anhaengekarte_blanko.pdf') }}">
+        📄 DRK-Blanko-Karten
       </a>
       <a class="btn small secondary" target="_blank"
          href="{{ url_for('manv_stickers_pdf', eid=event.id, style='mini') }}">
