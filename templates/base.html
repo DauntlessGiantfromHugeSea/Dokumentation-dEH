@@ -26,9 +26,16 @@
   <header class="topbar">
     <a class="brand" href="{% if current_user.is_triage_intake %}{{ url_for('triage_new') }}{% elif current_user.can_view_decentral %}{{ url_for('dashboard') }}{% else %}{{ url_for('central_index') }}{% endif %}">Erste Hilfe</a>
 
+    {# Hamburger-Button: nur auf Mobile sichtbar #}
+    <button type="button" class="hamburger-btn" id="hamburgerBtn" aria-label="Menü öffnen" aria-expanded="false" aria-controls="mobileMenu">
+      <span class="hamburger-bar"></span>
+      <span class="hamburger-bar"></span>
+      <span class="hamburger-bar"></span>
+    </button>
+
     {% if current_user.is_triage_intake %}
       {# Kiosk-Mode: nur Anmelden + User-Menü #}
-      <nav>
+      <nav class="topbar-nav">
         <a href="{{ url_for('triage_new') }}">+ Anmelden</a>
       </nav>
       <div class="topbar-spacer"></div>
@@ -46,7 +53,7 @@
         </div>
       </div>
     {% else %}
-      <nav>
+      <nav class="topbar-nav">
         {% if current_user.can_view_decentral %}
           <a href="{{ url_for('dashboard') }}">Dashboard</a>
         {% endif %}
@@ -138,6 +145,92 @@
     {% endif %}
   </header>
 
+  {# === Mobile Hamburger-Panel: nur auf Mobile via CSS sichtbar === #}
+  <div class="mobile-menu" id="mobileMenu" hidden>
+    <div class="mobile-menu-inner">
+      {% if current_user.is_triage_intake %}
+        <div class="mobile-menu-section">
+          <div class="mobile-menu-label">Kiosk</div>
+          <a class="mobile-menu-item" href="{{ url_for('triage_new') }}">+ Anmelden</a>
+        </div>
+        <div class="mobile-menu-section">
+          <div class="mobile-menu-label">Konto</div>
+          <button type="button" class="mobile-menu-item theme-toggle" id="themeToggleMobile">
+            ☀ Kontrast umschalten
+          </button>
+          <a class="mobile-menu-item" href="{{ url_for('docs_index') }}">Hilfe</a>
+          <a class="mobile-menu-item danger" href="{{ url_for('logout') }}">Abmelden</a>
+        </div>
+      {% else %}
+        {% if current_event %}
+          <div class="mobile-menu-section">
+            <div class="mobile-menu-label">Aktives Event</div>
+            <div class="mobile-menu-current-event">{{ current_event.name }}</div>
+            {% if available_events|length > 1 %}
+              <form method="post" action="{{ url_for('event_switch') }}" class="mobile-menu-event-switch">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <select name="event_id" onchange="this.form.submit()">
+                  {% for e in available_events %}
+                    <option value="{{ e.id }}" {% if e.id == current_event.id %}selected{% endif %}>
+                      {{ e.name }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </form>
+            {% endif %}
+          </div>
+        {% endif %}
+
+        <div class="mobile-menu-section">
+          <div class="mobile-menu-label">Navigation</div>
+          {% if current_user.can_view_decentral %}
+            <a class="mobile-menu-item" href="{{ url_for('dashboard') }}">Dashboard</a>
+          {% endif %}
+          {% if current_user.can_view_decentral %}
+            <a class="mobile-menu-item" href="{{ url_for('index') }}">Alle Berichte</a>
+            {% if can_create_in_current_event %}
+              <a class="mobile-menu-item" href="{{ url_for('protocol_new_chooser') }}">+ Neuer Bericht</a>
+            {% endif %}
+            <a class="mobile-menu-item" href="{{ url_for('patient_list') }}">Personen</a>
+            {% if can_create_in_current_event %}
+              <a class="mobile-menu-item" href="{{ url_for('export_form') }}">Export</a>
+            {% endif %}
+          {% endif %}
+          <a class="mobile-menu-item" href="{{ url_for('triage_list') }}">Triage</a>
+          <a class="mobile-menu-item" href="{{ url_for('central_index') }}">Zentral</a>
+        </div>
+
+        <div class="mobile-menu-section">
+          <div class="mobile-menu-label">MANV</div>
+          <a class="mobile-menu-item" href="{{ url_for('manv_index') }}">Vorfälle</a>
+          {% if current_user.is_admin %}
+            <a class="mobile-menu-item" href="{{ url_for('manv_pool') }}">📦 Sticker-Vorrat</a>
+          {% endif %}
+        </div>
+
+        {% if current_user.is_admin %}
+          <div class="mobile-menu-section">
+            <div class="mobile-menu-label">Verwaltung</div>
+            <a class="mobile-menu-item" href="{{ url_for('medications_index') }}">Medikamente</a>
+            <a class="mobile-menu-item" href="{{ url_for('einsatzbefehle_index') }}">Einsatzbefehle</a>
+            <a class="mobile-menu-item" href="{{ url_for('admin_users') }}">⚙ Benutzer-Verwaltung</a>
+            <a class="mobile-menu-item" href="{{ url_for('admin_scan') }}">📷 Scanner</a>
+          </div>
+        {% endif %}
+
+        <div class="mobile-menu-section">
+          <div class="mobile-menu-label">Konto · {{ current_user.full_name or current_user.username }}</div>
+          <a class="mobile-menu-item" href="{{ url_for('account_password') }}">Passwort & 2FA</a>
+          <button type="button" class="mobile-menu-item theme-toggle" id="themeToggleMobile">
+            ☀ Kontrast umschalten
+          </button>
+          <a class="mobile-menu-item" href="{{ url_for('docs_index') }}">Hilfe</a>
+          <a class="mobile-menu-item danger" href="{{ url_for('logout') }}">Abmelden</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
   <script>
   // Dropdowns: Klick öffnet, Klick außerhalb schließt, Esc schließt
   (function () {
@@ -169,35 +262,95 @@
       if (e.key === 'Escape') closeAll();
     });
 
-    // Theme-Toggle (innerhalb User-Menü)
-    var btn = document.getElementById('themeToggle');
-    if (btn) {
-      function refresh() {
-        var t = document.documentElement.getAttribute('data-theme');
-        btn.textContent = t === 'hc' ? '☾ Standard-Theme' : '☀ Kontrast umschalten';
-      }
-      refresh();
-      btn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var cur = document.documentElement.getAttribute('data-theme');
-        if (cur === 'hc') {
-          document.documentElement.removeAttribute('data-theme');
-          try { localStorage.setItem('theme', 'default'); } catch (_) {}
+    // Theme-Toggle (Desktop-User-Menü + Mobile-Hamburger)
+    var themeBtns = [document.getElementById('themeToggle'),
+                     document.getElementById('themeToggleMobile')].filter(Boolean);
+    function refreshThemeBtns() {
+      var t = document.documentElement.getAttribute('data-theme');
+      var label = t === 'hc' ? '☾ Standard-Theme' : '☀ Kontrast umschalten';
+      themeBtns.forEach(function (b) { b.textContent = label; });
+    }
+    if (themeBtns.length) {
+      refreshThemeBtns();
+      themeBtns.forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var cur = document.documentElement.getAttribute('data-theme');
+          if (cur === 'hc') {
+            document.documentElement.removeAttribute('data-theme');
+            try { localStorage.setItem('theme', 'default'); } catch (_) {}
+          } else {
+            document.documentElement.setAttribute('data-theme', 'hc');
+            try { localStorage.setItem('theme', 'hc'); } catch (_) {}
+          }
+          refreshThemeBtns();
+        });
+      });
+    }
+
+    // === Hamburger-Menü (Mobile) ===
+    var hamb = document.getElementById('hamburgerBtn');
+    var mobMenu = document.getElementById('mobileMenu');
+    if (hamb && mobMenu) {
+      function setMobileOpen(open) {
+        if (open) {
+          mobMenu.hidden = false;
+          // Reflow erzwingen für CSS-Transition
+          void mobMenu.offsetWidth;
+          mobMenu.classList.add('open');
+          hamb.classList.add('open');
+          hamb.setAttribute('aria-expanded', 'true');
+          document.body.classList.add('mobile-menu-open');
         } else {
-          document.documentElement.setAttribute('data-theme', 'hc');
-          try { localStorage.setItem('theme', 'hc'); } catch (_) {}
+          mobMenu.classList.remove('open');
+          hamb.classList.remove('open');
+          hamb.setAttribute('aria-expanded', 'false');
+          document.body.classList.remove('mobile-menu-open');
+          // Nach Transition ausblenden
+          setTimeout(function () {
+            if (!mobMenu.classList.contains('open')) mobMenu.hidden = true;
+          }, 250);
         }
-        refresh();
+      }
+      hamb.addEventListener('click', function (e) {
+        e.stopPropagation();
+        setMobileOpen(!mobMenu.classList.contains('open'));
+      });
+      // Klick außerhalb schließt
+      document.addEventListener('click', function (e) {
+        if (!mobMenu.classList.contains('open')) return;
+        if (mobMenu.contains(e.target) || hamb.contains(e.target)) return;
+        // Theme-Toggle bleibt offen
+        var isTheme = e.target.closest('#themeToggleMobile');
+        if (isTheme) return;
+        setMobileOpen(false);
+      });
+      // Esc schließt
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && mobMenu.classList.contains('open')) setMobileOpen(false);
+      });
+      // Beim Klick auf einen Menü-Eintrag schließen (außer Theme-Toggle)
+      mobMenu.addEventListener('click', function (e) {
+        var item = e.target.closest('.mobile-menu-item');
+        if (!item) return;
+        if (item.id === 'themeToggleMobile') return;
+        // Submit-Button vom Event-Switcher nicht abwürgen
+        setMobileOpen(false);
       });
     }
   })();
   </script>
   {% endif %}
   <script>
+  // Service-Worker registrieren — updateViaCache:'none' damit der
+  // Browser den SW-File selbst nicht cached und neue Versionen sofort
+  // greifen.
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register("{{ url_for('static', filename='service-worker.js') }}")
-        .catch(function () {});
+      navigator.serviceWorker.register(
+        "{{ url_for('static', filename='service-worker.js') }}",
+        { updateViaCache: 'none' }
+      ).catch(function () {});
     });
   }
   </script>
