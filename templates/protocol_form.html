@@ -3,14 +3,32 @@
   {% if mode == 'edit' %}Bericht #{{ protocol.id }} bearbeiten{% else %}Neuer Einsatzbericht{% endif %}
 {% endblock %}
 {% block content %}
-<h1>
-  {% if mode == 'edit' %}Einsatzbericht #{{ protocol.id }} bearbeiten
-  {% else %}Neuer Einsatzbericht{% endif %}
-</h1>
-<p class="tagline">
-  {{ current_event.name if current_event else 'Aktuelle Veranstaltung' }} ·
-  Dokumentation gem. DGUV Information 1.
-</p>
+<div class="page-header">
+  <div>
+    <h1>
+      {% if mode == 'edit' %}Einsatzbericht #{{ protocol.id }} bearbeiten
+      {% else %}Neuer Einsatzbericht{% endif %}
+    </h1>
+    <p class="tagline">
+      {{ current_event.name if current_event else 'Aktuelle Veranstaltung' }} ·
+      Dokumentation gem. DGUV Information 1.
+    </p>
+  </div>
+  {% if mode == 'new' and next_laufende_nr %}
+    <div class="next-nr-pill" id="nextNrPill" title="Nächste verfügbare Nummer — auf das Papier-Protokoll übertragen">
+      <span class="next-nr-label">Laufende Nr.</span>
+      <span class="next-nr-value" id="nextNrValue">{{ next_laufende_nr }}</span>
+      <button type="button" class="next-nr-refresh" id="nextNrRefresh"
+              title="Nummer aktualisieren (falls jemand parallel anlegt)"
+              aria-label="Aktualisieren">↻</button>
+    </div>
+  {% elif mode == 'edit' and protocol.laufende_nr %}
+    <div class="next-nr-pill" style="cursor:default;">
+      <span class="next-nr-label">Laufende Nr.</span>
+      <span class="next-nr-value">{{ protocol.laufende_nr }}</span>
+    </div>
+  {% endif %}
+</div>
 
 <form method="post" class="stack" id="protocolForm">
   <div class="card">
@@ -18,10 +36,6 @@
       Name der verletzten bzw. erkrankten Person
       {% if mode == 'edit' and protocol.laufende_nr %}
         <span class="card-header-badge">{{ protocol.laufende_nr }}</span>
-      {% elif mode == 'new' %}
-        <span class="card-header-badge muted-badge">
-          Laufende Nr. wird beim Speichern automatisch vergeben
-        </span>
       {% endif %}
     </div>
 
@@ -189,4 +203,46 @@
   check();
 })();
 </script>
+
+{% if mode == 'new' %}
+<script>
+// Next-laufende-Nr live aktualisieren — beim Tippen + per Refresh-Button.
+// Damit ist die Nummer immer aktuell (auch wenn jemand parallel speichert).
+(function () {
+  const pill = document.getElementById('nextNrPill');
+  const value = document.getElementById('nextNrValue');
+  const btn = document.getElementById('nextNrRefresh');
+  if (!pill || !value) return;
+  let inFlight = false;
+  async function refresh() {
+    if (inFlight) return;
+    inFlight = true;
+    pill.classList.add('loading');
+    try {
+      const res = await fetch('/api/next-laufende-nr',
+                                { credentials: 'same-origin' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.next) value.textContent = data.next;
+      }
+    } catch (_) {}
+    pill.classList.remove('loading');
+    inFlight = false;
+  }
+  if (btn) btn.addEventListener('click', refresh);
+  // Beim ersten ernsthaften Eingeben + auf Window-Focus (in case jemand
+  // anderes parallel angelegt hat) neu prüfen.
+  const nameEl = document.getElementById('patientName');
+  const dobEl = document.getElementById('patientGeburtsdatum');
+  let debTimer = null;
+  function debounced() {
+    clearTimeout(debTimer);
+    debTimer = setTimeout(refresh, 500);
+  }
+  if (nameEl) nameEl.addEventListener('input', debounced);
+  if (dobEl) dobEl.addEventListener('change', refresh);
+  window.addEventListener('focus', refresh);
+})();
+</script>
+{% endif %}
 {% endblock %}

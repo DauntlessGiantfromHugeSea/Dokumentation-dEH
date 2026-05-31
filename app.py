@@ -452,10 +452,13 @@ def create_app(test_config: dict | None = None) -> Flask:
             "patient_geburtsdatum": request.args.get("geburtsdatum", ""),
             "patient_stammnummer": request.args.get("stammnummer", ""),
         }
+        db = models.get_db()
         return render_template(
             "protocol_form.html", protocol=prefill,
             existing_patient=None, mode="new",
-            responder_options=models.list_decentral_responders(models.get_db()),
+            responder_options=models.list_decentral_responders(db),
+            next_laufende_nr=models.peek_next_laufende_nr(
+                db, _current_event_id()),
         )
 
     @app.route("/protocols/<int:protocol_id>")
@@ -756,6 +759,17 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     # ----- Lookup for the new-protocol form (so the UI can announce
     # "Folgebehandlung" before submit) -----
+
+    @app.route("/api/next-laufende-nr")
+    @decentral_view_required
+    def api_next_laufende_nr():
+        """Liefert die voraussichtlich nächste laufende Nummer für das
+        aktuelle Event — wird vom Anlage-Formular per JS abgefragt damit
+        der Helfer sie aufs Papier schreiben kann, bevor er speichert."""
+        return {
+            "next": models.peek_next_laufende_nr(
+                models.get_db(), _current_event_id())
+        }
 
     @app.route("/api/patient-lookup")
     @decentral_view_required

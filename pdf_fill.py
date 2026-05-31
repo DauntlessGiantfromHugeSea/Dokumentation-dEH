@@ -399,31 +399,61 @@ def _body_chart_flowable(markers, *, width_mm=170, label="Verletzungslokalisatio
             super().__init__()
             self.markers = mks or []
             self.w = w_mm * mm
-            # Original-SVG-Viewbox 400×360 → Aspect 400/360 ≈ 1.11
-            self.h = self.w * 360 / 400
+            # Body-Chart-PNG ist 827×1170 (h/w ≈ 1.41). Wenn die Datei
+            # einmal anders sein sollte: Aspect dynamisch nachholen.
+            self.h = self.w * 1170 / 827
+            try:
+                from PIL import Image
+                p = os.path.join(os.path.dirname(__file__),
+                                  "static", "body_chart.png")
+                if os.path.exists(p):
+                    with Image.open(p) as im:
+                        self.h = self.w * im.size[1] / im.size[0]
+            except Exception:
+                pass
 
         def wrap(self, availWidth, availHeight):
             return (self.w, self.h)
 
         def draw(self):
             c = self.canv
-            # Versuche, die SVG-Datei als Hintergrund zu rendern.
-            svg_path = os.path.join(
-                os.path.dirname(__file__), "static", "body_chart.svg")
+            # Bevorzugt: echte anatomische Vorlage als PNG/WebP.
+            # Fallback: schematische Outline mit Canvas-Linien.
             drew_bg = False
-            try:
-                from svglib.svglib import svg2rlg
-                from reportlab.graphics import renderPDF
-                drawing = svg2rlg(svg_path)
-                if drawing is not None:
-                    scale = self.w / drawing.width
-                    drawing.scale(scale, scale)
-                    drawing.width *= scale
-                    drawing.height *= scale
-                    renderPDF.draw(drawing, c, 0, 0)
+            for fname in ("body_chart.png", "body_chart.jpg",
+                           "body_chart.webp"):
+                p = os.path.join(
+                    os.path.dirname(__file__), "static", fname)
+                if not os.path.exists(p):
+                    continue
+                try:
+                    from reportlab.lib.utils import ImageReader
+                    img = ImageReader(p)
+                    c.drawImage(img, 0, 0, width=self.w, height=self.h,
+                                 preserveAspectRatio=True, mask='auto')
                     drew_bg = True
-            except Exception:
-                pass
+                    break
+                except Exception:
+                    continue
+            if not drew_bg:
+                try:
+                    # Versuche SVG via svglib (falls vorhanden)
+                    svg_path = os.path.join(
+                        os.path.dirname(__file__), "static",
+                        "body_chart.svg")
+                    if os.path.exists(svg_path):
+                        from svglib.svglib import svg2rlg
+                        from reportlab.graphics import renderPDF
+                        drawing = svg2rlg(svg_path)
+                        if drawing is not None:
+                            scale = self.w / drawing.width
+                            drawing.scale(scale, scale)
+                            drawing.width *= scale
+                            drawing.height *= scale
+                            renderPDF.draw(drawing, c, 0, 0)
+                            drew_bg = True
+                except Exception:
+                    pass
             if not drew_bg:
                 # Fallback: zwei schematische Körper-Outlines aus
                 # einfachen Canvas-Linien — kein svglib nötig.

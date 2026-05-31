@@ -1030,6 +1030,21 @@ PROTOCOL_FIELDS = (
 )
 
 
+def peek_next_laufende_nr(conn: sqlite3.Connection,
+                            event_id: Optional[int] = None) -> str:
+    """Liefert die NÄCHSTE laufende Nr, ohne sie zu reservieren.
+    Wird beim Anlegen-Form vorab angezeigt. Bei einem Concurrency-
+    Konflikt kann die echte Nummer beim Speichern ±1 abweichen."""
+    event_id = event_id or get_default_event_id(conn)
+    row = conn.execute(
+        "SELECT COALESCE(MAX(seq_no), 0) + 1 AS next_no "
+        "FROM protocol_sequence WHERE event_id = ?",
+        (event_id,),
+    ).fetchone()
+    seq_no = row["next_no"] if row else 1
+    return f"#{get_event_prefix(conn, event_id)}{seq_no}"
+
+
 def _assign_global_id(conn: sqlite3.Connection, source_type: str,
                       source_id: int, event_id: Optional[int]) -> tuple[int, str]:
     """Insert into protocol_sequence and return (global_id, laufende_nr)."""
