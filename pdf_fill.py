@@ -425,17 +425,72 @@ def _body_chart_flowable(markers, *, width_mm=170, label="Verletzungslokalisatio
             except Exception:
                 pass
             if not drew_bg:
-                # Fallback: zwei einfache Rechtecke mit Beschriftung
+                # Fallback: zwei schematische Körper-Outlines aus
+                # einfachen Canvas-Linien — kein svglib nötig.
                 from reportlab.lib import colors as _col
-                c.setStrokeColor(_col.HexColor("#888888"))
-                c.setLineWidth(0.6)
+                c.setStrokeColor(_col.HexColor("#222"))
+                c.setFillColor(_col.HexColor("#FFFFFF"))
+                c.setLineWidth(0.8)
                 half = self.w / 2
-                c.rect(0, 0, half - 2, self.h, stroke=1, fill=0)
-                c.rect(half + 2, 0, half - 2, self.h, stroke=1, fill=0)
-                c.setFont("Helvetica", 8)
-                c.setFillColor(_col.HexColor("#666"))
-                c.drawCentredString(half / 2, 6, "vorne")
-                c.drawCentredString(half + 2 + (half - 2) / 2, 6, "hinten")
+                # Pro Seite (vorne / hinten) einen Outline
+                for side_idx in range(2):
+                    bx = side_idx * (half + 2)
+                    bw = half - 4
+                    label = "vorne" if side_idx == 0 else "hinten"
+                    # Hintergrund-Karte
+                    c.setStrokeColor(_col.HexColor("#CCC"))
+                    c.rect(bx, 0, bw, self.h, stroke=1, fill=0)
+                    # Body proportions
+                    cx = bx + bw / 2
+                    head_r = bw * 0.10
+                    head_cy = self.h - head_r - 8
+                    # Kopf
+                    c.setStrokeColor(_col.HexColor("#222"))
+                    c.setLineWidth(0.9)
+                    c.circle(cx, head_cy, head_r, stroke=1, fill=0)
+                    # Hals
+                    neck_y = head_cy - head_r
+                    c.line(cx - head_r * 0.6, neck_y,
+                            cx - head_r * 0.6, neck_y - 6)
+                    c.line(cx + head_r * 0.6, neck_y,
+                            cx + head_r * 0.6, neck_y - 6)
+                    # Torso (Schultern + Rumpf)
+                    torso_top_y = neck_y - 6
+                    torso_w = bw * 0.45
+                    torso_h = self.h * 0.34
+                    torso_bottom_y = torso_top_y - torso_h
+                    # Schulter-Bogen
+                    c.line(cx - torso_w/2, torso_top_y,
+                            cx + torso_w/2, torso_top_y)
+                    c.line(cx - torso_w/2, torso_top_y,
+                            cx - torso_w/2 - 2, torso_top_y - 4)
+                    c.line(cx + torso_w/2, torso_top_y,
+                            cx + torso_w/2 + 2, torso_top_y - 4)
+                    # Rumpf-Seiten
+                    c.line(cx - torso_w/2 - 2, torso_top_y - 4,
+                            cx - torso_w/2 - 2, torso_bottom_y)
+                    c.line(cx + torso_w/2 + 2, torso_top_y - 4,
+                            cx + torso_w/2 + 2, torso_bottom_y)
+                    # Hüft-Linie
+                    c.line(cx - torso_w/2 - 2, torso_bottom_y,
+                            cx + torso_w/2 + 2, torso_bottom_y)
+                    # Arme (Linien an den Seiten, leicht außen)
+                    arm_x_l = cx - torso_w/2 - 2 - bw * 0.05
+                    arm_x_r = cx + torso_w/2 + 2 + bw * 0.05
+                    arm_top = torso_top_y - 2
+                    arm_end_y = torso_bottom_y - 8
+                    c.line(arm_x_l, arm_top, arm_x_l, arm_end_y)
+                    c.line(arm_x_r, arm_top, arm_x_r, arm_end_y)
+                    # Beine
+                    leg_top = torso_bottom_y
+                    leg_bottom = 14
+                    leg_offset = torso_w * 0.18
+                    c.line(cx - leg_offset, leg_top, cx - leg_offset, leg_bottom)
+                    c.line(cx + leg_offset, leg_top, cx + leg_offset, leg_bottom)
+                    # Beschriftung unten
+                    c.setFont("Helvetica", 7)
+                    c.setFillColor(_col.HexColor("#666"))
+                    c.drawCentredString(cx, 4, label)
             # Marker drüberlegen
             from reportlab.lib import colors as _col2
             for idx, m in enumerate(self.markers, start=1):

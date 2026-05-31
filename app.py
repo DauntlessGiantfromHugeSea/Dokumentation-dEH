@@ -172,6 +172,18 @@ def create_app(test_config: dict | None = None) -> Flask:
     with app.app_context():
         models.init_db(Path(app.config["DB_PATH"]))
 
+    # Vor jedem Request: App-Anzeige-Zeitzone aus DB lesen und in g
+    # ablegen, damit format_dt sie nutzen kann.
+    @app.before_request
+    def _set_display_tz():
+        try:
+            from flask import g
+            tz = models.get_app_setting(models.get_db(), "app_timezone")
+            if tz:
+                g.display_tz = tz
+        except Exception:
+            pass
+
     # Triage-Kiosk-Schutz: 'triage_intake' Konten dürfen nur den
     # Anmelde-Flow nutzen — alle anderen URLs liefern 403.
     @app.before_request

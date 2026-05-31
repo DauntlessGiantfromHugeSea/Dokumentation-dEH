@@ -1175,17 +1175,43 @@ def list_comments(conn: sqlite3.Connection, protocol_id: int) -> list[sqlite3.Ro
 
 
 def format_dt(value: Optional[str]) -> str:
-    """Format an ISO datetime/date string for display. Returns '' on None."""
+    """Format an ISO datetime/date string for display.
+
+    Wendet TZ-Konversion an wenn die App-Anzeige-Zeitzone (in
+    flask.g.display_tz oder app_settings) abweicht von der
+    Container-Zeitzone (env TZ). DB-Datetimes sind als naive in
+    Container-TZ gespeichert (siehe datetime('now', 'localtime')).
+    """
     if not value:
         return ""
+    import os
     for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
                 "%Y-%m-%d"):
         try:
-            return datetime.strptime(value, fmt).strftime(
-                "%d.%m.%Y" if fmt == "%Y-%m-%d" else "%d.%m.%Y %H:%M"
-            )
+            dt = datetime.strptime(value, fmt)
         except ValueError:
             continue
+        # TZ-aware machen wenn möglich
+        try:
+            from zoneinfo import ZoneInfo
+            container_tz_name = os.environ.get("TZ") or "UTC"
+            target_tz_name = container_tz_name
+            try:
+                from flask import g, has_request_context
+                if has_request_context():
+                    target_tz_name = getattr(g, "display_tz",
+                                              container_tz_name) or container_tz_name
+            except Exception:
+                pass
+            if fmt != "%Y-%m-%d" and target_tz_name != container_tz_name:
+                container_tz = ZoneInfo(container_tz_name)
+                target_tz = ZoneInfo(target_tz_name)
+                dt = dt.replace(tzinfo=container_tz).astimezone(target_tz)
+        except Exception:
+            pass
+        return dt.strftime(
+            "%d.%m.%Y" if fmt == "%Y-%m-%d" else "%d.%m.%Y %H:%M"
+        )
     return value
 
 
