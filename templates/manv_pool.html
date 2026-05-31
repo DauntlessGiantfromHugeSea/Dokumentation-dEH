@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Sticker-Vorrat — MANV{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Sticker-Vorrat</h1>
+    <p class="tagline">
+      QR-Sticker für den Notfall vorbereiten. Vor dem Camp drucken,
+      auf leere DRK-Anhängekarten kleben, bei Bedarf scannen.
+    </p>
+  </div>
+  <div class="btn-row">
+    <a class="btn small secondary" href="{{ url_for('manv_index') }}">← MANV-Übersicht</a>
+  </div>
+</div>
+
+<div class="akte-stats">
+  <div class="akte-stat" style="border-left: 4px solid var(--accent);">
+    <div class="num">{{ stats.pool }}</div>
+    <div class="lbl">im Vorrat</div>
+  </div>
+  <div class="akte-stat" style="border-left: 4px solid var(--success);">
+    <div class="num">{{ stats.in_active }}</div>
+    <div class="lbl">im aktuellen MANV</div>
+  </div>
+  <div class="akte-stat">
+    <div class="num">{{ stats.archive }}</div>
+    <div class="lbl">aus früheren Events</div>
+  </div>
+</div>
+
+{% if stats.active_event %}
+  <div class="card" style="border-left: 4px solid var(--success);">
+    <div class="card-header">Aktives MANV</div>
+    <p style="margin:0;">
+      <strong>{{ stats.active_event.name }}</strong>
+      · gestartet {{ format_dt(stats.active_event.started_at) }}
+      <br>
+      <span class="muted">
+        Wenn jetzt jemand einen Pool-Sticker scannt, wird die Karte
+        automatisch diesem Event zugewiesen.
+      </span>
+      <br>
+      <a href="{{ url_for('manv_event', eid=stats.active_event.id) }}">→ Event-Details</a>
+    </p>
+  </div>
+{% else %}
+  <div class="card" style="border-left: 4px solid var(--warning);">
+    <div class="card-header">Kein aktives MANV</div>
+    <p style="margin:0;">
+      Pool-Sticker können erzeugt + gedruckt werden, aber beim Scan
+      wird der User aufgefordert, erst ein MANV anzulegen oder eines
+      auszuwählen.
+      <a href="{{ url_for('manv_index') }}">→ MANV anlegen</a>
+    </p>
+  </div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">Neue Sticker erzeugen</div>
+  <form method="post" action="{{ url_for('manv_pool_create') }}"
+        class="row" style="grid-template-columns: 1fr auto; gap: 12px;">
+    <label class="field">
+      Anzahl (max. 1000 pro Charge)
+      <input name="count" type="number" min="1" max="1000" value="100">
+    </label>
+    <div style="align-self: end;">
+      <button class="btn" type="submit">+ Sticker anlegen</button>
+    </div>
+  </form>
+  <p class="muted" style="font-size:0.85rem;margin-top:12px;">
+    Codes laufen global durch (z.&nbsp;B. EH-000001, EH-000002, …).
+    Nach dem Anlegen über den Button unten drucken und auf die echten
+    DRK-Anhängekarten kleben.
+  </p>
+</div>
+
+{% if pool_cards %}
+<div class="card">
+  <div class="card-header">Druck-Optionen für den Vorrat ({{ pool_cards|length }} Karten)</div>
+  <div class="row" style="grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+    <div style="border-left: 4px solid var(--accent); padding-left: 12px;">
+      <h3 style="margin: 0 0 6px;">🏷 Anhängekarten-Sticker (Standard)</h3>
+      <p class="muted" style="font-size:0.85rem; margin:0 0 10px;">
+        4 A6-Sticker pro A4-Bogen. Jeder Sticker enthält Personalia-
+        Linien + QR-Code. Auf <strong>echte DRK-Anhängekarten kleben</strong>,
+        dann mit Stift ausfüllen.
+      </p>
+      <a class="btn small" target="_blank"
+         href="{{ url_for('manv_pool_print') }}">
+        🏷 Sticker-PDF herunterladen
+      </a>
+    </div>
+    <div style="border-left: 4px solid var(--success); padding-left: 12px;">
+      <h3 style="margin: 0 0 6px;">📄 Komplette Blanko-Karten</h3>
+      <p class="muted" style="font-size:0.85rem; margin:0 0 10px;">
+        Volle A5-Karten vorne+hinten (DRK-Optik). Wenn du <strong>keine
+        echten DRK-Karten</strong> hast — einfach 2-seitig drucken,
+        QR ist drauf, mit Stift ausfüllen.
+      </p>
+      <a class="btn small secondary" target="_blank"
+         href="{{ url_for('manv_pool_print', style='full') }}">
+        📄 Blanko-Karten-PDF
+      </a>
+    </div>
+    <div style="border-left: 4px solid var(--muted); padding-left: 12px;">
+      <h3 style="margin: 0 0 6px;">📇 Mini-QR-Sticker</h3>
+      <p class="muted" style="font-size:0.85rem; margin:0 0 10px;">
+        Nur ein kleiner QR + ID pro Aufkleber (24 pro A4). Falls deine
+        Anhängekarten schon eigene Felder haben.
+      </p>
+      <a class="btn small secondary" target="_blank"
+         href="{{ url_for('manv_pool_print', style='mini') }}">
+        📇 Mini-Sticker-PDF
+      </a>
+    </div>
+  </div>
+  <p class="muted" style="font-size:0.78rem; margin-top: 14px;">
+    Bereich einschränken via URL <code>?from=ID&amp;to=ID</code>.
+    Max. 2000 Karten pro Druck.
+  </p>
+</div>
+
+<div class="card">
+  <div class="card-header">Karten im Vorrat ({{ pool_cards|length }})</div>
+  <table class="data">
+    <thead>
+      <tr><th>Code</th><th>Token</th><th>Angelegt</th></tr>
+    </thead>
+    <tbody>
+      {% for c in pool_cards %}
+      <tr>
+        <td><code>{{ c.card_no }}</code></td>
+        <td><code class="muted">{{ c.qr_token }}</code></td>
+        <td>{{ format_dt(c.created_at) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-header">Vorrat leer</div>
+  <p class="muted">Lege oben Sticker an, dann erscheinen sie hier zum Drucken.</p>
+</div>
+{% endif %}
+{% endblock %}

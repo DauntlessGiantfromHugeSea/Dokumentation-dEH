@@ -5,9 +5,16 @@
   <div>
     <h1>MANV-Vorfälle</h1>
     <p class="tagline">
-      Massenanfall von Verletzten — pro Vorfall ein Stapel
-      A5-Anhängekarten mit QR-Code für schnelle Vorsichtung.
+      Massenanfall von Verletzten — Sticker mit QR-Code vor dem Camp
+      auf leere DRK-Anhängekarten kleben, im Einsatz scannen.
     </p>
+  </div>
+  <div class="btn-row">
+    {% if current_user.is_admin %}
+      <a class="btn small secondary" href="{{ url_for('manv_pool') }}">
+        📦 Sticker-Vorrat
+      </a>
+    {% endif %}
   </div>
 </div>
 

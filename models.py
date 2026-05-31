@@ -238,8 +238,9 @@ CREATE TABLE IF NOT EXISTS manv_events (
 
 CREATE TABLE IF NOT EXISTS manv_cards (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    manv_event_id     INTEGER NOT NULL REFERENCES manv_events(id) ON DELETE CASCADE,
-    card_no           TEXT NOT NULL UNIQUE,      -- "MANV-3-042"
+    manv_event_id     INTEGER REFERENCES manv_events(id) ON DELETE SET NULL,
+        -- NULL = Pool-Karte (gedruckt + geklebt, aber noch nicht im Einsatz)
+    card_no           TEXT NOT NULL UNIQUE,      -- "EH-000042"
     qr_token          TEXT NOT NULL UNIQUE,      -- random hex, in QR enkodiert
     status            TEXT NOT NULL DEFAULT 'blank',
         -- 'blank' | 'gesichtet' | 'in_behandlung' | 'transportiert' | 'abgeschlossen'
@@ -403,6 +404,71 @@ def init_db(db_path: Path) -> None:
             conn.execute(
                 "ALTER TABLE triage_entries ADD COLUMN treatment_started_by INTEGER"
             )
+
+        # Migration: manv_cards.manv_event_id soll nullable sein
+        # (Pool-Karten = Sticker auf der DRK-Karte, aber noch nicht im Einsatz).
+        # SQLite kann NOT NULL nicht direkt entfernen — wir bauen die Tabelle
+        # neu wenn die Spalte noch NOT NULL ist.
+        try:
+            mcols = conn.execute("PRAGMA table_info(manv_cards)").fetchall()
+        except Exception:
+            mcols = []
+        ev_col = next((r for r in mcols if r[1] == "manv_event_id"), None)
+        if ev_col is not None and ev_col[3] == 1:  # row[3] = notnull
+            conn.execute("ALTER TABLE manv_cards RENAME TO manv_cards_old_notnull")
+            # SCHEMA-Block wurde oben schon ausgeführt; CREATE TABLE IF NOT
+            # EXISTS hat aber wegen umbenennung nichts angelegt — neu erstellen
+            conn.executescript("""
+                CREATE TABLE manv_cards (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    manv_event_id     INTEGER REFERENCES manv_events(id)
+                                       ON DELETE SET NULL,
+                    card_no           TEXT NOT NULL UNIQUE,
+                    qr_token          TEXT NOT NULL UNIQUE,
+                    status            TEXT NOT NULL DEFAULT 'blank',
+                    patient_id        INTEGER REFERENCES patients(id) ON DELETE SET NULL,
+                    central_protocol_id INTEGER REFERENCES central_protocols(id) ON DELETE SET NULL,
+                    name              TEXT, vorname TEXT, geburtsdatum TEXT,
+                    alter_jahre       INTEGER, geschlecht TEXT, nationalitaet TEXT,
+                    sichtung_kategorie TEXT, sichtungen_json TEXT,
+                    diag_verletzung INTEGER NOT NULL DEFAULT 0,
+                    diag_verbrennung INTEGER NOT NULL DEFAULT 0,
+                    diag_erkrankung INTEGER NOT NULL DEFAULT 0,
+                    diag_vergiftung INTEGER NOT NULL DEFAULT 0,
+                    diag_verstrahlung INTEGER NOT NULL DEFAULT 0,
+                    diag_psyche INTEGER NOT NULL DEFAULT 0,
+                    diag_lokalisation TEXT,
+                    bewusstsein TEXT, atmung TEXT, kreislauf TEXT, zustand_zeit TEXT,
+                    th_infusion INTEGER NOT NULL DEFAULT 0,
+                    th_analgetika INTEGER NOT NULL DEFAULT 0,
+                    th_antidote INTEGER NOT NULL DEFAULT 0,
+                    th_sonstige INTEGER NOT NULL DEFAULT 0,
+                    th_sonstige_text TEXT,
+                    transport_mittel TEXT, transport_ziel TEXT, transport_art TEXT,
+                    transport_mit_arzt INTEGER NOT NULL DEFAULT 0,
+                    transport_isoliert INTEGER NOT NULL DEFAULT 0,
+                    transport_prio TEXT, bemerkungen TEXT,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+            """)
+            # Daten kopieren (alte Spaltenliste aus Migration)
+            old_cols = [r[1] for r in mcols]
+            col_list = ", ".join(old_cols)
+            conn.execute(
+                f"INSERT INTO manv_cards ({col_list}) "
+                f"SELECT {col_list} FROM manv_cards_old_notnull"
+            )
+            conn.execute("DROP TABLE manv_cards_old_notnull")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_manv_cards_event "
+                "ON manv_cards(manv_event_id)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_manv_cards_status "
+                "ON manv_cards(status)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_manv_cards_kategorie "
+                "ON manv_cards(sichtung_kategorie)")
 
         default_event_id = get_default_event_id(conn)
         conn.execute(
@@ -2479,6 +2545,123 @@ def manv_card_link_protocol(conn, cid: int, protocol_id: int) -> bool:
         (protocol_id, cid),
     )
     return True
+
+
+def get_active_manv_event(conn) -> Optional[sqlite3.Row]:
+    """Liefert das jüngste aktive MANV-Event (status='aktiv'). Es soll
+    immer max. eins geben — beim Anlegen eines neuen wird das alte
+    auto-abgeschlossen."""
+    return conn.execute(
+        "SELECT * FROM manv_events WHERE status='aktiv' "
+        "ORDER BY datetime(started_at) DESC LIMIT 1"
+    ).fetchone()
+
+
+def close_all_active_manv_events(conn, *, except_id: Optional[int] = None) -> int:
+    """Alle anderen aktiven Events auf 'abgeschlossen' setzen.
+    Wird beim Anlegen eines neuen aktiven Events aufgerufen."""
+    sql = "UPDATE manv_events SET status='abgeschlossen', closed_at=datetime('now') WHERE status='aktiv'"
+    params: list = []
+    if except_id is not None:
+        sql += " AND id != ?"
+        params.append(except_id)
+    cur = conn.execute(sql, params)
+    return cur.rowcount
+
+
+# --- Sticker-Pool (Vorbereitung vor dem Einsatz) ---
+
+def _next_pool_code_n(conn) -> int:
+    """Höchste vergebene EH-Nr +1. Pool-Codes sind global laufend."""
+    row = conn.execute(
+        "SELECT card_no FROM manv_cards "
+        "WHERE card_no LIKE 'EH-%' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if not row:
+        return 1
+    try:
+        return int(row["card_no"].split("-", 1)[1]) + 1
+    except Exception:
+        return 1
+
+
+def create_sticker_pool(conn, *, count: int,
+                         created_by: Optional[int] = None
+                         ) -> list[sqlite3.Row]:
+    """Legt N Pool-Karten (ohne Event-Bindung) an mit fortlaufenden Codes
+    'EH-000001'..'EH-NNNNNN' und je zufälligem QR-Token. Liefert die Rows."""
+    import secrets as _secrets
+    new_ids = []
+    start = _next_pool_code_n(conn)
+    for i in range(count):
+        n = start + i
+        code = f"EH-{n:06d}"
+        token = _secrets.token_hex(8)  # 16 hex chars = 2^64 möglich
+        for _ in range(3):
+            if not conn.execute(
+                "SELECT 1 FROM manv_cards WHERE qr_token=?", (token,)
+            ).fetchone():
+                break
+            token = _secrets.token_hex(8)
+        cur = conn.execute(
+            "INSERT INTO manv_cards (manv_event_id, card_no, qr_token) "
+            "VALUES (NULL, ?, ?)", (code, token),
+        )
+        new_ids.append(cur.lastrowid)
+    if not new_ids:
+        return []
+    placeholders = ",".join("?" for _ in new_ids)
+    return conn.execute(
+        f"SELECT * FROM manv_cards WHERE id IN ({placeholders}) ORDER BY id",
+        new_ids,
+    ).fetchall()
+
+
+def list_pool_cards(conn, *, limit: int = 1000) -> list[sqlite3.Row]:
+    """Pool-Karten = noch keinem Event zugeordnet, status='blank'."""
+    return conn.execute(
+        "SELECT * FROM manv_cards "
+        "WHERE manv_event_id IS NULL AND status='blank' "
+        "ORDER BY id LIMIT ?", (limit,),
+    ).fetchall()
+
+
+def pool_stats(conn) -> dict:
+    """Counts: im Pool / im aktuellen MANV / aus früheren Events."""
+    pool = conn.execute(
+        "SELECT COUNT(*) AS n FROM manv_cards "
+        "WHERE manv_event_id IS NULL AND status='blank'"
+    ).fetchone()["n"]
+    active = get_active_manv_event(conn)
+    in_active = 0
+    if active:
+        in_active = conn.execute(
+            "SELECT COUNT(*) AS n FROM manv_cards WHERE manv_event_id=?",
+            (active["id"],),
+        ).fetchone()["n"]
+    archive = conn.execute(
+        "SELECT COUNT(*) AS n FROM manv_cards "
+        "WHERE manv_event_id IS NOT NULL AND manv_event_id != COALESCE(?, -1)",
+        (active["id"] if active else None,),
+    ).fetchone()["n"]
+    return {
+        "pool": pool,
+        "in_active": in_active,
+        "active_event": dict(active) if active else None,
+        "archive": archive,
+    }
+
+
+def claim_pool_card(conn, *, card_id: int, event_id: int) -> bool:
+    """Pool-Karte für ein MANV-Event beanspruchen. Funktioniert nur
+    wenn die Karte aktuell event_id=NULL hat."""
+    cur = conn.execute(
+        "UPDATE manv_cards SET manv_event_id=?, "
+        "updated_at=datetime('now') "
+        "WHERE id=? AND manv_event_id IS NULL", (event_id, card_id),
+    )
+    return cur.rowcount > 0
 
 
 def manv_event_stats(conn, event_id: int) -> dict:

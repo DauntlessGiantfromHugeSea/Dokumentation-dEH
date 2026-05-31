@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Karte zuweisen — {{ card.card_no }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Karte <code>{{ card.card_no }}</code> zuweisen</h1>
+    <p class="tagline">
+      Diese Sticker-Karte ist noch keinem MANV-Vorfall zugewiesen.
+    </p>
+  </div>
+</div>
+
+{% if active %}
+  <div class="card" style="border-left: 4px solid var(--success);">
+    <div class="card-header">Aktives MANV</div>
+    <p style="margin: 0 0 12px;">
+      <strong>{{ active.name }}</strong>
+      · gestartet {{ active.started_at }}
+    </p>
+    <form method="post" action="{{ url_for('manv_scan', token=card.qr_token) }}">
+      <input type="hidden" name="event_id" value="{{ active.id }}">
+      <button class="btn lg" type="submit">
+        ✓ Karte „{{ card.card_no }}" diesem MANV zuweisen + öffnen
+      </button>
+    </form>
+  </div>
+{% else %}
+  <div class="card" style="border-left: 4px solid var(--warning);">
+    <div class="card-header">Kein aktives MANV</div>
+    <p>
+      Aktuell ist kein MANV-Vorfall aktiv. Bitte erst einen anlegen,
+      dann kannst du die Karte zuweisen.
+    </p>
+    <a class="btn" href="{{ url_for('manv_index') }}">+ MANV anlegen</a>
+  </div>
+{% endif %}
+
+{% if all_active|length > 0 %}
+<div class="card">
+  <div class="card-header">Anderem MANV zuweisen (optional)</div>
+  <p class="muted">
+    Falls die Karte nicht zum aktiven Event gehört, hier auswählen.
+  </p>
+  <form method="post" action="{{ url_for('manv_scan', token=card.qr_token) }}"
+        class="stack">
+    <label class="field">
+      MANV-Vorfall
+      <select name="event_id" required>
+        {% for e in all_active %}
+          <option value="{{ e.id }}"
+                  {% if active and e.id == active.id %}selected{% endif %}>
+            {{ e.name }}
+            {% if e.status == 'aktiv' %}(aktiv){% else %}(abgeschlossen){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <div><button class="btn" type="submit">Karte zuweisen</button></div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

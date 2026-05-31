@@ -1895,24 +1895,23 @@ def create_app(test_config: dict | None = None) -> Flask:
             abort(403)
         db = models.get_db()
         name = (request.form.get("name") or "").strip()
-        prefix = (request.form.get("card_prefix") or "").strip()
-        if not name or not prefix:
-            flash("Name + Karten-Präfix sind Pflicht.", "error")
+        prefix = (request.form.get("card_prefix") or "").strip() or "MANV"
+        if not name:
+            flash("Vorfall-Name ist Pflicht.", "error")
             return redirect(url_for("manv_index"))
+        # Alle bisherigen aktiven Events automatisch abschließen — es
+        # darf nur EINS aktiv sein.
+        closed = models.close_all_active_manv_events(db)
         eid = models.create_manv_event(
             db, name=name, card_prefix=prefix,
             notes=request.form.get("notes"),
             created_by=current_user.id,
         )
-        # Optional: direkt Karten allokieren
-        try:
-            initial = int(request.form.get("initial_cards") or 0)
-        except ValueError:
-            initial = 0
-        if initial > 0:
-            models.allocate_manv_cards(db, event_id=eid, count=min(initial, 500))
         db.commit()
-        flash(f"MANV „{name}“ angelegt.", "success")
+        msg = f"MANV „{name}“ ist jetzt das aktive Event."
+        if closed:
+            msg += f" {closed} älteres Event wurde auto-abgeschlossen."
+        flash(msg, "success")
         return redirect(url_for("manv_event", eid=eid))
 
     @app.route("/manv/event/<int:eid>")
@@ -1933,6 +1932,106 @@ def create_app(test_config: dict | None = None) -> Flask:
             kategorie_label=models.MANV_KATEGORIE_LABEL,
             kategorie_color=models.MANV_KATEGORIE_COLOR,
             format_dt=models.format_dt,
+        )
+
+    # ----- Sticker-Pool (vor dem Einsatz vorbereiten) -----
+
+    @app.route("/manv/pool")
+    @login_required
+    def manv_pool():
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        stats = models.pool_stats(db)
+        pool_cards = models.list_pool_cards(db, limit=2000)
+        return render_template(
+            "manv_pool.html",
+            stats=stats,
+            pool_cards=pool_cards,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/manv/pool/create", methods=["POST"])
+    @login_required
+    def manv_pool_create():
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        try:
+            count = int(request.form.get("count") or 0)
+        except ValueError:
+            count = 0
+        count = max(1, min(count, 1000))
+        cards = models.create_sticker_pool(
+            db, count=count, created_by=current_user.id)
+        db.commit()
+        if cards:
+            first = cards[0]["card_no"]
+            last = cards[-1]["card_no"]
+            flash(f"{len(cards)} neue Sticker erzeugt "
+                  f"({first} – {last}). Direkt drucken über den Button unten.",
+                  "success")
+        return redirect(url_for("manv_pool"))
+
+    @app.route("/manv/pool/print.pdf")
+    @login_required
+    def manv_pool_print():
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        try:
+            id_from = int(request.args.get("from") or 0)
+            id_to = int(request.args.get("to") or 0)
+        except ValueError:
+            id_from = id_to = 0
+        if id_from and id_to:
+            cards = db.execute(
+                "SELECT * FROM manv_cards WHERE id BETWEEN ? AND ? "
+                "AND manv_event_id IS NULL ORDER BY id",
+                (id_from, id_to)).fetchall()
+        else:
+            cards = models.list_pool_cards(db, limit=2000)
+        if not cards:
+            flash("Keine Pool-Karten zum Drucken.", "error")
+            return redirect(url_for("manv_pool"))
+        try:
+            cols = int(request.args.get("cols") or 2)
+            rows = int(request.args.get("rows") or 2)
+        except ValueError:
+            cols, rows = 2, 2
+        scheme = "https" if request.is_secure else "http"
+        base_url = f"{scheme}://{request.host}"
+        style = (request.args.get("style") or "sticker").strip()
+        if style == "mini":
+            # Kleine reine QR-Sticker (3×8 default)
+            from manv_cards_pdf import render_qr_stickers_pdf
+            pdf_bytes = render_qr_stickers_pdf(
+                event={"name": "Sticker-Vorrat", "card_prefix": "EH"},
+                cards=[dict(c) for c in cards],
+                base_url=base_url, cols=cols or 3, rows=rows or 8,
+                include_event_name=False)
+            fname = "MANV_QR-Mini-Sticker.pdf"
+        elif style == "full":
+            # Komplette A5-Karten, vorne+hinten (volle DRK-Karte ohne
+            # echte DRK-Vorlage). Pro Karte 2 PDF-Seiten.
+            from manv_cards_pdf import render_manv_cards_pdf
+            pdf_bytes = render_manv_cards_pdf(
+                event={"name": "Sticker-Vorrat (Blanko-Karten)",
+                       "card_prefix": "EH", "id": 0},
+                cards=[dict(c) for c in cards],
+                base_url=base_url)
+            fname = "MANV_Blanko-Karten_komplett.pdf"
+        else:
+            # Default: A6-Anhängekarten-Sticker (4 pro A4)
+            from manv_cards_pdf import render_anhaengekarte_stickers_pdf
+            pdf_bytes = render_anhaengekarte_stickers_pdf(
+                event={"name": "Sticker-Vorrat", "card_prefix": "EH"},
+                cards=[dict(c) for c in cards],
+                base_url=base_url, cols=cols, rows=rows)
+            fname = "MANV_Anhaengekarte_Sticker.pdf"
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
         )
 
     @app.route("/manv/event/<int:eid>/allocate", methods=["POST"])
@@ -2045,20 +2144,25 @@ def create_app(test_config: dict | None = None) -> Flask:
             flash("Keine Karten zum Drucken gefunden.", "error")
             return redirect(url_for("manv_event", eid=eid))
         try:
-            cols = int(request.args.get("cols") or 3)
-            rows = int(request.args.get("rows") or 8)
+            cols = int(request.args.get("cols") or 2)
+            rows = int(request.args.get("rows") or 2)
         except ValueError:
-            cols, rows = 3, 8
-        from manv_cards_pdf import render_qr_stickers_pdf
+            cols, rows = 2, 2
         scheme = "https" if request.is_secure else "http"
         base_url = f"{scheme}://{request.host}"
-        pdf_bytes = render_qr_stickers_pdf(
-            event=dict(event),
-            cards=[dict(c) for c in cards],
-            base_url=base_url,
-            cols=cols, rows=rows,
-        )
-        fname = f"MANV_{event['card_prefix']}_QR-Aufkleber.pdf"
+        if request.args.get("style") == "mini":
+            from manv_cards_pdf import render_qr_stickers_pdf
+            pdf_bytes = render_qr_stickers_pdf(
+                event=dict(event),
+                cards=[dict(c) for c in cards],
+                base_url=base_url, cols=cols or 3, rows=rows or 8)
+        else:
+            from manv_cards_pdf import render_anhaengekarte_stickers_pdf
+            pdf_bytes = render_anhaengekarte_stickers_pdf(
+                event=dict(event),
+                cards=[dict(c) for c in cards],
+                base_url=base_url, cols=cols, rows=rows)
+        fname = f"MANV_{event['card_prefix']}_Sticker.pdf"
         return Response(
             pdf_bytes, mimetype="application/pdf",
             headers={"Content-Disposition":
@@ -2090,7 +2194,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                      f'attachment; filename="{fname}"'},
         )
 
-    @app.route("/manv/scan/<token>")
+    @app.route("/manv/scan/<token>", methods=["GET", "POST"])
     @login_required
     def manv_scan(token: str):
         db = models.get_db()
@@ -2098,6 +2202,34 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not card:
             flash("Karte nicht gefunden — QR-Code prüfen.", "error")
             return redirect(url_for("manv_index"))
+        # Pool-Karte? → Confirmation-Seite zur Event-Zuordnung
+        if card["manv_event_id"] is None:
+            active = models.get_active_manv_event(db)
+            if request.method == "POST":
+                # Helfer hat bestätigt → Karte dem (gewählten/aktiven) Event zuordnen
+                try:
+                    chosen_eid = int(request.form.get("event_id") or 0)
+                except ValueError:
+                    chosen_eid = 0
+                if not chosen_eid and active:
+                    chosen_eid = active["id"]
+                if not chosen_eid:
+                    flash("Kein aktives MANV — bitte erst eines anlegen.",
+                          "error")
+                    return redirect(url_for("manv_index"))
+                if models.claim_pool_card(
+                        db, card_id=card["id"], event_id=chosen_eid):
+                    db.commit()
+                    flash(f"Karte {card['card_no']} dem MANV zugewiesen.",
+                          "success")
+                return redirect(url_for("manv_card", cid=card["id"]))
+            # GET: zeige Confirmation-Seite
+            return render_template(
+                "manv_scan_claim.html",
+                card=card, active=active,
+                all_active=models.list_manv_events(db),
+            )
+        # Bereits zugewiesen → direkt zum Detail
         return redirect(url_for("manv_card", cid=card["id"]))
 
     @app.route("/manv/card/<int:cid>", methods=["GET", "POST"])

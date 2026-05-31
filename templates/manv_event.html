@@ -25,16 +25,16 @@
     {% if current_user.is_admin %}
       <a class="btn" target="_blank"
          href="{{ url_for('manv_stickers_pdf', eid=event.id) }}">
-        📇 QR-Aufkleber drucken
+        🏷 Anhängekarten-Sticker
       </a>
-      <details class="inline-action">
-        <summary class="btn small secondary">Volle Karten-PDF</summary>
-        <a class="btn small secondary" target="_blank"
-           href="{{ url_for('manv_print_pdf', eid=event.id, status='blank') }}"
-           style="margin-top:6px;">
-          Karten mit allem Inhalt (A5 doppelseitig)
-        </a>
-      </details>
+      <a class="btn small secondary" target="_blank"
+         href="{{ url_for('manv_print_pdf', eid=event.id) }}">
+        📄 Volle Blanko-Karten
+      </a>
+      <a class="btn small secondary" target="_blank"
+         href="{{ url_for('manv_stickers_pdf', eid=event.id, style='mini') }}">
+        📇 Mini-QR
+      </a>
       <form method="post" action="{{ url_for('manv_event_close', eid=event.id) }}"
             style="display:inline-block;">
         {% if event.status == 'aktiv' %}

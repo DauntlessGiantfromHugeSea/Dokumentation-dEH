@@ -622,7 +622,165 @@ def _draw_card_back(c, card, event):
             line_y -= 6
 
 
-# ============ QR-Aufkleber-Bogen (A4 portrait) ============
+# ============ Anhängekarten-Sticker (A6, 4 pro A4-Bogen) ============
+
+def _draw_anhaengekarte_sticker(c, x, y, w, h, card, base_url):
+    """Zeichnet einen A6-Sticker (Standard: 105×148mm portrait), der die
+    Personalia-Felder der DRK-Anhängekarte abbildet + den QR in der
+    Patienten-Nr-Box. Bleibt komplett handschriftlich ausfüllbar."""
+    pad = 4
+    inner_x = x + pad
+    inner_y = y + pad
+    inner_w = w - 2 * pad
+    inner_h = h - 2 * pad
+
+    # Schneidelinie (gestrichelt) am Rand
+    c.setStrokeColor(BORDER_LIGHT); c.setLineWidth(0.3)
+    c.setDash(2, 2)
+    c.rect(x, y, w, h, stroke=1, fill=0)
+    c.setDash()
+
+    # === Titel-Block ===
+    title_h = 10 * mm
+    title_y = inner_y + inner_h - title_h
+    c.setFillColor(colors.black); c.setFont("Helvetica-Bold", 11)
+    c.drawCentredString(inner_x + inner_w / 2, title_y + 4,
+                         "Anhängekarte für Verletzte/Kranke")
+    c.setFont("Helvetica", 5); c.setFillColor(TEXT_MUTED)
+    c.drawCentredString(inner_x + inner_w / 2, title_y + 0,
+                         "Registration card · Fiche d'enregistrement")
+
+    # === Personalia (links) + Patienten-Nr/m-f/Datum (rechts) ===
+    body_y = inner_y + 2
+    body_h = title_y - body_y - 1
+    # Aufteilung: Personalia 58%, Pat-Nr-Spalte 42%
+    pers_w = inner_w * 0.58
+    pat_w = inner_w - pers_w
+    pat_x = inner_x + pers_w
+
+    # Trennlinie vertikal
+    c.setStrokeColor(colors.black); c.setLineWidth(0.6)
+    c.line(pat_x, body_y, pat_x, body_y + body_h)
+
+    # --- Personalia: 4 Zeilen mit Schreiblinien ---
+    rows_n = 4
+    row_h = body_h / rows_n
+    fields = [
+        ("Name", "Name", "Nom"),
+        ("Vorname", "First name", "Prenom"),
+        ("Geburtsdatum/~Alter", "Date of birth/~age", "Date de naissance/~age"),
+        ("Nationalität", "Nationality", "Nationalite"),
+    ]
+    for i, (de, en, fr) in enumerate(fields):
+        row_y = body_y + body_h - (i + 1) * row_h
+        c.setFont("Helvetica-Bold", 9); c.setFillColor(colors.black)
+        c.drawString(inner_x + 1, row_y + row_h - 5, de)
+        c.setFont("Helvetica", 6); c.setFillColor(TEXT_MUTED)
+        c.drawString(inner_x + 1, row_y + row_h - 11, en)
+        c.drawString(inner_x + 1, row_y + row_h - 15, fr)
+        # Schreiblinie am unteren Rand der Zeile
+        c.setStrokeColor(colors.black); c.setLineWidth(0.5)
+        c.line(inner_x + 1, row_y + 1, inner_x + pers_w - 1, row_y + 1)
+
+    # --- Patienten-Nr-Box + m/f + Datum (rechte Spalte) ---
+    # Box-Aufteilung: oben Pat-Nr (~55%), Mitte m/f (~28%), unten Datum (~17%)
+    pat_inner_x = pat_x + 1
+    pat_inner_w = pat_w - 2
+    pat_top = body_y + body_h
+    pat_box_h = body_h * 0.50
+    sex_h = body_h * 0.30
+    dat_h = body_h - pat_box_h - sex_h
+
+    # Patienten-Nr-Box (groß umrandet, schwarz)
+    pat_box_y = pat_top - pat_box_h
+    c.setStrokeColor(colors.black); c.setLineWidth(1.2)
+    c.rect(pat_inner_x, pat_box_y, pat_inner_w, pat_box_h - 1,
+            stroke=1, fill=0)
+    # Label oben in der Box
+    c.setFont("Helvetica-Bold", 8.5); c.setFillColor(colors.black)
+    c.drawString(pat_inner_x + 2, pat_box_y + pat_box_h - 6, "Patienten-Nr.")
+    c.setFont("Helvetica", 6); c.setFillColor(TEXT_MUTED)
+    c.drawString(pat_inner_x + 22 * mm, pat_box_y + pat_box_h - 6, "aufkleben")
+    # QR-Code zentriert mit Padding zum Rand
+    qr_avail_h = pat_box_h - 18  # mehr Platz oben (Label) + unten (ID)
+    qr_avail_w = pat_inner_w - 8
+    qr_size = min(qr_avail_h, qr_avail_w)
+    qr_x = pat_inner_x + (pat_inner_w - qr_size) / 2
+    qr_y = pat_box_y + 9  # Platz für ID drunter
+    qr_url = f"{base_url}/manv/scan/{card['qr_token']}"
+    _draw_qr(c, qr_x, qr_y, qr_size, qr_url)
+    # Klartext-ID unter dem QR — groß und gut lesbar
+    c.setFont("Helvetica-Bold", 10); c.setFillColor(colors.black)
+    c.drawCentredString(pat_inner_x + pat_inner_w / 2,
+                         pat_box_y + 2, card["card_no"])
+
+    # m/f Spalte (horizontale Trennlinie zwischen m und f)
+    sex_y = pat_box_y - sex_h
+    c.setStrokeColor(colors.black); c.setLineWidth(0.6)
+    c.line(pat_inner_x, sex_y + sex_h, pat_inner_x + pat_inner_w,
+            sex_y + sex_h)
+    half_w = pat_inner_w / 2
+    c.line(pat_x + half_w, sex_y, pat_x + half_w, sex_y + sex_h)
+    c.setFont("Helvetica-Bold", 17); c.setFillColor(colors.black)
+    c.drawCentredString(pat_x + half_w / 2, sex_y + sex_h / 2 - 5, "m")
+    c.drawCentredString(pat_x + half_w + half_w / 2,
+                         sex_y + sex_h / 2 - 5, "f")
+
+    # Datum-Zeile
+    dat_y = sex_y - dat_h
+    c.setStrokeColor(colors.black); c.setLineWidth(0.6)
+    c.line(pat_inner_x, dat_y + dat_h, pat_inner_x + pat_inner_w,
+            dat_y + dat_h)
+    c.setFont("Helvetica-Bold", 8.5); c.setFillColor(colors.black)
+    c.drawString(pat_inner_x + 2, dat_y + dat_h - 5, "Datum")
+    c.setFont("Helvetica", 5.5); c.setFillColor(TEXT_MUTED)
+    c.drawString(pat_inner_x + 2, dat_y + dat_h - 9, "Date")
+    c.setStrokeColor(colors.black); c.setLineWidth(0.5)
+    c.line(pat_inner_x + 14 * mm, dat_y + 2,
+            pat_inner_x + pat_inner_w - 2, dat_y + 2)
+
+
+def render_anhaengekarte_stickers_pdf(*, event, cards, base_url,
+                                        cols=2, rows=2):
+    """4 A6-Sticker pro A4 (2×2 portrait). Jeder Sticker zeigt das volle
+    Personalia-Layout der DRK-Anhängekarte + QR in der Pat-Nr-Box."""
+    from reportlab.lib.pagesizes import A4 as _A4_PORT
+    PAGE_W, PAGE_H = _A4_PORT       # 210×297mm
+    margin = 0  # nur Schneidelinie an den Stickern selbst
+
+    cols = max(1, min(int(cols or 2), 4))
+    rows = max(1, min(int(rows or 2), 6))
+    cell_w = (PAGE_W - 2 * margin) / cols
+    cell_h = (PAGE_H - 2 * margin) / rows
+    per_page = cols * rows
+
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=_A4_PORT)
+    c.setTitle(f"MANV-Anhängekarte-Sticker {event.get('card_prefix','')}")
+
+    if not cards:
+        c.setFont("Helvetica", 12); c.setFillColor(colors.black)
+        c.drawCentredString(PAGE_W / 2, PAGE_H / 2,
+                             "Keine Karten zum Drucken")
+        c.save()
+        return buf.getvalue()
+
+    total_pages = (len(cards) + per_page - 1) // per_page
+    for page_idx in range(total_pages):
+        page_cards = cards[page_idx * per_page:(page_idx + 1) * per_page]
+        for i, card in enumerate(page_cards):
+            col = i % cols
+            row = i // cols
+            x = margin + col * cell_w
+            y = PAGE_H - margin - (row + 1) * cell_h
+            _draw_anhaengekarte_sticker(c, x, y, cell_w, cell_h,
+                                          card, base_url)
+        c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+# ============ QR-Aufkleber-Bogen (A4 portrait) — kleine reine QR-Sticker ============
 
 def render_qr_stickers_pdf(*, event, cards, base_url, cols=3, rows=8,
                             include_event_name=True):
