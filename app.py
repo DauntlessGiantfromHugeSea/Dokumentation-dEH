@@ -2128,6 +2128,22 @@ def create_app(test_config: dict | None = None) -> Flask:
                   "success")
         return redirect(url_for("manv_pool"))
 
+    @app.route("/manv/pool/clear", methods=["POST"])
+    @login_required
+    def manv_pool_clear():
+        """Löscht alle unbenutzten Pool-Sticker — admin-only.
+        Karten mit Inhalt/Verknüpfung bleiben erhalten."""
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        n = models.delete_all_unused_pool_cards(db)
+        db.commit()
+        if n:
+            flash(f"{n} unbenutzte Pool-Sticker gelöscht.", "success")
+        else:
+            flash("Keine löschbaren Sticker im Vorrat.", "info")
+        return redirect(url_for("manv_pool"))
+
     @app.route("/manv/pool/print.pdf")
     @login_required
     def manv_pool_print():

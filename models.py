@@ -2995,6 +2995,28 @@ def create_sticker_pool(conn, *, count: int,
     ).fetchall()
 
 
+def delete_all_unused_pool_cards(conn) -> int:
+    """Löscht alle Pool-Sticker, die garantiert unbenutzt sind: keinem
+    Event zugeordnet, kein Protokoll, kein Patient, kein Inhalt, Status
+    blank. Gibt die Anzahl gelöschter Zeilen zurück."""
+    cur = conn.execute(
+        """
+        DELETE FROM manv_cards
+        WHERE manv_event_id IS NULL
+          AND central_protocol_id IS NULL
+          AND patient_id IS NULL
+          AND status = 'blank'
+          AND sichtung_kategorie IS NULL
+          AND vorname IS NULL AND name IS NULL
+          AND geburtsdatum IS NULL
+          AND diag_lokalisation IS NULL
+          AND bemerkungen IS NULL
+          AND (sichtungen_json IS NULL OR sichtungen_json IN ('', '[]'))
+        """
+    )
+    return cur.rowcount
+
+
 def list_pool_cards(conn, *, limit: int = 1000) -> list[sqlite3.Row]:
     """Pool-Karten = noch keinem Event zugeordnet, status='blank'."""
     return conn.execute(

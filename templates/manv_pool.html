@@ -123,7 +123,19 @@
 </div>
 
 <div class="card">
-  <div class="card-header">Karten im Vorrat ({{ pool_cards|length }})</div>
+  <div class="card-header">
+    Karten im Vorrat ({{ pool_cards|length }})
+    {% if pool_cards %}
+      <form method="post" action="{{ url_for('manv_pool_clear') }}"
+            style="margin: 0;"
+            onsubmit="return confirm('Wirklich ALLE {{ pool_cards|length }} unbenutzten Pool-Sticker loeschen?');">
+        <button class="btn small" type="submit"
+                style="background: var(--error); border-color: var(--error); color: #fff;">
+          🗑 Vorrat komplett leeren
+        </button>
+      </form>
+    {% endif %}
+  </div>
   <table class="data">
     <thead>
       <tr><th>Code</th><th>Token</th><th>Angelegt</th><th class="right"></th></tr>
