@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS users (
     perm_export_pdf   INTEGER NOT NULL DEFAULT 0,
     perm_export_akte  INTEGER NOT NULL DEFAULT 0,
     perm_edit_patient INTEGER NOT NULL DEFAULT 0,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS events (
     start_date   TEXT,
     end_date     TEXT,
     is_active    INTEGER NOT NULL DEFAULT 1,
-    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at   TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS user_event_permissions (
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS protocols (
     art_weise_massnahmen  TEXT,
     verbrauchtes_material TEXT,
     created_by            INTEGER REFERENCES users(id),
-    created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at            TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_protocols_patient ON protocols(patient_id);
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS comments (
     protocol_id INTEGER NOT NULL REFERENCES protocols(id) ON DELETE CASCADE,
     author_id   INTEGER REFERENCES users(id),
     text        TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_comments_protocol ON comments(protocol_id);
@@ -110,8 +110,8 @@ CREATE TABLE IF NOT EXISTS central_protocols (
     name_summary  TEXT,
     data          TEXT NOT NULL,
     created_by    INTEGER REFERENCES users(id),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_central_patient ON central_protocols(patient_id);
@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS central_comments (
     central_protocol_id INTEGER NOT NULL REFERENCES central_protocols(id) ON DELETE CASCADE,
     author_id           INTEGER REFERENCES users(id),
     text                TEXT NOT NULL,
-    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at          TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_central_comments_protocol ON central_comments(central_protocol_id);
@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS patient_changes (
     field_name  TEXT NOT NULL,
     old_value   TEXT,
     new_value   TEXT,
-    changed_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    changed_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_patient_changes_patient ON patient_changes(patient_id);
@@ -146,7 +146,7 @@ CREATE TABLE IF NOT EXISTS emergency_unlocks (
     patient_id    INTEGER NOT NULL,
     requested_by  INTEGER REFERENCES users(id),
     approved_by   INTEGER REFERENCES users(id),
-    unlocked_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    unlocked_at   TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_emergency_unlocks_patient ON emergency_unlocks(patient_id);
@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS protocol_sequence (
     seq_no      INTEGER,
     source_type TEXT NOT NULL,           -- 'decentral' | 'central'
     source_id   INTEGER NOT NULL,        -- protocols.id oder central_protocols.id
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     UNIQUE(source_type, source_id)
 );
 
@@ -173,7 +173,7 @@ CREATE TABLE IF NOT EXISTS triage_entries (
     patient_id               INTEGER REFERENCES patients(id) ON DELETE SET NULL,
     name                     TEXT,
     geburtsdatum             TEXT,
-    arrival_at               TEXT NOT NULL DEFAULT (datetime('now')),
+    arrival_at               TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     category                 TEXT NOT NULL,    -- 'SK1' | 'SK2' | 'SK3'
     indicators               TEXT,             -- JSON-Array der Schlüssel
     notes                    TEXT,
@@ -185,7 +185,7 @@ CREATE TABLE IF NOT EXISTS triage_entries (
     treatment_protocol_id    INTEGER REFERENCES central_protocols(id)
                               ON DELETE SET NULL,
     created_by               INTEGER REFERENCES users(id),
-    created_at               TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at               TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_triage_status ON triage_entries(status);
@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS medications (
     end_date      TEXT,
     active        INTEGER NOT NULL DEFAULT 1,
     created_by    INTEGER REFERENCES users(id),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_medications_patient ON medications(patient_id);
 
@@ -216,7 +216,7 @@ CREATE TABLE IF NOT EXISTS medication_administrations (
     medication_id    INTEGER NOT NULL REFERENCES medications(id) ON DELETE CASCADE,
     day_date         TEXT NOT NULL,   -- YYYY-MM-DD
     slot             TEXT NOT NULL,   -- 'morgens' | 'mittags' | 'abends' | 'nachts' | 'bedarf'
-    administered_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    administered_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     administered_by  INTEGER REFERENCES users(id),
     notes            TEXT,
     UNIQUE(medication_id, day_date, slot)
@@ -238,11 +238,11 @@ CREATE TABLE IF NOT EXISTS manv_events (
     situation     TEXT,        -- was ist passiert
     einsatzort    TEXT,        -- wo
     lage_bild     TEXT,        -- aktuelles Lagebild
-    started_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    started_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     closed_at     TEXT,
     notes         TEXT,
     created_by    INTEGER REFERENCES users(id),
-    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS manv_cards (
@@ -293,8 +293,8 @@ CREATE TABLE IF NOT EXISTS manv_cards (
     transport_prio    TEXT,             -- 'a' | 'b'
     -- Notes
     bemerkungen       TEXT,
-    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at        TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_manv_cards_event ON manv_cards(manv_event_id);
 CREATE INDEX IF NOT EXISTS idx_manv_cards_status ON manv_cards(status);
@@ -321,8 +321,8 @@ CREATE TABLE IF NOT EXISTS einsatzbefehle (
     rueck_telefon     TEXT,
     erstellt_von_text TEXT,                    -- freie Text-Eingabe ("Name, Funktion")
     created_by        INTEGER REFERENCES users(id),
-    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at        TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_einsatzbefehle_event ON einsatzbefehle(event_id);
 
@@ -334,7 +334,7 @@ CREATE TABLE IF NOT EXISTS einsatztagebuch (
     blatt_nr            INTEGER NOT NULL DEFAULT 1,
     blatt_von           INTEGER NOT NULL DEFAULT 1,
     created_by          INTEGER REFERENCES users(id),
-    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at          TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_einsatztagebuch_befehl ON einsatztagebuch(einsatzbefehl_id);
 
@@ -348,9 +348,14 @@ CREATE TABLE IF NOT EXISTS einsatztagebuch_eintraege (
     vollzug         TEXT,
     anlage          TEXT,
     created_by      INTEGER REFERENCES users(id),
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_eintraege_tagebuch ON einsatztagebuch_eintraege(tagebuch_id);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 
@@ -538,8 +543,8 @@ def init_db(db_path: Path) -> None:
                     transport_mit_arzt INTEGER NOT NULL DEFAULT 0,
                     transport_isoliert INTEGER NOT NULL DEFAULT 0,
                     transport_prio TEXT, bemerkungen TEXT,
-                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+                    updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
                 );
             """)
             # Daten kopieren (alte Spaltenliste aus Migration)
@@ -1184,6 +1189,48 @@ def format_dt(value: Optional[str]) -> str:
     return value
 
 
+# ---------- App-Settings (Key-Value-Store für TZ etc.) ----------
+
+def get_app_setting(conn, key: str, default: Optional[str] = None) -> Optional[str]:
+    row = conn.execute(
+        "SELECT value FROM app_settings WHERE key = ?", (key,)
+    ).fetchone()
+    return row["value"] if row else default
+
+
+def set_app_setting(conn, key: str, value: Optional[str]) -> None:
+    conn.execute(
+        "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, value),
+    )
+
+
+# Verfügbare Zeitzonen — Auswahl für das Admin-UI
+APP_TIMEZONES = (
+    "Europe/Berlin", "Europe/Vienna", "Europe/Zurich", "Europe/Amsterdam",
+    "Europe/Paris", "Europe/London", "Europe/Madrid", "Europe/Warsaw",
+    "Europe/Prague", "Europe/Stockholm", "Europe/Helsinki",
+    "Europe/Athens", "Europe/Istanbul", "UTC",
+)
+
+
+def get_server_time_info(conn) -> dict:
+    """Liefert aktuelle Server-Zeit + konfigurierte App-TZ für die
+    Anzeige in der Admin-UI."""
+    import os
+    from datetime import datetime as _dt
+    container_tz = os.environ.get("TZ", "(nicht gesetzt)")
+    app_tz = get_app_setting(conn, "app_timezone", container_tz)
+    now_local = _dt.now()
+    return {
+        "container_tz": container_tz,
+        "app_tz": app_tz,
+        "now": now_local.strftime("%d.%m.%Y %H:%M:%S"),
+        "available": list(APP_TIMEZONES),
+    }
+
+
 # ---------- Central protocols (Notfallprotokoll, größere Form) ----------
 
 import json as _json
@@ -1394,7 +1441,7 @@ def update_central_protocol(conn: sqlite3.Connection, pid: int,
         """
         UPDATE central_protocols
            SET patient_id = ?, einsatznummer = ?, datum = ?,
-               name_summary = ?, data = ?, updated_at = datetime('now')
+               name_summary = ?, data = ?, updated_at = datetime('now', 'localtime')
          WHERE id = ?
         """,
         (
@@ -2159,7 +2206,7 @@ def finish_triage_treatment(conn, tid: int) -> bool:
         """
         UPDATE triage_entries
         SET status = 'abgeschlossen',
-            treatment_finished_at = datetime('now')
+            treatment_finished_at = datetime('now', 'localtime')
         WHERE id = ? AND status = 'in_behandlung'
         """,
         (tid,),
@@ -2211,7 +2258,7 @@ def start_triage_treatment(conn, tid: int,
         UPDATE triage_entries
         SET status = 'in_behandlung',
             treatment_started_at = COALESCE(treatment_started_at,
-                                             datetime('now')),
+                                             datetime('now', 'localtime')),
             treatment_started_by = CASE WHEN ? IS NOT NULL
                                         THEN ? ELSE treatment_started_by END,
             treatment_protocol_id = COALESCE(?, treatment_protocol_id)
@@ -2231,7 +2278,7 @@ def link_triage_to_central_protocol(conn, tid: int, protocol_id: int,
             status = CASE WHEN status = 'wartend'
                           THEN 'in_behandlung' ELSE status END,
             treatment_started_at = COALESCE(treatment_started_at,
-                                             datetime('now')),
+                                             datetime('now', 'localtime')),
             treatment_started_by = COALESCE(?, treatment_started_by)
         WHERE id = ?
         """,
@@ -2453,12 +2500,12 @@ def alarm_manv_event(conn, eid: int, *,
     # Alle anderen alarmierten Events auf 'abgeschlossen' setzen
     conn.execute(
         "UPDATE manv_events SET status='abgeschlossen', "
-        "closed_at=datetime('now'), is_alarmiert=0 "
+        "closed_at=datetime('now', 'localtime'), is_alarmiert=0 "
         "WHERE is_alarmiert=1 AND id != ?", (eid,),
     )
     cur = conn.execute(
         "UPDATE manv_events SET is_alarmiert=1, status='aktiv', "
-        "alarm_at=COALESCE(alarm_at, datetime('now')), "
+        "alarm_at=COALESCE(alarm_at, datetime('now', 'localtime')), "
         "alarm_by=COALESCE(alarm_by, ?), closed_at=NULL "
         "WHERE id=?", (by_user_id, eid),
     )
@@ -2508,7 +2555,7 @@ def list_manv_events(conn) -> list[sqlite3.Row]:
 def close_manv_event(conn, eid: int) -> bool:
     cur = conn.execute(
         "UPDATE manv_events SET status='abgeschlossen', "
-        "closed_at=datetime('now') WHERE id=? AND status='aktiv'",
+        "closed_at=datetime('now', 'localtime') WHERE id=? AND status='aktiv'",
         (eid,),
     )
     return cur.rowcount > 0
@@ -2634,7 +2681,7 @@ def update_manv_card(conn, cid: int, fields: dict) -> bool:
     params = [fields[c] for c in cols]
     params.append(cid)
     conn.execute(
-        f"UPDATE manv_cards SET {set_sql}, updated_at=datetime('now') "
+        f"UPDATE manv_cards SET {set_sql}, updated_at=datetime('now', 'localtime') "
         f"WHERE id=?", params)
     return True
 
@@ -2665,7 +2712,7 @@ def manv_card_add_sichtung(conn, cid: int, *, kategorie: str,
             sichtung_kategorie=?,
             status = CASE WHEN status = 'blank' THEN 'gesichtet'
                           ELSE status END,
-            updated_at=datetime('now')
+            updated_at=datetime('now', 'localtime')
         WHERE id=?
         """,
         (_json.dumps(sichtungen, ensure_ascii=False), kategorie, cid),
@@ -2677,7 +2724,7 @@ def manv_card_set_status(conn, cid: int, status: str) -> bool:
     if status not in MANV_STATUS_VALUES:
         return False
     conn.execute(
-        "UPDATE manv_cards SET status=?, updated_at=datetime('now') WHERE id=?",
+        "UPDATE manv_cards SET status=?, updated_at=datetime('now', 'localtime') WHERE id=?",
         (status, cid),
     )
     return True
@@ -2685,7 +2732,7 @@ def manv_card_set_status(conn, cid: int, status: str) -> bool:
 
 def manv_card_link_patient(conn, cid: int, patient_id: int) -> bool:
     conn.execute(
-        "UPDATE manv_cards SET patient_id=?, updated_at=datetime('now') WHERE id=?",
+        "UPDATE manv_cards SET patient_id=?, updated_at=datetime('now', 'localtime') WHERE id=?",
         (patient_id, cid),
     )
     return True
@@ -2698,7 +2745,7 @@ def manv_card_link_protocol(conn, cid: int, protocol_id: int) -> bool:
         SET central_protocol_id=?,
             status = CASE WHEN status IN ('blank', 'gesichtet')
                           THEN 'in_behandlung' ELSE status END,
-            updated_at=datetime('now')
+            updated_at=datetime('now', 'localtime')
         WHERE id=?
         """,
         (protocol_id, cid),
@@ -2715,7 +2762,7 @@ def get_active_manv_event(conn) -> Optional[sqlite3.Row]:
 def close_all_active_manv_events(conn, *, except_id: Optional[int] = None) -> int:
     """Alle anderen aktiven Events auf 'abgeschlossen' setzen.
     Wird beim Anlegen eines neuen aktiven Events aufgerufen."""
-    sql = "UPDATE manv_events SET status='abgeschlossen', closed_at=datetime('now') WHERE status='aktiv'"
+    sql = "UPDATE manv_events SET status='abgeschlossen', closed_at=datetime('now', 'localtime') WHERE status='aktiv'"
     params: list = []
     if except_id is not None:
         sql += " AND id != ?"
@@ -2813,7 +2860,7 @@ def claim_pool_card(conn, *, card_id: int, event_id: int) -> bool:
     wenn die Karte aktuell event_id=NULL hat."""
     cur = conn.execute(
         "UPDATE manv_cards SET manv_event_id=?, "
-        "updated_at=datetime('now') "
+        "updated_at=datetime('now', 'localtime') "
         "WHERE id=? AND manv_event_id IS NULL", (event_id, card_id),
     )
     return cur.rowcount > 0
@@ -2937,7 +2984,7 @@ def update_einsatzbefehl(conn, eid: int, fields: dict) -> bool:
     params.append(eid)
     conn.execute(
         f"UPDATE einsatzbefehle SET {set_sql}, "
-        f"updated_at=datetime('now') WHERE id=?", params,
+        f"updated_at=datetime('now', 'localtime') WHERE id=?", params,
     )
     return True
 

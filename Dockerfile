@@ -4,7 +4,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PORT=8000 \
-    DB_PATH=/data/app.db
+    DB_PATH=/data/app.db \
+    TZ=Europe/Berlin
+
+# tzdata installieren damit Container-Zeit korrekt auf Europe/Berlin steht
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

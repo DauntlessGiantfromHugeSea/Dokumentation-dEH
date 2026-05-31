@@ -156,6 +156,18 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     app.teardown_appcontext(models.close_db)
 
+    @app.template_filter("from_json")
+    def _from_json(value):
+        if value is None or value == "":
+            return None
+        if not isinstance(value, str):
+            return value
+        try:
+            import json as _j
+            return _j.loads(value)
+        except Exception:
+            return None
+
     # Auto-init schema on startup so the first request never hits a missing table.
     with app.app_context():
         models.init_db(Path(app.config["DB_PATH"]))
@@ -2634,7 +2646,23 @@ def create_app(test_config: dict | None = None) -> Flask:
                                    u["id"]: models.get_user_event_permissions(db, u["id"])
                                    for u in users
                                },
+                               server_time=models.get_server_time_info(db),
                                format_dt=models.format_dt)
+
+    @app.route("/admin/timezone", methods=["POST"])
+    @admin_required
+    def admin_set_timezone():
+        db = models.get_db()
+        tz = (request.form.get("app_timezone") or "").strip()
+        if tz and tz in models.APP_TIMEZONES:
+            models.set_app_setting(db, "app_timezone", tz)
+            db.commit()
+            flash(f"App-Zeitzone gesetzt auf {tz}. Container-Zeit wird beim "
+                  f"nächsten Neustart über die Umgebungsvariable TZ "
+                  f"aus dem Dockerfile übernommen.", "success")
+        else:
+            flash("Ungültige Zeitzone.", "error")
+        return redirect(_admin_settings_url("system"))
 
     @app.route("/admin/events/create", methods=["POST"])
     @admin_required

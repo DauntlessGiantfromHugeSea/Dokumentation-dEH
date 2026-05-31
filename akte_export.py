@@ -338,6 +338,34 @@ def _central_block(rec: dict, styles) -> list:
             ("Sonstige Notfallart", d.get("notfallart_sonstige")),
         ], styles, col_widths=[110 * mm, 60 * mm]),
         _kv_full("Verletzung", d.get("verletzung"), styles),
+    ]
+    # Verletzungslokalisation (Body-Chart) wenn Marker vorhanden
+    from pdf_fill import _parse_body_markers, _body_chart_flowable
+    markers = _parse_body_markers(d.get("body_markers"))
+    if markers:
+        from reportlab.platypus import Table as _Tab, TableStyle as _TS
+        from reportlab.lib import colors as _col
+        elements.append(Paragraph("Verletzungslokalisation", styles["h3"]))
+        marker_text = "<br/>".join(
+            f"<b>{i + 1}.</b> {'hinten' if m.get('side') == 'back' else 'vorne'}"
+            f"{(' — ' + str(m.get('note',''))) if m.get('note') else ''}"
+            for i, m in enumerate(markers)
+        )
+        tbl = _Tab([[
+            _body_chart_flowable(markers, width_mm=75),
+            Paragraph(marker_text, styles["small"]),
+        ]], colWidths=[75 * mm, 95 * mm])
+        tbl.setStyle(_TS([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BOX", (0, 0), (-1, -1), 0.4, _col.HexColor("#999")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.3, _col.HexColor("#CCC")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(tbl)
+    elements += [
         Spacer(1, 4),
         Paragraph("Erstbefund", styles["h3"]),
         _kv_grid([

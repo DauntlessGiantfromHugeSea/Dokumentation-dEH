@@ -556,6 +556,56 @@ h3 {
   margin-top: 4px;
 }
 
+/* Body-Chart (read-only) in Detail- und Akte-Ansicht */
+.body-chart-static {
+  position: relative;
+  display: inline-block;
+  max-width: 460px;
+  width: 100%;
+  margin: 8px 0;
+}
+.body-chart-static img {
+  width: 100%; height: auto; display: block;
+}
+.body-chart-static-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none;
+}
+.body-chart-static-overlay .bmark {
+  position: absolute;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #d32f2f;
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 0 0 2px #fff;
+}
+.body-chart-static-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+.body-chart-static-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.body-chart-static-list .bmark-num {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #d32f2f; color: #fff;
+  font-weight: 700; font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+}
+
 /* Medikamenten-Grid */
 .med-grid-wrap { overflow-x: auto; }
 .med-grid {

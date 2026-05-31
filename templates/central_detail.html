@@ -328,6 +328,37 @@
     <div class="label">Verletzung</div>
     <div class="value">{{ v(d.get("verletzung")) }}</div>
   </div>
+  {% set markers = d.get("body_markers") %}
+  {% if markers %}
+    {% if markers is string %}
+      {% set markers = markers | from_json %}
+    {% endif %}
+    {% if markers and markers|length > 0 %}
+    <div class="kv">
+      <div class="label">Verletzungslokalisation</div>
+      <div class="value">
+        <div class="body-chart-static">
+          <img src="{{ url_for('static', filename='body_chart.svg') }}"
+               alt="Körper-Schema">
+          <div class="body-chart-static-overlay">
+            {% for m in markers %}
+              <span class="bmark" style="left:{{ (m.x*100)|round(2) }}%;top:{{ (m.y*100)|round(2) }}%;">{{ loop.index }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        <ol class="body-chart-static-list">
+          {% for m in markers %}
+            <li>
+              <span class="bmark-num">{{ loop.index }}</span>
+              <span class="muted">{{ 'hinten' if m.side == 'back' else 'vorne' }}</span>
+              {% if m.note %}— {{ m.note }}{% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+      </div>
+    </div>
+    {% endif %}
+  {% endif %}
 </div>
 
 {# ---------- Erstbefund ---------- #}

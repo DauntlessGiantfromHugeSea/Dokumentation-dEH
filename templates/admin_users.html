@@ -35,6 +35,13 @@
         </span>
         <em>{{ users|length }}</em>
       </a>
+      <a class="settings-nav-link" href="#system" data-settings-link>
+        <span>
+          <strong>System</strong>
+          <small>Zeit, Server-Info</small>
+        </span>
+        <em>⏱</em>
+      </a>
       <a class="settings-nav-link" href="#danger" data-settings-link>
         <span>
           <strong>Datenbank</strong>
@@ -388,6 +395,70 @@
           </div>
         </div>
         {% endfor %}
+      </div>
+    </section>
+
+    <section class="settings-panel" id="system" data-settings-panel hidden>
+      <div class="settings-panel-head">
+        <div>
+          <h2>System &amp; Zeit</h2>
+          <p class="muted">
+            Aktuelle Server-Zeit prüfen + App-Zeitzone für die Anzeige
+            einstellen.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">Server-Zeit</div>
+        <div class="protocol-meta">
+          <div class="kv">
+            <div class="label">Aktuelle Zeit auf dem Server</div>
+            <div class="value">
+              <strong style="font-size:1.1rem;">{{ server_time.now }}</strong>
+            </div>
+          </div>
+          <div class="kv">
+            <div class="label">Container-Zeitzone</div>
+            <div class="value"><code>{{ server_time.container_tz }}</code></div>
+          </div>
+          <div class="kv">
+            <div class="label">App-Anzeige-Zeitzone</div>
+            <div class="value"><code>{{ server_time.app_tz }}</code></div>
+          </div>
+        </div>
+        <p class="muted" style="margin-top:14px;font-size:0.85rem;">
+          Falls die Server-Zeit nicht stimmt, läuft der Container in der
+          falschen Zeitzone. Das Dockerfile setzt standardmäßig
+          <code>TZ=Europe/Berlin</code> — Container neu bauen:
+          <code>docker rm -f camp-doku &amp;&amp; docker build --no-cache -t camp-doku .</code>
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="card-header">App-Zeitzone für die Anzeige</div>
+        <form method="post" action="{{ url_for('admin_set_timezone') }}"
+              class="stack">
+          <label class="field">
+            Zeitzone
+            <select name="app_timezone">
+              {% for tz in server_time.available %}
+                <option value="{{ tz }}"
+                        {% if tz == server_time.app_tz %}selected{% endif %}>
+                  {{ tz }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+          <div><button class="btn small" type="submit">Speichern</button></div>
+        </form>
+        <p class="muted" style="font-size:0.85rem;margin-top:12px;">
+          Setzt die Anzeige-Zeitzone in der App. <strong>Hinweis:</strong>
+          neue Datetimes werden in Container-Zeitzone gespeichert
+          (<code>{{ server_time.container_tz }}</code>). Bei einem Wechsel
+          sollte der Container-TZ angepasst werden, sonst gibt es einen
+          Versatz.
+        </p>
       </div>
     </section>
 

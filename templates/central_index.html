@@ -264,6 +264,98 @@
     touch-action: none;
   }
   .sig-pad.signed { border-color: #1f6b3a; box-shadow: 0 0 0 2px rgba(31,107,58,0.15) inset; }
+
+  /* ===== Body-Chart (Verletzungslokalisation) ===== */
+  .body-chart-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 560px;
+    width: 100%;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .body-chart-img {
+    width: 100%;
+    height: auto;
+    display: block;
+    pointer-events: none;
+    -webkit-user-drag: none;
+  }
+  .body-chart-overlay {
+    position: absolute;
+    inset: 0;
+    cursor: crosshair;
+  }
+  .body-chart-overlay .marker {
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #d32f2f;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25), 0 0 0 2px #fff;
+    cursor: pointer;
+    transition: transform var(--t-fast), background var(--t-fast);
+  }
+  .body-chart-overlay .marker:hover {
+    background: #7a1f2b;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+  .body-marker-list {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .body-marker-list .marker-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+  }
+  .body-marker-list .marker-num {
+    flex-shrink: 0;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: #d32f2f;
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .body-marker-list .marker-row input {
+    flex: 1 1 auto;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font: inherit;
+    font-size: 0.88rem;
+    background: var(--surface);
+    color: var(--text);
+  }
+  .body-marker-list .marker-row .marker-side {
+    color: var(--muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .body-marker-list .marker-row button {
+    background: transparent;
+    border: 0;
+    color: var(--error);
+    cursor: pointer;
+    padding: 2px 6px;
+  }
   .sig-actions { display: flex; align-items: center; gap: 10px; }
   .sig-status { font-size: 0.78rem; color: var(--muted); }
   .sig-status.ok { color: #1f6b3a; font-weight: 600; }
@@ -880,6 +972,25 @@ if ('serviceWorker' in navigator) {
           <div class="section">
             <div class="label">Verletzung / Erkrankung</div>
             <textarea id="verletzung" name="verletzung" placeholder="Lokalisation, Mechanismus, Schweregrad …"></textarea>
+          </div>
+
+          <div class="section">
+            <div class="label">
+              Verletzungslokalisation
+              <span class="hint">in das Schema klicken — Markierung wird nummeriert. Klick auf eine Markierung → entfernt sie.</span>
+            </div>
+            <div class="body-chart-wrap" id="body-chart-wrap">
+              <img src="{{ url_for('static', filename='body_chart.svg') }}"
+                   class="body-chart-img" alt="Körper-Schema vorne und hinten">
+              <div class="body-chart-overlay" id="body-chart-overlay"></div>
+            </div>
+            <input type="hidden" name="body_markers" id="body_markers" value="">
+            <div class="body-marker-list" id="body-marker-list">
+              <p class="muted" style="font-size:0.85rem;margin:0;">
+                Noch keine Markierungen — klick auf den Körper, um Verletzungen
+                zu lokalisieren.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -1764,6 +1875,118 @@ if ('serviceWorker' in navigator) {
     else await newProtocol();
   }
   init();
+
+  // ===== Body-Chart: Marker-Verwaltung =====
+  const bodyOverlay = document.getElementById('body-chart-overlay');
+  const bodyMarkersInput = document.getElementById('body_markers');
+  const bodyMarkerList = document.getElementById('body-marker-list');
+  let bodyMarkers = [];
+
+  function bodyMarkersSerialize() {
+    bodyMarkersInput.value = bodyMarkers.length
+      ? JSON.stringify(bodyMarkers) : '';
+    bodyMarkersInput.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  function bodyRenderMarkers() {
+    if (!bodyOverlay) return;
+    bodyOverlay.innerHTML = '';
+    bodyMarkers.forEach((m, i) => {
+      const dot = document.createElement('div');
+      dot.className = 'marker';
+      dot.style.left = (m.x * 100) + '%';
+      dot.style.top = (m.y * 100) + '%';
+      dot.textContent = String(i + 1);
+      dot.title = 'Markierung ' + (i + 1)
+        + (m.note ? ' — ' + m.note : '')
+        + ' (klicken zum Entfernen)';
+      dot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        bodyMarkers.splice(i, 1);
+        bodyRenderMarkers();
+        bodyRenderList();
+        bodyMarkersSerialize();
+      });
+      bodyOverlay.appendChild(dot);
+    });
+  }
+  function bodyRenderList() {
+    if (!bodyMarkerList) return;
+    if (!bodyMarkers.length) {
+      bodyMarkerList.innerHTML =
+        '<p class="muted" style="font-size:0.85rem;margin:0;">' +
+        'Noch keine Markierungen — klick auf den Körper, um Verletzungen ' +
+        'zu lokalisieren.</p>';
+      return;
+    }
+    bodyMarkerList.innerHTML = '';
+    bodyMarkers.forEach((m, i) => {
+      const row = document.createElement('div');
+      row.className = 'marker-row';
+      row.innerHTML =
+        '<span class="marker-num">' + (i + 1) + '</span>' +
+        '<span class="marker-side">' + (m.side === 'back' ? 'hinten' : 'vorne') + '</span>' +
+        '<input type="text" placeholder="Notiz (z. B. Schürfwunde)" value="' +
+        (m.note || '').replace(/"/g, '&quot;') + '">' +
+        '<button type="button" title="Entfernen">✕</button>';
+      const inp = row.querySelector('input');
+      inp.addEventListener('input', () => {
+        m.note = inp.value;
+        bodyMarkersSerialize();
+      });
+      row.querySelector('button').addEventListener('click', () => {
+        bodyMarkers.splice(i, 1);
+        bodyRenderMarkers();
+        bodyRenderList();
+        bodyMarkersSerialize();
+      });
+      bodyMarkerList.appendChild(row);
+    });
+  }
+
+  if (bodyOverlay) {
+    bodyOverlay.addEventListener('click', (e) => {
+      // Klick außerhalb von vorhandenen Markern → neuer Marker
+      if (e.target !== bodyOverlay) return;
+      const rect = bodyOverlay.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+      const side = x < 0.5 ? 'front' : 'back';
+      bodyMarkers.push({ x: x, y: y, side: side, note: '' });
+      bodyRenderMarkers();
+      bodyRenderList();
+      bodyMarkersSerialize();
+    });
+  }
+
+  // Hook in applyData für Reload-Path
+  const _origApplyData = applyData;
+  applyData = function (data) {
+    _origApplyData(data);
+    bodyMarkers = [];
+    if (data && data.body_markers) {
+      try {
+        const parsed = typeof data.body_markers === 'string'
+          ? JSON.parse(data.body_markers) : data.body_markers;
+        if (Array.isArray(parsed)) {
+          bodyMarkers = parsed.filter(m =>
+            typeof m === 'object' &&
+            typeof m.x === 'number' && typeof m.y === 'number');
+        }
+      } catch (_) {}
+    }
+    bodyRenderMarkers();
+    bodyRenderList();
+  };
+
+  // Bei newProtocol: marker zurücksetzen
+  const _origNewProtocol = newProtocol;
+  newProtocol = async function () {
+    await _origNewProtocol();
+    bodyMarkers = [];
+    bodyRenderMarkers();
+    bodyRenderList();
+  };
 })();
 </script>
 

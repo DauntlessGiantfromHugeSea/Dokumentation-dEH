@@ -383,6 +383,91 @@ def _section_medical(medical_info):
     return _bordered_table(rows, [186 * mm], padding=4)
 
 
+def _body_chart_flowable(markers, *, width_mm=170, label="Verletzungslokalisation"):
+    """Body-Chart als bordered Table-Zelle mit eigener Drawing-Subklasse.
+
+    Liefert einen Flowable, der die SVG-Datei aus static/body_chart.svg
+    rendert (falls vorhanden) und die übergebenen Marker als rote
+    Kreise mit Nummer darüber legt. Fallback: einfache schematische
+    Boxen mit „vorne"/„hinten".
+    """
+    from reportlab.platypus import Flowable
+    import os
+
+    class _BodyChartDraw(Flowable):
+        def __init__(self, mks, w_mm):
+            super().__init__()
+            self.markers = mks or []
+            self.w = w_mm * mm
+            # Original-SVG-Viewbox 400×360 → Aspect 400/360 ≈ 1.11
+            self.h = self.w * 360 / 400
+
+        def wrap(self, availWidth, availHeight):
+            return (self.w, self.h)
+
+        def draw(self):
+            c = self.canv
+            # Versuche, die SVG-Datei als Hintergrund zu rendern.
+            svg_path = os.path.join(
+                os.path.dirname(__file__), "static", "body_chart.svg")
+            drew_bg = False
+            try:
+                from svglib.svglib import svg2rlg
+                from reportlab.graphics import renderPDF
+                drawing = svg2rlg(svg_path)
+                if drawing is not None:
+                    scale = self.w / drawing.width
+                    drawing.scale(scale, scale)
+                    drawing.width *= scale
+                    drawing.height *= scale
+                    renderPDF.draw(drawing, c, 0, 0)
+                    drew_bg = True
+            except Exception:
+                pass
+            if not drew_bg:
+                # Fallback: zwei einfache Rechtecke mit Beschriftung
+                from reportlab.lib import colors as _col
+                c.setStrokeColor(_col.HexColor("#888888"))
+                c.setLineWidth(0.6)
+                half = self.w / 2
+                c.rect(0, 0, half - 2, self.h, stroke=1, fill=0)
+                c.rect(half + 2, 0, half - 2, self.h, stroke=1, fill=0)
+                c.setFont("Helvetica", 8)
+                c.setFillColor(_col.HexColor("#666"))
+                c.drawCentredString(half / 2, 6, "vorne")
+                c.drawCentredString(half + 2 + (half - 2) / 2, 6, "hinten")
+            # Marker drüberlegen
+            from reportlab.lib import colors as _col2
+            for idx, m in enumerate(self.markers, start=1):
+                try:
+                    mx = float(m["x"]) * self.w
+                    my = (1 - float(m["y"])) * self.h
+                except (KeyError, ValueError, TypeError):
+                    continue
+                r = 3.5
+                c.setFillColor(_col2.HexColor("#D32F2F"))
+                c.setStrokeColor(_col2.white)
+                c.setLineWidth(0.8)
+                c.circle(mx, my, r, stroke=1, fill=1)
+                c.setFillColor(_col2.white)
+                c.setFont("Helvetica-Bold", 6.5)
+                c.drawCentredString(mx, my - 2, str(idx))
+
+    return _BodyChartDraw(markers, width_mm)
+
+
+def _parse_body_markers(value):
+    """Body-Marker liegen in data als JSON-String oder Liste vor."""
+    if not value: return []
+    if isinstance(value, list): return value
+    try:
+        import json as _j
+        parsed = _j.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
 def _section_2_notfall(d):
     notfallart = _combine(d.get("notfallart"), d.get("notfallart_sonstige"))
     rows = [
@@ -836,7 +921,36 @@ def render_pdf(data, exporter_label=None, medical_info=None):
     # 2. Notfallgeschehen
     story.append(_section_bar("2. Notfallgeschehen / Anamnese / Erstbefund"))
     story.append(_section_2_notfall(data))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 4))
+
+    # Verletzungslokalisation (Body-Chart) — nur wenn Marker vorhanden
+    markers = _parse_body_markers(data.get("body_markers"))
+    if markers:
+        story.append(_section_bar("Verletzungslokalisation"))
+        # Tabelle: links Body-Chart, rechts Marker-Liste
+        from reportlab.platypus import Table as _Tab, TableStyle as _TS
+        marker_lines = "<br/>".join(
+            f"<b>{i + 1}.</b> {'hinten' if m.get('side') == 'back' else 'vorne'}"
+            f"{(' — ' + escape(str(m.get('note', '')))) if m.get('note') else ''}"
+            for i, m in enumerate(markers)
+        )
+        body_w = 80
+        list_w = 100
+        tbl = _Tab([
+            [_body_chart_flowable(markers, width_mm=body_w),
+             Paragraph(marker_lines, S_TXT)],
+        ], colWidths=[body_w * mm, list_w * mm])
+        tbl.setStyle(_TS([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("BOX", (0, 0), (-1, -1), 0.5, BORDER),
+            ("INNERGRID", (0, 0), (-1, -1), 0.3, BORDER),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 6))
 
     # 3. Erstbefund
     story.append(_section_bar("3. Erstbefund"))
