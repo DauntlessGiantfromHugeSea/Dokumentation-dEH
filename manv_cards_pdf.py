@@ -134,255 +134,351 @@ def _draw_body_silhouette(c, x, y, w, h):
     c.drawCentredString(cx2, y + 1, "hinten")
 
 
+def _drei_zeilig(c, x, y_top, w, label_de, label_en, label_fr,
+                  value=None, value_font=10, line_height=4.5):
+    """DRK-Stil-Feld: oben fett deutsch, klein darunter EN, klein darunter FR.
+    Beschreibungstext rechts dran; wenn `value` gesetzt, wird's groß
+    darüber gezeichnet."""
+    c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
+    c.drawString(x + 1, y_top - 3, label_de)
+    c.setFont("Helvetica", 5); c.setFillColor(TEXT_MUTED)
+    c.drawString(x + 1, y_top - 7, label_en)
+    c.drawString(x + 1, y_top - 10.5, label_fr)
+    if value:
+        c.setFont("Helvetica", value_font); c.setFillColor(colors.black)
+        c.drawString(x + 30 * mm, y_top - 5, str(value))
+
+
 def _draw_card_front(c, card, event, base_url):
-    """A5 portrait, 148×210mm. Layout in mm-Koordinaten von unten-links."""
+    """A5 portrait, 148×210mm. Layout nach DRK-Originalkarte (Art. 02098,
+    Generalsekretariat 02/2006). Schwarzweiße Grafik, weiße Personalia-Box
+    rechts oben mit ROT umrandetem „Patienten-Nr. aufkleben"-Feld, das wir
+    durch QR + Klartext-ID füllen."""
     W, H = A5
-    margin = 6 * mm
+    margin = 5 * mm
     inner_w = W - 2 * margin
-    # ----- Header: Roter Streifen mit Logo, Titel, Patienten-Nr/QR -----
-    header_h = 18 * mm
-    header_y = H - margin - header_h
-    # Roter Hintergrund-Streifen
-    c.setFillColor(colors.HexColor("#FAEDEB"))
-    c.rect(margin, header_y, inner_w, header_h, stroke=0, fill=1)
-    c.setStrokeColor(BORDER)
-    c.setLineWidth(0.6)
-    c.rect(margin, header_y, inner_w, header_h, stroke=1, fill=0)
-    # Linkes Kreuz
-    _draw_red_cross(c, margin + 8 * mm, header_y + header_h / 2, 8 * mm)
-    # Titel
-    c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawCentredString(W / 2, header_y + header_h - 6 * mm,
+    inner_h = H - 2 * margin
+
+    # === Außenrahmen ===
+    c.setStrokeColor(BORDER); c.setLineWidth(0.6)
+    c.rect(margin, margin, inner_w, inner_h, stroke=1, fill=0)
+
+    # === Header-Zeile mit Titel + zwei roten Kreuzen ===
+    head_h = 12 * mm
+    head_y = margin + inner_h - head_h
+    # Linkes + rechtes rotes Kreuz
+    _draw_red_cross(c, margin + 9, head_y + head_h / 2, 8 * mm)
+    _draw_red_cross(c, margin + inner_w - 9, head_y + head_h / 2, 8 * mm)
+    # Titel zentriert
+    c.setFillColor(colors.black); c.setFont("Helvetica-Bold", 12)
+    c.drawCentredString(W / 2, head_y + head_h - 5,
                          "Anhängekarte für Verletzte / Kranke")
-    c.setFont("Helvetica", 6.5)
-    c.setFillColor(TEXT_MUTED)
-    c.drawCentredString(W / 2, header_y + header_h - 10 * mm,
-                         "Registration card for injured/sick persons — "
-                         "Fiche d'enregistrement pour blessés/malades")
-    # Patienten-Nr-Box + QR rechts
-    qr_size = 18 * mm
-    qr_x = W - margin - qr_size - 2
-    qr_y = header_y + (header_h - qr_size) / 2 - 1
-    # Box um QR + ID
-    id_box_w = qr_size + 32 * mm
-    id_box_x = qr_x - 32 * mm
-    c.setStrokeColor(ACCENT)
-    c.setLineWidth(1.0)
-    c.rect(id_box_x, qr_y - 1, id_box_w, qr_size + 2, stroke=1, fill=0)
-    # QR-Code
+    c.setFont("Helvetica", 6); c.setFillColor(TEXT_MUTED)
+    c.drawCentredString(W / 2, head_y + head_h - 8.5,
+                         "Registration card for injured / sick persons")
+    c.drawCentredString(W / 2, head_y + head_h - 11,
+                         "Fiche d'enregistrement pour blessés / malades")
+    # Linie unter Header
+    c.setStrokeColor(BORDER); c.setLineWidth(0.6)
+    c.line(margin, head_y, margin + inner_w, head_y)
+
+    # === Personalia-Block mit Patienten-Nr-Box (rechts, rot umrandet) ===
+    pers_h = 40 * mm
+    pers_y = head_y - pers_h
+    # Trennlinie zwischen Personalia-Spalte und Patienten-Nr-Box
+    pat_box_w = 42 * mm
+    pat_box_x = margin + inner_w - pat_box_w
+    pers_w = inner_w - pat_box_w
+    c.setStrokeColor(BORDER); c.setLineWidth(0.6)
+    c.line(margin + pers_w, head_y, margin + pers_w, pers_y)
+    # Untere Begrenzung
+    c.line(margin, pers_y, margin + inner_w, pers_y)
+
+    # --- Personalia links ---
+    # Name (oberste Zeile, breit)
+    z_h = pers_h / 4
+    z1_y = head_y - z_h
+    _drei_zeilig(c, margin, head_y, pers_w, "Name", "Name", "Nom",
+                  value=card.get("name"), value_font=12)
+    c.setStrokeColor(BORDER_LIGHT); c.setLineWidth(0.3)
+    c.line(margin, z1_y, margin + pers_w, z1_y)
+    # Vorname
+    z2_y = head_y - 2 * z_h
+    _drei_zeilig(c, margin, z1_y, pers_w, "Vorname", "First name", "Prénom",
+                  value=card.get("vorname"), value_font=12)
+    c.line(margin, z2_y, margin + pers_w, z2_y)
+    # Geburtsdatum + Geschlecht (Spalte aufgeteilt: links Geb., rechts ♂/♀)
+    geb_w = pers_w * 0.55
+    c.setStrokeColor(BORDER_LIGHT); c.setLineWidth(0.3)
+    c.line(margin + geb_w, z2_y, margin + geb_w, z2_y - z_h)
+    geb_val = ""
+    if card.get("geburtsdatum"):
+        try:
+            from datetime import date as _d
+            geb_val = _d.fromisoformat(str(card["geburtsdatum"])[:10]).strftime("%d.%m.%Y")
+        except Exception:
+            geb_val = str(card["geburtsdatum"])
+    if card.get("alter_jahre") and not geb_val:
+        geb_val = f"{card['alter_jahre']} Jahre"
+    _drei_zeilig(c, margin, z2_y, geb_w, "Geburtsdatum / Alter",
+                  "Date of birth / age", "Date de naissance / âge",
+                  value=geb_val, value_font=10)
+    # Geschlecht-Symbole
+    sex_x = margin + geb_w
+    sex_w = pers_w - geb_w
+    cx_m = sex_x + sex_w / 4
+    cx_w = sex_x + sex_w * 3 / 4
+    c.setFont("Helvetica-Bold", 16); c.setFillColor(colors.black)
+    c.drawCentredString(cx_m, z2_y - z_h / 2 - 1, "♂")
+    c.setFont("Helvetica", 7); c.drawString(cx_m + 4, z2_y - z_h / 2 - 1, "m")
+    c.setFont("Helvetica-Bold", 16)
+    c.drawCentredString(cx_w, z2_y - z_h / 2 - 1, "♀")
+    c.setFont("Helvetica", 7); c.drawString(cx_w + 4, z2_y - z_h / 2 - 1, "f")
+    # Selektion einkreisen
+    if (card.get("geschlecht") or "").lower() in ("m", "w", "f"):
+        c.setStrokeColor(ACCENT); c.setLineWidth(1.5)
+        target_x = cx_m if card["geschlecht"] == "m" else cx_w
+        c.circle(target_x + 2, z2_y - z_h / 2, 4 * mm, stroke=1, fill=0)
+    z3_y = z2_y - z_h
+    c.setStrokeColor(BORDER_LIGHT); c.setLineWidth(0.3)
+    c.line(margin, z3_y, margin + pers_w, z3_y)
+    # Nationalität + Datum
+    nat_w = pers_w * 0.55
+    c.line(margin + nat_w, z3_y, margin + nat_w, pers_y)
+    _drei_zeilig(c, margin, z3_y, nat_w, "Nationalität",
+                  "Nationality", "Nationalité",
+                  value=card.get("nationalitaet"), value_font=10)
+    _drei_zeilig(c, margin + nat_w, z3_y, pers_w - nat_w,
+                  "Datum", "Date", "Date",
+                  value=_dt.now().strftime("%d.%m.%Y"), value_font=10)
+
+    # --- Patienten-Nr-Box rechts: ROT umrandet, drin QR + Klartext-ID ---
+    box_pad = 2
+    box_inner_x = pat_box_x + box_pad
+    box_inner_y = pers_y + box_pad
+    box_inner_w = pat_box_w - 2 * box_pad
+    box_inner_h = pers_h - 2 * box_pad
+    # Header-Beschriftung oberhalb der roten Box
+    c.setFont("Helvetica-Bold", 8); c.setFillColor(colors.black)
+    c.drawString(pat_box_x + 2, head_y - 4, "Patienten-Nr.")
+    c.setFont("Helvetica", 6); c.setFillColor(TEXT_MUTED)
+    c.drawString(pat_box_x + 2, head_y - 7.5, "Patient-No.")
+    c.drawString(pat_box_x + 2, head_y - 10, "[QR scannen → Detail]")
+    # Rote Box
+    red_box_y = pers_y + 2
+    red_box_h = pers_h - 12
+    c.setStrokeColor(ACCENT); c.setLineWidth(1.2)
+    c.rect(pat_box_x + 2, red_box_y, pat_box_w - 4, red_box_h,
+            stroke=1, fill=0)
+    # QR-Code zentriert in die Box
+    qr_size = min(red_box_h - 8, pat_box_w - 12)
+    qr_x = pat_box_x + (pat_box_w - qr_size) / 2
+    qr_y = red_box_y + 4
     qr_url = f"{base_url}/manv/scan/{card['qr_token']}"
     _draw_qr(c, qr_x, qr_y, qr_size, qr_url)
-    # ID-Klartext links neben QR
-    c.setFont("Helvetica-Bold", 6.5)
-    c.setFillColor(ACCENT_DARK)
-    c.drawString(id_box_x + 2, qr_y + qr_size - 4, "Patienten-Nr.")
-    c.setFont("Helvetica-Bold", 11)
-    c.setFillColor(colors.black)
-    c.drawString(id_box_x + 2, qr_y + qr_size / 2 + 1, card["card_no"])
-    c.setFont("Helvetica", 5.5)
-    c.setFillColor(TEXT_MUTED)
-    c.drawString(id_box_x + 2, qr_y + qr_size / 2 - 4, "Scan → Detail")
-    # Rechtes Kreuz wäre redundant; wir lassen es weg (QR übernimmt)
+    # Klartext-ID UNTER dem QR
+    c.setFont("Helvetica-Bold", 10); c.setFillColor(colors.black)
+    c.drawCentredString(pat_box_x + pat_box_w / 2,
+                         red_box_y + red_box_h - 4, card["card_no"])
 
-    # ----- Personalia-Block -----
-    cur_y = header_y - 2
-    block_h = 30 * mm
-    cur_y -= block_h
-    _draw_border_box(c, margin, cur_y, inner_w, block_h)
-    # Name + Patienten-Nr-Spalte
-    name_w = inner_w * 0.62
-    sex_w = inner_w - name_w
-    # Trennlinie zur Geschlecht-Spalte
-    c.setLineWidth(0.4)
-    c.line(margin + name_w, cur_y, margin + name_w, cur_y + block_h)
-    # Name
-    c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
-    c.drawString(margin + 2, cur_y + block_h - 6, "Name")
-    c.setFont("Helvetica", 5.5); c.setFillColor(TEXT_MUTED)
-    c.drawString(margin + 2, cur_y + block_h - 11, "Name / Nom")
-    if card.get("name"):
-        c.setFont("Helvetica", 11); c.setFillColor(colors.black)
-        c.drawString(margin + 26 * mm, cur_y + block_h - 8, card["name"])
-    c.setLineWidth(0.3); c.setStrokeColor(BORDER_LIGHT)
-    c.line(margin + 2, cur_y + block_h - 13.5, margin + name_w - 2,
-            cur_y + block_h - 13.5)
-    # Vorname
-    c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
-    c.drawString(margin + 2, cur_y + block_h - 18, "Vorname")
-    c.setFont("Helvetica", 5.5); c.setFillColor(TEXT_MUTED)
-    c.drawString(margin + 2, cur_y + block_h - 23, "First name / Prénom")
-    if card.get("vorname"):
-        c.setFont("Helvetica", 11); c.setFillColor(colors.black)
-        c.drawString(margin + 26 * mm, cur_y + block_h - 20, card["vorname"])
-    c.line(margin + 2, cur_y + block_h - 25.5, margin + name_w - 2,
-            cur_y + block_h - 25.5)
-    # Geburtsdatum
-    c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
-    c.drawString(margin + 2, cur_y + 4, "Geburtsdatum / Alter")
-    c.setFont("Helvetica", 5.5); c.setFillColor(TEXT_MUTED)
-    c.drawString(margin + 2, cur_y + -0.5, "Date of birth / age")
-    if card.get("geburtsdatum"):
-        c.setFont("Helvetica", 10); c.setFillColor(colors.black)
-        c.drawString(margin + 36 * mm, cur_y + 3, str(card["geburtsdatum"]))
-    # Geschlecht-Spalte (♂ / ♀)
-    c.setFont("Helvetica-Bold", 16)
-    cx = margin + name_w + sex_w / 4
-    c.drawCentredString(cx, cur_y + block_h - 14, "♂")
-    c.setFont("Helvetica", 6); c.drawCentredString(cx, cur_y + block_h - 22, "m")
-    c.setFont("Helvetica-Bold", 16)
-    c.drawCentredString(margin + name_w + sex_w * 3 / 4,
-                         cur_y + block_h - 14, "♀")
-    c.setFont("Helvetica", 6)
-    c.drawCentredString(margin + name_w + sex_w * 3 / 4,
-                         cur_y + block_h - 22, "f")
-    # Selektion einkreisen
-    if card.get("geschlecht") in ("m", "w", "f"):
-        c.setStrokeColor(ACCENT); c.setLineWidth(1.5)
-        if card["geschlecht"] == "m":
-            c.circle(cx, cur_y + block_h - 16, 6 * mm, stroke=1, fill=0)
-        else:
-            c.circle(margin + name_w + sex_w * 3 / 4,
-                      cur_y + block_h - 16, 6 * mm, stroke=1, fill=0)
-        c.setStrokeColor(BORDER)
-    # Datum (Karte ausgegeben)
-    c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
-    c.drawString(margin + name_w + 2, cur_y + 4, "Datum")
-    c.setFont("Helvetica", 5.5); c.setFillColor(TEXT_MUTED)
-    c.drawString(margin + name_w + 2, cur_y - 0.5, "Date")
-
-    # ----- Sichtungs-Tabelle -----
-    cur_y -= 2
-    sicht_h = 50 * mm
-    cur_y -= sicht_h
-    cols = 5  # Kategorie + 4 Sichtungen
-    col_w = inner_w / cols
-    # Außenrahmen
-    _draw_border_box(c, margin, cur_y, inner_w, sicht_h)
+    # === Sichtungs-Tabelle ===
+    sicht_h = 70 * mm
+    sicht_y = pers_y - sicht_h
+    c.setStrokeColor(BORDER); c.setLineWidth(0.6)
+    c.line(margin, sicht_y, margin + inner_w, sicht_y)
+    # Spalten: 1) Sichtung/Kategorie | 2) 1. Sichtung | 3) 2. | 4) 3. | 5) 4.
+    cat_col_w = 22 * mm
+    sicht_col_w = (inner_w - cat_col_w) / 4
     # Header-Zeile
-    head_h = 8 * mm
+    head_row_h = 9 * mm
+    head_row_y = pers_y - head_row_h
     c.setFillColor(BG_HEAD)
-    c.rect(margin, cur_y + sicht_h - head_h, inner_w, head_h, stroke=0, fill=1)
+    c.rect(margin, head_row_y, inner_w, head_row_h, stroke=0, fill=1)
     c.setStrokeColor(BORDER); c.setLineWidth(0.4)
-    c.line(margin, cur_y + sicht_h - head_h, margin + inner_w,
-            cur_y + sicht_h - head_h)
-    headers = [("Sichtung\nKategorie", "Sorting / Triage\nCategory"),
-                ("1. Sichtung", "Uhrzeit / Name"),
-                ("2. Sichtung", "Uhrzeit / Name"),
-                ("3. Sichtung", "Uhrzeit / Name"),
-                ("4. Sichtung", "Uhrzeit / Name")]
-    for i, (de, en) in enumerate(headers):
-        x0 = margin + i * col_w
+    c.line(margin, head_row_y, margin + inner_w, head_row_h)
+    headers = [("Sichtung", "Sorting / Triage", "Kategorie",
+                "Category / Catégorie"),
+                ("1. Sichtung", "Uhrzeit / Name", "", "Time / Name · Heure / Nom"),
+                ("2. Sichtung", "Uhrzeit / Name", "", ""),
+                ("3. Sichtung", "Uhrzeit / Name", "", ""),
+                ("4. Sichtung", "Uhrzeit / Name", "", "")]
+    for i, (de1, en1, de2, en2) in enumerate(headers):
+        x0 = margin + (cat_col_w if i > 0 else 0) + max(0, i - 1) * sicht_col_w
+        cw = cat_col_w if i == 0 else sicht_col_w
         if i > 0:
-            c.line(x0, cur_y, x0, cur_y + sicht_h)
-        c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
-        c.drawString(x0 + 2, cur_y + sicht_h - 4, de.split("\n")[0])
-        c.setFont("Helvetica", 5.5); c.setFillColor(TEXT_MUTED)
-        c.drawString(x0 + 2, cur_y + sicht_h - 7.5, en.split("\n")[0])
-    # 5 Kategorie-Zeilen: I, II, III, IV + Tot
-    row_h = (sicht_h - head_h) / 5
-    cat_colors = {"I": colors.HexColor("#FCE4E4"),
-                  "II": colors.HexColor("#FFF6D5"),
-                  "III": colors.HexColor("#E5F4EA"),
-                  "IV": colors.HexColor("#DFE9F4"),
-                  "tot": colors.HexColor("#222222")}
-    cat_labels = [("I", "I"), ("II", "II"), ("III", "III"),
-                  ("IV", "IV"), ("tot", "")]
-    for i, (key, label) in enumerate(cat_labels):
-        row_y = cur_y + sicht_h - head_h - (i + 1) * row_h
+            c.setStrokeColor(BORDER); c.setLineWidth(0.5)
+            c.line(x0, sicht_y, x0, head_row_y + head_row_h)
+        c.setFillColor(colors.black); c.setFont("Helvetica-Bold", 7)
+        c.drawString(x0 + 2, head_row_y + head_row_h - 4, de1)
+        c.setFillColor(TEXT_MUTED); c.setFont("Helvetica", 5)
+        c.drawString(x0 + 2, head_row_y + head_row_h - 7, en1)
+        if de2:
+            c.setFillColor(colors.black); c.setFont("Helvetica-Bold", 7)
+            c.drawString(x0 + 2, head_row_y + 2, de2)
+            c.setFillColor(TEXT_MUTED); c.setFont("Helvetica", 5)
+            c.drawString(x0 + 2, head_row_y - 1, en2)
+    # Bottom of header
+    c.setStrokeColor(BORDER); c.setLineWidth(0.5)
+    c.line(margin, head_row_y, margin + inner_w, head_row_y)
+    # 5 Kategorie-Zeilen: I (weiß) → IV (Grauverlauf) + schwarze Zeile (Tot)
+    body_h = sicht_h - head_row_h
+    row_h = body_h / 5
+    # Grautöne wie DRK-Original: I/II/III hellgrau-aufsteigend, IV dunkler, Tot schwarz
+    cat_bgs = {"I": colors.HexColor("#FFFFFF"),
+                "II": colors.HexColor("#EEEEEE"),
+                "III": colors.HexColor("#DDDDDD"),
+                "IV": colors.HexColor("#BBBBBB"),
+                "tot": colors.HexColor("#1A1A1A")}
+    cat_seq = [("I", "I"), ("II", "II"), ("III", "III"),
+                ("IV", "IV"), ("tot", "")]
+    for i, (key, label) in enumerate(cat_seq):
+        row_y = head_row_y - (i + 1) * row_h
         # Kategorie-Spalte einfärben
-        c.setFillColor(cat_colors[key])
-        c.rect(margin, row_y, col_w, row_h, stroke=0, fill=1)
-        c.setFillColor(colors.black if key != "tot" else colors.white)
-        c.setFont("Helvetica-Bold", 14)
-        c.drawCentredString(margin + col_w / 2, row_y + row_h / 2 - 4, label)
-        # Trennlinie unten
-        c.setStrokeColor(BORDER); c.setLineWidth(0.3)
-        if i < len(cat_labels) - 1:
-            c.line(margin, row_y, margin + inner_w, row_y)
-    # Bereits eingetragene Sichtungen einkreisen
+        c.setFillColor(cat_bgs[key])
+        c.rect(margin, row_y, cat_col_w, row_h, stroke=0, fill=1)
+        # Römische Ziffer
+        c.setFillColor(colors.white if key == "tot" else colors.black)
+        c.setFont("Helvetica-Bold", 18)
+        c.drawCentredString(margin + cat_col_w / 2, row_y + row_h / 2 - 5, label)
+        # Trennlinie zwischen Zeilen
+        if i > 0:
+            c.setStrokeColor(BORDER); c.setLineWidth(0.3)
+            c.line(margin, row_y + row_h, margin + inner_w, row_y + row_h)
+    # Vertikale Spaltentrenner zeichnen
+    c.setStrokeColor(BORDER); c.setLineWidth(0.4)
+    for i in range(1, 5):
+        x = margin + cat_col_w + i * sicht_col_w
+        c.line(x, sicht_y, x, head_row_y)
+    c.line(margin + cat_col_w, sicht_y, margin + cat_col_w, head_row_y)
+    # Bereits eingetragene Sichtungen einkreisen + Zeit+Name eintragen
     import json as _json
     try:
         sichtungen = _json.loads(card.get("sichtungen_json") or "[]")
     except Exception:
         sichtungen = []
-    cat_to_row = {"I": 0, "II": 1, "III": 2, "IV": 3, "tot": 4}
+    cat_to_idx = {"I": 0, "II": 1, "III": 2, "IV": 3, "tot": 4}
     for idx, s in enumerate(sichtungen[:4]):
-        ri = cat_to_row.get(s.get("kategorie"))
+        ri = cat_to_idx.get(s.get("kategorie"))
         if ri is None:
             continue
-        row_y = cur_y + sicht_h - head_h - (ri + 1) * row_h
-        col_x = margin + (idx + 1) * col_w
-        c.setStrokeColor(ACCENT); c.setLineWidth(1.2)
-        c.circle(col_x + col_w / 2, row_y + row_h / 2, row_h / 2 - 2,
-                  stroke=1, fill=0)
-        c.setFillColor(colors.black); c.setFont("Helvetica", 6)
+        cell_y = head_row_y - (ri + 1) * row_h
+        cell_x = margin + cat_col_w + idx * sicht_col_w
+        # Eintrag-Markierung
+        c.setStrokeColor(ACCENT); c.setLineWidth(1.5)
+        c.circle(cell_x + sicht_col_w / 2, cell_y + row_h / 2,
+                  min(row_h, sicht_col_w) / 2 - 2, stroke=1, fill=0)
+        c.setFillColor(colors.black); c.setFont("Helvetica", 7)
         t = (s.get("time") or "")[11:16]
         n = (s.get("name") or "")[:14]
-        c.drawCentredString(col_x + col_w / 2, row_y + row_h / 2 + 1, t)
-        c.drawCentredString(col_x + col_w / 2, row_y + row_h / 2 - 5, n)
+        c.drawCentredString(cell_x + sicht_col_w / 2,
+                             cell_y + row_h / 2 + 1, t)
+        c.drawCentredString(cell_x + sicht_col_w / 2,
+                             cell_y + row_h / 2 - 6, n)
 
-    # ----- Transport + Innenliegende Suchdienstkarte -----
-    cur_y -= 2
-    trans_h = 24 * mm
-    cur_y -= trans_h
-    _draw_border_box(c, margin, cur_y, inner_w, trans_h)
-    half_w = inner_w / 2
-    c.setLineWidth(0.4); c.setStrokeColor(BORDER)
-    c.line(margin + half_w, cur_y + trans_h / 2,
-            margin + inner_w, cur_y + trans_h / 2)
-    c.line(margin + half_w, cur_y, margin + half_w, cur_y + trans_h)
-    # Transportmittel
+    # === Transport-Block ===
+    trans_h = 26 * mm
+    trans_y = sicht_y - trans_h
+    c.setStrokeColor(BORDER); c.setLineWidth(0.6)
+    c.line(margin, trans_y, margin + inner_w, trans_y)
+    # Obere Hälfte: Transportmittel | Transportziel
+    half = inner_w / 2
+    mid_y = trans_y + trans_h / 2
+    c.line(margin + half, sicht_y, margin + half, mid_y)
+    c.line(margin, mid_y, margin + inner_w, mid_y)
+    _drei_zeilig(c, margin, sicht_y, half, "Transportmittel",
+                  "Transportation", "Moyen de transport",
+                  value=card.get("transport_mittel"), value_font=10)
+    _drei_zeilig(c, margin + half, sicht_y, half, "Transportziel",
+                  "Destination", "Destination",
+                  value=card.get("transport_ziel"), value_font=10)
+    # Untere Hälfte: Transport [liegend | sitzend | mit Notarzt | isoliert | Priorität]
     c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
-    c.drawString(margin + 2, cur_y + trans_h - 4, "Transportmittel")
-    c.setFont("Helvetica", 5.5); c.setFillColor(TEXT_MUTED)
-    c.drawString(margin + 2, cur_y + trans_h - 8, "Transportation")
-    if card.get("transport_mittel"):
-        c.setFont("Helvetica", 9); c.setFillColor(colors.black)
-        c.drawString(margin + 2, cur_y + trans_h / 2 + 2,
-                      card["transport_mittel"])
-    # Transportziel
-    c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
-    c.drawString(margin + half_w + 2, cur_y + trans_h - 4, "Transportziel")
-    c.setFont("Helvetica", 5.5); c.setFillColor(TEXT_MUTED)
-    c.drawString(margin + half_w + 2, cur_y + trans_h - 8, "Destination")
-    if card.get("transport_ziel"):
-        c.setFont("Helvetica", 9); c.setFillColor(colors.black)
-        c.drawString(margin + half_w + 2, cur_y + trans_h / 2 + 2,
-                      card["transport_ziel"])
-    # Untere Hälfte: Liegend / Sitzend / Arzt / isoliert / Prio
-    c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
-    c.drawString(margin + 2, cur_y + trans_h / 2 - 4, "Transport:")
-    options = [
-        ("liegend", card.get("transport_art") == "liegend"),
-        ("sitzend", card.get("transport_art") == "sitzend"),
-        ("Notarzt", bool(card.get("transport_mit_arzt"))),
-        ("isoliert", bool(card.get("transport_isoliert"))),
-        ("Prio a", card.get("transport_prio") == "a"),
-        ("Prio b", card.get("transport_prio") == "b"),
+    c.drawString(margin + 2, mid_y - 4, "Transport")
+    c.setFont("Helvetica", 5); c.setFillColor(TEXT_MUTED)
+    c.drawString(margin + 2, mid_y - 7.5, "Transportation")
+    c.drawString(margin + 2, mid_y - 10, "Transport")
+    # Optionen-Block rechts vom Label
+    opts = [
+        ("liegend", "lying", "couché", card.get("transport_art") == "liegend"),
+        ("sitzend", "sitting", "assis", card.get("transport_art") == "sitzend"),
+        ("mit Notarzt", "with doctor", "avec médecin",
+            bool(card.get("transport_mit_arzt"))),
+        ("isoliert", "isolated", "isolé",
+            bool(card.get("transport_isoliert"))),
     ]
-    ox = margin + 20 * mm
-    oy = cur_y + 3
-    for label, set_ in options:
-        c.setFont("Helvetica", 7); c.setFillColor(colors.black)
-        # Box
-        c.setStrokeColor(BORDER); c.setLineWidth(0.4)
-        c.rect(ox, oy, 3 * mm, 3 * mm, stroke=1, fill=0)
+    opt_w = (inner_w - 22 * mm) / (len(opts) + 1)  # +1 für Prio-Spalte
+    ox = margin + 22 * mm
+    for de, en, fr, set_ in opts:
+        c.setFillColor(colors.black); c.setFont("Helvetica-Bold", 7)
+        c.drawString(ox, mid_y - 4, de)
+        c.setFillColor(TEXT_MUTED); c.setFont("Helvetica", 5)
+        c.drawString(ox, mid_y - 7.5, en)
+        c.drawString(ox, mid_y - 10, fr)
+        # Häkchen-Box unten
+        c.setStrokeColor(BORDER); c.setLineWidth(0.4); c.setFillColor(colors.white)
+        c.rect(ox, trans_y + 2, 3.5 * mm, 3.5 * mm, stroke=1, fill=1)
         if set_:
-            c.setFillColor(ACCENT)
-            c.setFont("Helvetica-Bold", 8)
-            c.drawCentredString(ox + 1.5 * mm, oy + 0.5, "✓")
-            c.setFillColor(colors.black)
-            c.setFont("Helvetica", 7)
-        c.drawString(ox + 4 * mm, oy + 0.8, label)
-        ox += 22 * mm
+            c.setFillColor(ACCENT); c.setFont("Helvetica-Bold", 9)
+            c.drawCentredString(ox + 1.75 * mm, trans_y + 3, "✓")
+        ox += opt_w
+    # Prio-Spalte
+    c.setFillColor(colors.black); c.setFont("Helvetica-Bold", 7)
+    c.drawString(ox, mid_y - 4, "Priorität")
+    c.setFillColor(TEXT_MUTED); c.setFont("Helvetica", 5)
+    c.drawString(ox, mid_y - 7.5, "Priority")
+    c.drawString(ox, mid_y - 10, "Priorité")
+    c.setFillColor(colors.black); c.setFont("Helvetica", 8)
+    c.drawString(ox, trans_y + 7, "a")
+    c.setStrokeColor(BORDER); c.setLineWidth(0.4); c.setFillColor(colors.white)
+    c.circle(ox + 8, trans_y + 8, 1.7 * mm, stroke=1, fill=1)
+    if card.get("transport_prio") == "a":
+        c.setFillColor(ACCENT); c.circle(ox + 8, trans_y + 8, 1.0 * mm,
+                                           stroke=0, fill=1)
+    c.setFillColor(colors.black); c.drawString(ox, trans_y + 1, "b")
+    c.setStrokeColor(BORDER); c.setFillColor(colors.white)
+    c.circle(ox + 8, trans_y + 2, 1.7 * mm, stroke=1, fill=1)
+    if card.get("transport_prio") == "b":
+        c.setFillColor(ACCENT); c.circle(ox + 8, trans_y + 2, 1.0 * mm,
+                                           stroke=0, fill=1)
 
-    # ----- Footer-Quelle / Hinweis -----
+    # === Innenliegende Suchdienstkarte ===
+    such_h = 16 * mm
+    such_y = trans_y - such_h
+    c.setStrokeColor(BORDER); c.setLineWidth(0.6)
+    c.line(margin, such_y, margin + inner_w, such_y)
+    c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
+    c.drawString(margin + 2, trans_y - 4, "Innenliegende Suchdienstkarte")
+    c.setFont("Helvetica", 5); c.setFillColor(TEXT_MUTED)
+    c.drawString(margin + 2, trans_y - 7,
+                  "enclosed card for tracing service · "
+                  "fiche d'enregistrement ci-jointe")
+    # Zwei Zeilen: 1. + 2. Ausfertigung weitergeleitet □
+    line_y = trans_y - 11
+    c.setLineWidth(0.3); c.setStrokeColor(BORDER_LIGHT)
+    c.line(margin, line_y, margin + inner_w, line_y)
+    for i, (lbl_de, lbl_en) in enumerate([
+        ("1. Ausfertigung", "1st Copy · 1ʳᵉ Copie"),
+        ("2. Ausfertigung", "2nd Copy · 2ᵉ Copie")]):
+        row_y = such_y + 2 + i * (such_h - 4) / 2
+        c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
+        c.drawString(margin + 2, row_y + 3, lbl_de)
+        c.setFont("Helvetica", 5); c.setFillColor(TEXT_MUTED)
+        c.drawString(margin + 2, row_y, lbl_en)
+        c.setFont("Helvetica-Bold", 7); c.setFillColor(colors.black)
+        c.drawString(margin + 38 * mm, row_y + 3, "weitergeleitet")
+        c.setFont("Helvetica", 5); c.setFillColor(TEXT_MUTED)
+        c.drawString(margin + 38 * mm, row_y, "referred · acheminé")
+        c.setStrokeColor(BORDER); c.setFillColor(colors.white)
+        c.circle(margin + inner_w - 8, row_y + 3, 2 * mm, stroke=1, fill=1)
+
+    # === Footer ===
     c.setFont("Helvetica", 5.5); c.setFillColor(TEXT_MUTED)
-    c.drawString(margin, margin - 2,
-                  f"Erste Hilfe — MANV „{event['name']}" "  ·  "
+    c.drawString(margin + 2, margin + 1,
+                  f"© Erste Hilfe — MANV „{event['name']}\"  ·  "
                   f"Karte {card['card_no']}  ·  "
                   f"erzeugt {_dt.now().strftime('%d.%m.%Y %H:%M')}")
+    c.drawRightString(margin + inner_w - 2, margin + 1,
+                       f"Token: {card.get('qr_token','')[:12]}")
 
 
 def _draw_card_back(c, card, event):
