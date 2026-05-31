@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block title %}MANV-Karte {{ card.card_no }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>
+      Karte <code>{{ card.card_no }}</code>
+      {% if card.sichtung_kategorie %}
+        <span class="badge"
+              style="background: {{ kategorie_color.get(card.sichtung_kategorie, '#888') }}; color:#fff; margin-left:8px;">
+          SK {{ card.sichtung_kategorie|upper }}
+        </span>
+      {% endif %}
+    </h1>
+    <p class="tagline">
+      MANV: <a href="{{ url_for('manv_event', eid=event.id) }}">{{ event.name }}</a>
+      · Status: <strong>{{ card.status }}</strong>
+    </p>
+  </div>
+  <div class="btn-row">
+    {% if card.central_protocol_id %}
+      <a class="btn small" href="{{ url_for('central_detail', pid=card.central_protocol_id) }}">
+        Zugehöriger Bericht öffnen
+      </a>
+    {% else %}
+      <form method="post" action="{{ url_for('manv_card_promote', cid=card.id) }}"
+            style="display:inline-block;">
+        <button class="btn small" type="submit">→ Zentrales Notfallprotokoll</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('manv_card', cid=card.id) }}" class="stack">
+
+{# ---------- Sichtung schnell ändern ---------- #}
+<div class="card" style="border-left: 4px solid var(--accent);">
+  <div class="card-header">Sichtung eintragen</div>
+  <p class="muted" style="font-size:0.88rem;margin:0 0 12px;">
+    Aktuelle Kategorie: <strong>{{ card.sichtung_kategorie or '— ungesichtet —' }}</strong>.
+    Eine neue Sichtung erzeugt einen Eintrag in der Historie unten.
+  </p>
+  <div class="quick-cat" style="grid-template-columns: repeat(5, 1fr);">
+    {% for k in kategorien %}
+      <label class="quick-cat-btn"
+             style="border-color: {{ kategorie_color[k] }};">
+        <input type="radio" name="new_sichtung" value="{{ k }}">
+        <span class="qc-tag" style="color: {{ kategorie_color[k] }};">
+          SK {{ k|upper }}
+        </span>
+        <span class="qc-label">
+          {% if k == 'I' %}rot · sofort
+          {% elif k == 'II' %}gelb · dringend
+          {% elif k == 'III' %}grün · kann warten
+          {% elif k == 'IV' %}blau · hoffnungslos
+          {% else %}schwarz · tot{% endif %}
+        </span>
+      </label>
+    {% endfor %}
+  </div>
+</div>
+
+{# ---------- Personalia ---------- #}
+<div class="card">
+  <div class="card-header">Personalia</div>
+  <div class="row three">
+    <label class="field">Vorname
+      <input name="vorname" value="{{ card.vorname or '' }}">
+    </label>
+    <label class="field">Name
+      <input name="name" value="{{ card.name or '' }}">
+    </label>
+    <label class="field">Geburtsdatum
+      <input name="geburtsdatum" type="date" value="{{ card.geburtsdatum or '' }}">
+    </label>
+  </div>
+  <div class="row three">
+    <label class="field">Alter (Jahre)
+      <input name="alter_jahre" type="number" min="0" max="120"
+             value="{{ card.alter_jahre or '' }}">
+    </label>
+    <label class="field">Geschlecht
+      <select name="geschlecht">
+        <option value="">—</option>
+        <option value="m" {% if card.geschlecht == 'm' %}selected{% endif %}>männlich</option>
+        <option value="w" {% if card.geschlecht in ('w','f') %}selected{% endif %}>weiblich</option>
+        <option value="divers" {% if card.geschlecht == 'divers' %}selected{% endif %}>divers</option>
+      </select>
+    </label>
+    <label class="field">Nationalität
+      <input name="nationalitaet" value="{{ card.nationalitaet or '' }}">
+    </label>
+  </div>
+</div>
+
+{# ---------- Kurzdiagnose ---------- #}
+<div class="card">
+  <div class="card-header">Kurz-Diagnose</div>
+  <div class="row" style="grid-template-columns: repeat(3, 1fr); gap: 8px;">
+    {% for k, lbl in [('verletzung','Verletzung'),('verbrennung','Verbrennung'),
+                      ('erkrankung','Erkrankung'),('vergiftung','Vergiftung'),
+                      ('verstrahlung','Verstrahlung'),('psyche','Psyche')] %}
+      <label class="checkbox-row">
+        <input type="checkbox" name="diag_{{ k }}" value="1"
+               {% if card['diag_' ~ k] %}checked{% endif %}> {{ lbl }}
+      </label>
+    {% endfor %}
+  </div>
+  <label class="field" style="margin-top:10px;">
+    Lokalisation / Beschreibung
+    <input name="diag_lokalisation" value="{{ card.diag_lokalisation or '' }}"
+           placeholder="z. B. linker Unterarm, Rücken oben rechts">
+  </label>
+</div>
+
+{# ---------- Zustand + Erst-Therapie ---------- #}
+<div class="row" style="grid-template-columns: 1fr 1fr; gap: 14px;">
+  <div class="card">
+    <div class="card-header">Zustand</div>
+    {% for k, lbl in [('bewusstsein','Bewusstsein'),('atmung','Atmung'),('kreislauf','Kreislauf')] %}
+      <label class="field">
+        {{ lbl }}
+        <select name="{{ k }}">
+          <option value="">—</option>
+          <option value="oB" {% if card[k] == 'oB' %}selected{% endif %}>o.B.</option>
+          <option value="reduziert" {% if card[k] == 'reduziert' %}selected{% endif %}>reduziert (↓)</option>
+        </select>
+      </label>
+    {% endfor %}
+    <label class="field">Zustand erhoben um
+      <input name="zustand_zeit" value="{{ card.zustand_zeit or '' }}"
+             placeholder="z. B. 14:30">
+    </label>
+  </div>
+  <div class="card">
+    <div class="card-header">Erst-Therapie</div>
+    {% for k, lbl in [('infusion','Infusion'),('analgetika','Analgetika'),
+                      ('antidote','Antidote'),('sonstige','sonstige Medikamente')] %}
+      <label class="checkbox-row">
+        <input type="checkbox" name="th_{{ k }}" value="1"
+               {% if card['th_' ~ k] %}checked{% endif %}> {{ lbl }}
+      </label>
+    {% endfor %}
+    <label class="field" style="margin-top:10px;">Sonstige (Text)
+      <input name="th_sonstige_text" value="{{ card.th_sonstige_text or '' }}">
+    </label>
+  </div>
+</div>
+
+{# ---------- Transport ---------- #}
+<div class="card">
+  <div class="card-header">Transport</div>
+  <div class="row">
+    <label class="field">Mittel
+      <input name="transport_mittel" value="{{ card.transport_mittel or '' }}"
+             placeholder="RTW, KTW, NEF, Heli, …">
+    </label>
+    <label class="field">Ziel
+      <input name="transport_ziel" value="{{ card.transport_ziel or '' }}"
+             placeholder="Klinik / Verbandplatz">
+    </label>
+  </div>
+  <div class="row three">
+    <label class="field">Lagerung
+      <select name="transport_art">
+        <option value="">—</option>
+        <option value="liegend" {% if card.transport_art == 'liegend' %}selected{% endif %}>liegend</option>
+        <option value="sitzend" {% if card.transport_art == 'sitzend' %}selected{% endif %}>sitzend</option>
+      </select>
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" name="transport_mit_arzt" value="1"
+             {% if card.transport_mit_arzt %}checked{% endif %}> mit Notarzt
+    </label>
+    <label class="checkbox-row">
+      <input type="checkbox" name="transport_isoliert" value="1"
+             {% if card.transport_isoliert %}checked{% endif %}> isoliert
+    </label>
+  </div>
+  <label class="field">Priorität
+    <select name="transport_prio">
+      <option value="">—</option>
+      <option value="a" {% if card.transport_prio == 'a' %}selected{% endif %}>a (sofort)</option>
+      <option value="b" {% if card.transport_prio == 'b' %}selected{% endif %}>b (planbar)</option>
+    </select>
+  </label>
+</div>
+
+{# ---------- Bemerkungen ---------- #}
+<div class="card">
+  <div class="card-header">Bemerkungen</div>
+  <label class="field">
+    <textarea name="bemerkungen" rows="4">{{ card.bemerkungen or '' }}</textarea>
+  </label>
+</div>
+
+<div class="btn-row">
+  <button class="btn lg" type="submit">Karte speichern</button>
+  <a class="btn secondary" href="{{ url_for('manv_event', eid=event.id) }}">Abbrechen</a>
+</div>
+</form>
+
+{# ---------- Sichtungs-Historie + Status ---------- #}
+<div class="row" style="grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px;">
+  <div class="card">
+    <div class="card-header">Sichtungs-Historie ({{ sichtungen|length }})</div>
+    {% if sichtungen %}
+      <table class="data">
+        <thead><tr><th>Zeit</th><th>SK</th><th>Sichter</th></tr></thead>
+        <tbody>
+          {% for s in sichtungen %}
+          <tr>
+            <td>{{ s.time }}</td>
+            <td>
+              <span class="badge"
+                    style="background: {{ kategorie_color.get(s.kategorie, '#888') }}; color:#fff;">
+                SK {{ s.kategorie|upper }}
+              </span>
+            </td>
+            <td>{{ s.name or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">Noch keine Sichtungen.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-header">Karten-Status setzen</div>
+    <form method="post" action="{{ url_for('manv_card_status', cid=card.id) }}"
+          class="stack">
+      <label class="field">
+        Neuer Status
+        <select name="status">
+          {% for s in status_values %}
+            <option value="{{ s }}" {% if card.status == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div><button class="btn small" type="submit">Status setzen</button></div>
+    </form>
+    <p class="muted" style="font-size:0.82rem;margin-top:10px;">
+      QR-Token: <code>{{ card.qr_token }}</code><br>
+      Erstellt: {{ format_dt(card.created_at) }} ·
+      Aktualisiert: {{ format_dt(card.updated_at) }}
+    </p>
+  </div>
+</div>
+{% endblock %}

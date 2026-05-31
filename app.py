@@ -1415,6 +1415,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         if tid:
             models.link_triage_to_central_protocol(
                 db, tid, new_id, started_by=current_user.id)
+        # MANV-Karten-Verknüpfung
+        try:
+            mcid = int(request.args.get("manv_card_id") or 0)
+        except (ValueError, TypeError):
+            mcid = 0
+        if mcid:
+            models.manv_card_link_protocol(db, mcid, new_id)
         db.commit()
         return {"id": new_id}, 201
 
@@ -1866,6 +1873,273 @@ def create_app(test_config: dict | None = None) -> Flask:
             headers={"Content-Disposition":
                      f'attachment; filename="Medikamentenplan_Blanko_{start.isoformat()}.pdf"'},
         )
+
+    # ----- MANV (Massenanfall von Verletzten) -----
+    # Admin: anlegen/verwalten/drucken. Alle eingeloggten User: scannen + sichten.
+
+    @app.route("/manv")
+    @login_required
+    def manv_index():
+        db = models.get_db()
+        events = models.list_manv_events(db)
+        return render_template(
+            "manv_index.html",
+            events=events,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/manv/new", methods=["POST"])
+    @login_required
+    def manv_new():
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        name = (request.form.get("name") or "").strip()
+        prefix = (request.form.get("card_prefix") or "").strip()
+        if not name or not prefix:
+            flash("Name + Karten-Präfix sind Pflicht.", "error")
+            return redirect(url_for("manv_index"))
+        eid = models.create_manv_event(
+            db, name=name, card_prefix=prefix,
+            notes=request.form.get("notes"),
+            created_by=current_user.id,
+        )
+        # Optional: direkt Karten allokieren
+        try:
+            initial = int(request.form.get("initial_cards") or 0)
+        except ValueError:
+            initial = 0
+        if initial > 0:
+            models.allocate_manv_cards(db, event_id=eid, count=min(initial, 500))
+        db.commit()
+        flash(f"MANV „{name}“ angelegt.", "success")
+        return redirect(url_for("manv_event", eid=eid))
+
+    @app.route("/manv/event/<int:eid>")
+    @login_required
+    def manv_event(eid: int):
+        db = models.get_db()
+        event = models.get_manv_event(db, eid)
+        if not event:
+            abort(404)
+        cards = models.list_manv_cards(db, eid)
+        stats = models.manv_event_stats(db, eid)
+        return render_template(
+            "manv_event.html",
+            event=event,
+            cards=cards,
+            stats=stats,
+            kategorien=models.MANV_KATEGORIEN,
+            kategorie_label=models.MANV_KATEGORIE_LABEL,
+            kategorie_color=models.MANV_KATEGORIE_COLOR,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/manv/event/<int:eid>/allocate", methods=["POST"])
+    @login_required
+    def manv_allocate(eid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        event = models.get_manv_event(db, eid)
+        if not event:
+            abort(404)
+        try:
+            count = int(request.form.get("count") or 0)
+        except ValueError:
+            count = 0
+        count = max(1, min(count, 500))
+        models.allocate_manv_cards(db, event_id=eid, count=count)
+        db.commit()
+        flash(f"{count} weitere Blanko-Karten erzeugt.", "success")
+        return redirect(url_for("manv_event", eid=eid))
+
+    @app.route("/manv/event/<int:eid>/close", methods=["POST"])
+    @login_required
+    def manv_event_close(eid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        action = (request.form.get("action") or "close").strip()
+        if action == "reopen":
+            models.reopen_manv_event(db, eid)
+            flash("MANV-Vorfall wieder geöffnet.", "success")
+        elif action == "delete":
+            models.delete_manv_event(db, eid)
+            db.commit()
+            flash("MANV-Vorfall gelöscht (mit allen Karten).", "success")
+            return redirect(url_for("manv_index"))
+        else:
+            models.close_manv_event(db, eid)
+            flash("MANV-Vorfall abgeschlossen.", "success")
+        db.commit()
+        return redirect(url_for("manv_event", eid=eid))
+
+    @app.route("/manv/event/<int:eid>/print.pdf")
+    @login_required
+    def manv_print_pdf(eid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        event = models.get_manv_event(db, eid)
+        if not event:
+            abort(404)
+        # Parameter: ?from=&to= ODER ?status=blank (alle blanken)
+        try:
+            id_from = int(request.args.get("from") or 0)
+            id_to = int(request.args.get("to") or 0)
+        except ValueError:
+            id_from = id_to = 0
+        if request.args.get("status") == "blank":
+            cards = models.list_manv_cards(db, eid, status="blank")
+        elif id_from and id_to:
+            cards = [c for c in models.list_manv_cards(db, eid)
+                     if id_from <= c["id"] <= id_to]
+        else:
+            cards = models.list_manv_cards(db, eid)
+        # Default-Limit: nicht mehr als 200 auf einmal
+        cards = cards[:200]
+        if not cards:
+            flash("Keine Karten zum Drucken gefunden.", "error")
+            return redirect(url_for("manv_event", eid=eid))
+        from manv_cards_pdf import render_manv_cards_pdf
+        scheme = "https" if request.is_secure else "http"
+        base_url = f"{scheme}://{request.host}"
+        pdf_bytes = render_manv_cards_pdf(
+            event=dict(event),
+            cards=[dict(c) for c in cards],
+            base_url=base_url,
+        )
+        fname = f"MANV_{event['card_prefix']}_Karten_{cards[0]['card_no']}-{cards[-1]['card_no']}.pdf"
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{fname}"'},
+        )
+
+    @app.route("/manv/event/<int:eid>/uebersicht.pdf")
+    @login_required
+    def manv_uebersicht_pdf(eid: int):
+        db = models.get_db()
+        event = models.get_manv_event(db, eid)
+        if not event:
+            abort(404)
+        cards = models.list_manv_cards(db, eid)
+        # Optional: nur ab status != 'blank' für ein „echtes" Protokoll
+        if request.args.get("only_used") == "1":
+            cards = [c for c in cards if c["status"] != "blank"]
+        event_d = dict(event)
+        from manv_cards_pdf import render_uebersichtsprotokoll_pdf
+        pdf_bytes = render_uebersichtsprotokoll_pdf(
+            event=event_d,
+            cards=[dict(c) for c in cards],
+        )
+        fname = (f"MANV_{event_d['card_prefix']}_Uebersichtsprotokoll_"
+                 f"{(event_d.get('started_at') or '')[:10]}.pdf")
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{fname}"'},
+        )
+
+    @app.route("/manv/scan/<token>")
+    @login_required
+    def manv_scan(token: str):
+        db = models.get_db()
+        card = models.get_manv_card_by_token(db, token)
+        if not card:
+            flash("Karte nicht gefunden — QR-Code prüfen.", "error")
+            return redirect(url_for("manv_index"))
+        return redirect(url_for("manv_card", cid=card["id"]))
+
+    @app.route("/manv/card/<int:cid>", methods=["GET", "POST"])
+    @login_required
+    def manv_card(cid: int):
+        db = models.get_db()
+        card = models.get_manv_card(db, cid)
+        if not card:
+            abort(404)
+        event = models.get_manv_event(db, card["manv_event_id"])
+        if request.method == "POST":
+            fields = {}
+            for f in models.MANV_CARD_EDIT_FIELDS:
+                if f.startswith(("diag_", "th_", "transport_mit_arzt",
+                                 "transport_isoliert")):
+                    fields[f] = 1 if request.form.get(f) else 0
+                elif f == "alter_jahre":
+                    raw = (request.form.get(f) or "").strip()
+                    fields[f] = int(raw) if raw.isdigit() else None
+                else:
+                    raw = (request.form.get(f) or "").strip()
+                    fields[f] = raw or None
+            models.update_manv_card(db, cid, fields)
+            # Wenn neue Sichtung im POST mitgeschickt
+            new_sichtung = (request.form.get("new_sichtung") or "").strip()
+            if new_sichtung in models.MANV_KATEGORIEN:
+                models.manv_card_add_sichtung(
+                    db, cid, kategorie=new_sichtung,
+                    sichter_name=(current_user.full_name
+                                  or current_user.username))
+            db.commit()
+            flash("Karte aktualisiert.", "success")
+            return redirect(url_for("manv_card", cid=cid))
+        try:
+            sichtungen = json.loads(card["sichtungen_json"] or "[]")
+        except Exception:
+            sichtungen = []
+        return render_template(
+            "manv_card.html",
+            card=card, event=event, sichtungen=sichtungen,
+            kategorien=models.MANV_KATEGORIEN,
+            kategorie_label=models.MANV_KATEGORIE_LABEL,
+            kategorie_color=models.MANV_KATEGORIE_COLOR,
+            status_values=models.MANV_STATUS_VALUES,
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/manv/card/<int:cid>/status", methods=["POST"])
+    @login_required
+    def manv_card_status(cid: int):
+        db = models.get_db()
+        card = models.get_manv_card(db, cid)
+        if not card:
+            abort(404)
+        new_status = (request.form.get("status") or "").strip()
+        if new_status in models.MANV_STATUS_VALUES:
+            models.manv_card_set_status(db, cid, new_status)
+            db.commit()
+            flash(f"Karten-Status: {new_status}", "success")
+        return redirect(url_for("manv_card", cid=cid))
+
+    @app.route("/manv/card/<int:cid>/promote", methods=["POST"])
+    @login_required
+    def manv_card_promote(cid: int):
+        """Übernimmt die Karten-Personalia in einen neuen zentralen
+        Bericht und verlinkt beide. Anschließend Redirect zur SPA mit
+        Pre-fill."""
+        db = models.get_db()
+        card = models.get_manv_card(db, cid)
+        if not card:
+            abort(404)
+        # Personalia in Patientendatensatz übernehmen (falls noch nicht)
+        if not card["patient_id"]:
+            full_name = " ".join(
+                x for x in (card["vorname"], card["name"]) if x
+            ).strip()
+            if full_name and card["geburtsdatum"]:
+                pid = models.upsert_patient(
+                    db, full_name, card["geburtsdatum"], None)
+                models.manv_card_link_patient(db, cid, pid)
+                db.commit()
+        # Zur SPA mit Pre-fill — der Helfer speichert dort, das Backend
+        # erkennt manv_card_id im Querystring und verlinkt sie.
+        return redirect(url_for(
+            "central_index",
+            vorname=card["vorname"] or "",
+            nachname=card["name"] or "",
+            geburtsdatum=card["geburtsdatum"] or "",
+            manv_card_id=cid,
+        ))
 
     # ----- Account (any logged-in user) -----
 

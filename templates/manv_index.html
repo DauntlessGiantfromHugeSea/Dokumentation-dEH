@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}MANV-Vorfälle{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>MANV-Vorfälle</h1>
+    <p class="tagline">
+      Massenanfall von Verletzten — pro Vorfall ein Stapel
+      A5-Anhängekarten mit QR-Code für schnelle Vorsichtung.
+    </p>
+  </div>
+</div>
+
+{% if current_user.is_admin %}
+<div class="card">
+  <div class="card-header">Neuen MANV-Vorfall anlegen</div>
+  <form method="post" action="{{ url_for('manv_new') }}" class="stack">
+    <div class="row three">
+      <label class="field">
+        Vorfall-Name <span class="req">*</span>
+        <input name="name" required placeholder="z. B. Bühnenunfall Hauptzelt">
+      </label>
+      <label class="field">
+        Karten-Präfix <span class="req">*</span>
+        <input name="card_prefix" required placeholder="z. B. MANV01"
+               pattern="[A-Za-z0-9\-]+" maxlength="20">
+      </label>
+      <label class="field">
+        Anzahl initial drucken
+        <input name="initial_cards" type="number" min="0" max="500" value="50">
+      </label>
+    </div>
+    <label class="field">
+      Notiz / Lagebild
+      <textarea name="notes" rows="2"
+                placeholder="kurze Lagebeschreibung, Einsatzleitung, …"></textarea>
+    </label>
+    <div><button class="btn" type="submit">MANV anlegen + Karten erzeugen</button></div>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">Bestehende Vorfälle ({{ events|length }})</div>
+  {% if events %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Präfix</th>
+          <th>Status</th>
+          <th class="right">Karten</th>
+          <th class="right">Benutzt</th>
+          <th>Gestartet</th>
+          <th class="right">Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in events %}
+        <tr>
+          <td><strong>{{ e.name }}</strong></td>
+          <td><code>{{ e.card_prefix }}</code></td>
+          <td>
+            {% if e.status == 'aktiv' %}
+              <span class="badge totp-on">aktiv</span>
+            {% else %}
+              <span class="badge">abgeschlossen</span>
+            {% endif %}
+          </td>
+          <td class="right">{{ e.card_count }}</td>
+          <td class="right">{{ e.used_count }}</td>
+          <td>{{ format_dt(e.started_at) }}</td>
+          <td class="right">
+            <a class="btn small secondary"
+               href="{{ url_for('manv_event', eid=e.id) }}">Öffnen</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Noch kein MANV-Vorfall.
+      {% if current_user.is_admin %}Lege oben einen an.{% endif %}</p>
+  {% endif %}
+</div>
+{% endblock %}

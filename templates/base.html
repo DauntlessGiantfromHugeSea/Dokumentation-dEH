@@ -68,6 +68,7 @@
         {% if current_user.is_admin %}
           <a href="{{ url_for('medications_index') }}">Medikamente</a>
         {% endif %}
+        <a href="{{ url_for('manv_index') }}">MANV</a>
       </nav>
       <span class="user">
         {% if available_events|length > 1 %}

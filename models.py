@@ -223,6 +223,72 @@ CREATE TABLE IF NOT EXISTS medication_administrations (
 );
 CREATE INDEX IF NOT EXISTS idx_med_admin_med ON medication_administrations(medication_id);
 CREATE INDEX IF NOT EXISTS idx_med_admin_day ON medication_administrations(day_date);
+
+CREATE TABLE IF NOT EXISTS manv_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    card_prefix   TEXT NOT NULL,           -- e.g. "MANV-3"
+    status        TEXT NOT NULL DEFAULT 'aktiv',  -- 'aktiv' | 'abgeschlossen'
+    started_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    closed_at     TEXT,
+    notes         TEXT,
+    created_by    INTEGER REFERENCES users(id),
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS manv_cards (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    manv_event_id     INTEGER NOT NULL REFERENCES manv_events(id) ON DELETE CASCADE,
+    card_no           TEXT NOT NULL UNIQUE,      -- "MANV-3-042"
+    qr_token          TEXT NOT NULL UNIQUE,      -- random hex, in QR enkodiert
+    status            TEXT NOT NULL DEFAULT 'blank',
+        -- 'blank' | 'gesichtet' | 'in_behandlung' | 'transportiert' | 'abgeschlossen'
+    patient_id        INTEGER REFERENCES patients(id) ON DELETE SET NULL,
+    central_protocol_id INTEGER REFERENCES central_protocols(id) ON DELETE SET NULL,
+    -- Personalia (von der Karte abgetippt oder beim Scan eingegeben)
+    name              TEXT,
+    vorname           TEXT,
+    geburtsdatum      TEXT,
+    alter_jahre       INTEGER,
+    geschlecht        TEXT,
+    nationalitaet     TEXT,
+    -- Sichtung
+    sichtung_kategorie TEXT,            -- 'I' | 'II' | 'III' | 'IV' | 'tot'
+    sichtungen_json   TEXT,             -- [{time, name, kategorie}, ...]
+    -- Kurzdiagnose-Flags
+    diag_verletzung   INTEGER NOT NULL DEFAULT 0,
+    diag_verbrennung  INTEGER NOT NULL DEFAULT 0,
+    diag_erkrankung   INTEGER NOT NULL DEFAULT 0,
+    diag_vergiftung   INTEGER NOT NULL DEFAULT 0,
+    diag_verstrahlung INTEGER NOT NULL DEFAULT 0,
+    diag_psyche       INTEGER NOT NULL DEFAULT 0,
+    diag_lokalisation TEXT,
+    -- Zustand
+    bewusstsein       TEXT,             -- 'oB' | 'reduziert'
+    atmung            TEXT,
+    kreislauf         TEXT,
+    zustand_zeit      TEXT,
+    -- Erst-Therapie
+    th_infusion       INTEGER NOT NULL DEFAULT 0,
+    th_analgetika     INTEGER NOT NULL DEFAULT 0,
+    th_antidote       INTEGER NOT NULL DEFAULT 0,
+    th_sonstige       INTEGER NOT NULL DEFAULT 0,
+    th_sonstige_text  TEXT,
+    -- Transport
+    transport_mittel  TEXT,
+    transport_ziel    TEXT,
+    transport_art     TEXT,             -- 'liegend' | 'sitzend'
+    transport_mit_arzt INTEGER NOT NULL DEFAULT 0,
+    transport_isoliert INTEGER NOT NULL DEFAULT 0,
+    transport_prio    TEXT,             -- 'a' | 'b'
+    -- Notes
+    bemerkungen       TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_manv_cards_event ON manv_cards(manv_event_id);
+CREATE INDEX IF NOT EXISTS idx_manv_cards_status ON manv_cards(status);
+CREATE INDEX IF NOT EXISTS idx_manv_cards_kategorie ON manv_cards(sichtung_kategorie);
 """
 
 
@@ -2158,3 +2224,280 @@ def list_patients_with_medications(conn) -> list[sqlite3.Row]:
         ORDER BY p.name COLLATE NOCASE
         """,
     ).fetchall()
+
+
+# ---------- MANV (Massenanfall von Verletzten) ----------
+
+MANV_KATEGORIEN = ("I", "II", "III", "IV", "tot")
+MANV_KATEGORIE_LABEL = {
+    "I":   "I · akute Lebensgefahr (rot)",
+    "II":  "II · schwer verletzt (gelb)",
+    "III": "III · leicht verletzt (grün)",
+    "IV":  "IV · ohne Überlebenschance (blau)",
+    "tot": "Tot (schwarz)",
+}
+MANV_KATEGORIE_COLOR = {
+    "I": "#b3261e", "II": "#d49a00", "III": "#1f6b3a",
+    "IV": "#2c5b8a", "tot": "#1a1a1a",
+}
+MANV_STATUS_VALUES = (
+    "blank", "gesichtet", "in_behandlung", "transportiert", "abgeschlossen"
+)
+
+
+def create_manv_event(conn, *, name: str, card_prefix: str,
+                       notes: Optional[str] = None,
+                       created_by: Optional[int] = None) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO manv_events (name, card_prefix, notes, created_by)
+        VALUES (?, ?, ?, ?)
+        """,
+        (name.strip(), card_prefix.strip(),
+         (notes or "").strip() or None, created_by),
+    )
+    return cur.lastrowid
+
+
+def get_manv_event(conn, eid: int) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM manv_events WHERE id = ?", (eid,)
+    ).fetchone()
+
+
+def list_manv_events(conn) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT e.*,
+               (SELECT COUNT(*) FROM manv_cards WHERE manv_event_id = e.id)
+                   AS card_count,
+               (SELECT COUNT(*) FROM manv_cards
+                WHERE manv_event_id = e.id AND status != 'blank')
+                   AS used_count
+        FROM manv_events e
+        ORDER BY datetime(e.started_at) DESC
+        """
+    ).fetchall()
+
+
+def close_manv_event(conn, eid: int) -> bool:
+    cur = conn.execute(
+        "UPDATE manv_events SET status='abgeschlossen', "
+        "closed_at=datetime('now') WHERE id=? AND status='aktiv'",
+        (eid,),
+    )
+    return cur.rowcount > 0
+
+
+def reopen_manv_event(conn, eid: int) -> bool:
+    cur = conn.execute(
+        "UPDATE manv_events SET status='aktiv', closed_at=NULL WHERE id=?",
+        (eid,),
+    )
+    return cur.rowcount > 0
+
+
+def delete_manv_event(conn, eid: int) -> bool:
+    cur = conn.execute("DELETE FROM manv_events WHERE id=?", (eid,))
+    return cur.rowcount > 0
+
+
+def _next_card_no(conn, event_id: int, prefix: str) -> int:
+    """Höchste bereits vergebene Karten-Nr für dieses Event +1."""
+    row = conn.execute(
+        """
+        SELECT card_no FROM manv_cards WHERE manv_event_id = ?
+        ORDER BY id DESC LIMIT 1
+        """, (event_id,)
+    ).fetchone()
+    if not row:
+        return 1
+    # card_no = "<prefix>-NNN"
+    try:
+        return int(row["card_no"].rsplit("-", 1)[-1]) + 1
+    except Exception:
+        return conn.execute(
+            "SELECT COUNT(*)+1 FROM manv_cards WHERE manv_event_id = ?",
+            (event_id,),
+        ).fetchone()[0]
+
+
+def allocate_manv_cards(conn, *, event_id: int, count: int) -> list[sqlite3.Row]:
+    """Legt `count` neue Blanko-Karten an. Liefert die neuen Rows."""
+    import secrets as _secrets
+    event = get_manv_event(conn, event_id)
+    if not event:
+        return []
+    prefix = event["card_prefix"]
+    new_ids = []
+    start = _next_card_no(conn, event_id, prefix)
+    for i in range(count):
+        n = start + i
+        card_no = f"{prefix}-{n:03d}"
+        # Eindeutigen QR-Token — 12 Hex-Zeichen reicht (2^48 ~280 Trillion)
+        token = _secrets.token_hex(6)
+        # Falls zufällig doch eine Kollision: nochmal versuchen
+        for _ in range(3):
+            existing = conn.execute(
+                "SELECT 1 FROM manv_cards WHERE qr_token=?", (token,)
+            ).fetchone()
+            if not existing: break
+            token = _secrets.token_hex(6)
+        cur = conn.execute(
+            """
+            INSERT INTO manv_cards (manv_event_id, card_no, qr_token)
+            VALUES (?, ?, ?)
+            """,
+            (event_id, card_no, token),
+        )
+        new_ids.append(cur.lastrowid)
+    if not new_ids:
+        return []
+    placeholders = ",".join("?" for _ in new_ids)
+    return conn.execute(
+        f"SELECT * FROM manv_cards WHERE id IN ({placeholders}) ORDER BY id",
+        new_ids,
+    ).fetchall()
+
+
+def list_manv_cards(conn, event_id: int,
+                     status: Optional[str] = None) -> list[sqlite3.Row]:
+    sql = "SELECT * FROM manv_cards WHERE manv_event_id = ?"
+    params: list = [event_id]
+    if status:
+        sql += " AND status = ?"
+        params.append(status)
+    sql += " ORDER BY id"
+    return conn.execute(sql, params).fetchall()
+
+
+def get_manv_card(conn, cid: int) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM manv_cards WHERE id = ?", (cid,)
+    ).fetchone()
+
+
+def get_manv_card_by_token(conn, token: str) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM manv_cards WHERE qr_token = ?", (token,)
+    ).fetchone()
+
+
+MANV_CARD_EDIT_FIELDS = (
+    "name", "vorname", "geburtsdatum", "alter_jahre", "geschlecht",
+    "nationalitaet",
+    "sichtung_kategorie",
+    "diag_verletzung", "diag_verbrennung", "diag_erkrankung",
+    "diag_vergiftung", "diag_verstrahlung", "diag_psyche",
+    "diag_lokalisation",
+    "bewusstsein", "atmung", "kreislauf", "zustand_zeit",
+    "th_infusion", "th_analgetika", "th_antidote", "th_sonstige",
+    "th_sonstige_text",
+    "transport_mittel", "transport_ziel", "transport_art",
+    "transport_mit_arzt", "transport_isoliert", "transport_prio",
+    "bemerkungen",
+)
+
+
+def update_manv_card(conn, cid: int, fields: dict) -> bool:
+    if not fields:
+        return False
+    cols = [f for f in fields if f in MANV_CARD_EDIT_FIELDS]
+    if not cols:
+        return False
+    set_sql = ", ".join(f"{c}=?" for c in cols)
+    params = [fields[c] for c in cols]
+    params.append(cid)
+    conn.execute(
+        f"UPDATE manv_cards SET {set_sql}, updated_at=datetime('now') "
+        f"WHERE id=?", params)
+    return True
+
+
+def manv_card_add_sichtung(conn, cid: int, *, kategorie: str,
+                            sichter_name: str) -> bool:
+    """Trägt eine neue Sichtung in sichtungen_json ein (Liste anhängen) und
+    aktualisiert den aktuellen Status der Karte."""
+    if kategorie not in MANV_KATEGORIEN:
+        return False
+    card = get_manv_card(conn, cid)
+    if not card:
+        return False
+    try:
+        sichtungen = _json.loads(card["sichtungen_json"] or "[]")
+    except Exception:
+        sichtungen = []
+    from datetime import datetime as _dt
+    sichtungen.append({
+        "time": _dt.now().isoformat(timespec="seconds"),
+        "name": (sichter_name or "").strip() or None,
+        "kategorie": kategorie,
+    })
+    conn.execute(
+        """
+        UPDATE manv_cards
+        SET sichtungen_json=?,
+            sichtung_kategorie=?,
+            status = CASE WHEN status = 'blank' THEN 'gesichtet'
+                          ELSE status END,
+            updated_at=datetime('now')
+        WHERE id=?
+        """,
+        (_json.dumps(sichtungen, ensure_ascii=False), kategorie, cid),
+    )
+    return True
+
+
+def manv_card_set_status(conn, cid: int, status: str) -> bool:
+    if status not in MANV_STATUS_VALUES:
+        return False
+    conn.execute(
+        "UPDATE manv_cards SET status=?, updated_at=datetime('now') WHERE id=?",
+        (status, cid),
+    )
+    return True
+
+
+def manv_card_link_patient(conn, cid: int, patient_id: int) -> bool:
+    conn.execute(
+        "UPDATE manv_cards SET patient_id=?, updated_at=datetime('now') WHERE id=?",
+        (patient_id, cid),
+    )
+    return True
+
+
+def manv_card_link_protocol(conn, cid: int, protocol_id: int) -> bool:
+    conn.execute(
+        """
+        UPDATE manv_cards
+        SET central_protocol_id=?,
+            status = CASE WHEN status IN ('blank', 'gesichtet')
+                          THEN 'in_behandlung' ELSE status END,
+            updated_at=datetime('now')
+        WHERE id=?
+        """,
+        (protocol_id, cid),
+    )
+    return True
+
+
+def manv_event_stats(conn, event_id: int) -> dict:
+    """Liefert Counts pro Kategorie + pro Status für das Live-Dashboard."""
+    rows = conn.execute(
+        "SELECT sichtung_kategorie, COUNT(*) AS n FROM manv_cards "
+        "WHERE manv_event_id=? GROUP BY sichtung_kategorie", (event_id,)
+    ).fetchall()
+    by_cat = {k: 0 for k in MANV_KATEGORIEN}
+    by_cat["ungesichtet"] = 0
+    for r in rows:
+        k = r["sichtung_kategorie"] or "ungesichtet"
+        by_cat[k] = by_cat.get(k, 0) + r["n"]
+    rows = conn.execute(
+        "SELECT status, COUNT(*) AS n FROM manv_cards "
+        "WHERE manv_event_id=? GROUP BY status", (event_id,)
+    ).fetchall()
+    by_status = {s: 0 for s in MANV_STATUS_VALUES}
+    for r in rows:
+        by_status[r["status"]] = r["n"]
+    total = sum(r["n"] for r in rows)
+    return {"by_kategorie": by_cat, "by_status": by_status, "total": total}

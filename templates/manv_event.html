@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}MANV — {{ event.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ event.name }}
+      {% if event.status == 'aktiv' %}
+        <span class="badge totp-on" style="margin-left:8px;">aktiv</span>
+      {% else %}
+        <span class="badge" style="margin-left:8px;">abgeschlossen</span>
+      {% endif %}
+    </h1>
+    <p class="tagline">
+      Präfix <code>{{ event.card_prefix }}</code> ·
+      gestartet {{ format_dt(event.started_at) }}
+      {% if event.notes %}· {{ event.notes }}{% endif %}
+    </p>
+  </div>
+  <div class="btn-row">
+    <a class="btn small secondary" href="{{ url_for('manv_index') }}">← Übersicht</a>
+    <a class="btn small secondary" target="_blank"
+       href="{{ url_for('manv_uebersicht_pdf', eid=event.id) }}">
+      Übersichtsprotokoll PDF
+    </a>
+    {% if current_user.is_admin %}
+      <a class="btn small" target="_blank"
+         href="{{ url_for('manv_print_pdf', eid=event.id, status='blank') }}">
+        Alle blanken Karten drucken
+      </a>
+      <form method="post" action="{{ url_for('manv_event_close', eid=event.id) }}"
+            style="display:inline-block;">
+        {% if event.status == 'aktiv' %}
+          <button class="btn small secondary" type="submit" name="action" value="close">Abschließen</button>
+        {% else %}
+          <button class="btn small secondary" type="submit" name="action" value="reopen">Wieder öffnen</button>
+        {% endif %}
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="akte-stats">
+  <div class="akte-stat" style="border-left: 4px solid {{ kategorie_color['I'] }};">
+    <div class="num">{{ stats.by_kategorie.get('I', 0) }}</div>
+    <div class="lbl">SK I · rot</div>
+  </div>
+  <div class="akte-stat" style="border-left: 4px solid {{ kategorie_color['II'] }};">
+    <div class="num">{{ stats.by_kategorie.get('II', 0) }}</div>
+    <div class="lbl">SK II · gelb</div>
+  </div>
+  <div class="akte-stat" style="border-left: 4px solid {{ kategorie_color['III'] }};">
+    <div class="num">{{ stats.by_kategorie.get('III', 0) }}</div>
+    <div class="lbl">SK III · grün</div>
+  </div>
+  <div class="akte-stat" style="border-left: 4px solid {{ kategorie_color['IV'] }};">
+    <div class="num">{{ stats.by_kategorie.get('IV', 0) }}</div>
+    <div class="lbl">SK IV · blau</div>
+  </div>
+  <div class="akte-stat" style="border-left: 4px solid {{ kategorie_color['tot'] }};">
+    <div class="num">{{ stats.by_kategorie.get('tot', 0) }}</div>
+    <div class="lbl">Tot</div>
+  </div>
+  <div class="akte-stat">
+    <div class="num">{{ stats.by_kategorie.get('ungesichtet', 0) }}</div>
+    <div class="lbl">ungesichtet</div>
+  </div>
+  <div class="akte-stat">
+    <div class="num">{{ stats.total }}</div>
+    <div class="lbl">Gesamt</div>
+  </div>
+</div>
+
+{% if current_user.is_admin %}
+<div class="card">
+  <div class="card-header">Karten erzeugen + drucken</div>
+  <form method="post" action="{{ url_for('manv_allocate', eid=event.id) }}"
+        class="row" style="grid-template-columns: 1fr auto; gap: 12px;">
+    <label class="field">
+      Weitere Blanko-Karten erzeugen (max. 500 pro Aufruf)
+      <input name="count" type="number" min="1" max="500" value="50">
+    </label>
+    <div style="align-self: end;">
+      <button class="btn" type="submit">+ Karten anlegen</button>
+    </div>
+  </form>
+  <p class="muted" style="font-size:0.85rem;margin-top:12px;">
+    Print-Tipp: Browser im A5-Modus drucken, beidseitig (lange Kante).
+    Pro Karte werden 2 PDF-Seiten erzeugt (Vorder- + Rückseite).
+  </p>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    Karten ({{ cards|length }})
+    <a class="btn small" target="_blank"
+       href="{{ url_for('manv_print_pdf', eid=event.id) }}"
+       style="background: rgba(255,255,255,0.18); color: #fff; border-color: rgba(255,255,255,0.4);">
+      Alle drucken
+    </a>
+  </div>
+  {% if cards %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Karten-Nr.</th>
+          <th>SK</th>
+          <th>Name</th>
+          <th>Status</th>
+          <th>Letzte Sichtung</th>
+          <th class="right">Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cards %}
+        <tr>
+          <td><code>{{ c.card_no }}</code></td>
+          <td>
+            {% if c.sichtung_kategorie %}
+              <span class="badge"
+                    style="background: {{ kategorie_color.get(c.sichtung_kategorie, '#888') }}; color:#fff;">
+                {{ c.sichtung_kategorie|upper }}
+              </span>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if c.vorname or c.name %}
+              {{ c.vorname }} {{ c.name }}
+            {% else %}
+              <span class="muted">— blanko —</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if c.status == 'blank' %}
+              <span class="muted">blanko</span>
+            {% elif c.status == 'gesichtet' %}
+              <span class="badge">gesichtet</span>
+            {% elif c.status == 'in_behandlung' %}
+              <span class="badge totp-on">in Behandlung</span>
+            {% elif c.status == 'transportiert' %}
+              <span class="badge">transportiert</span>
+            {% else %}
+              <span class="badge">{{ c.status }}</span>
+            {% endif %}
+          </td>
+          <td><span class="muted">{{ format_dt(c.updated_at) }}</span></td>
+          <td class="right">
+            <a class="btn small secondary"
+               href="{{ url_for('manv_card', cid=c.id) }}">Öffnen</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Noch keine Karten — oben welche anlegen.</p>
+  {% endif %}
+</div>
+{% endblock %}
