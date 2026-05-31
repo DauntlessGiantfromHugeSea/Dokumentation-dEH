@@ -625,10 +625,12 @@ def _draw_card_back(c, card, event):
 # ============ Anhängekarten-Sticker (A6, 4 pro A4-Bogen) ============
 
 def _draw_anhaengekarte_sticker(c, x, y, w, h, card, base_url):
-    """Zeichnet einen A6-Sticker (Standard: 105×148mm portrait), der die
-    Personalia-Felder der DRK-Anhängekarte abbildet + den QR in der
-    Patienten-Nr-Box. Bleibt komplett handschriftlich ausfüllbar."""
-    pad = 4
+    """Zeichnet einen Sticker (Standard: A6 landscape 148×105mm), der die
+    obere Section der DRK-Anhängekarte abbildet: Titel + Personalia-Linien
+    + Patienten-Nr-Box mit QR. Bleibt handschriftlich ausfüllbar.
+
+    Wird auf die obere Hälfte der DRK-Karte geklebt."""
+    pad = 3
     inner_x = x + pad
     inner_y = y + pad
     inner_w = w - 2 * pad
@@ -640,21 +642,24 @@ def _draw_anhaengekarte_sticker(c, x, y, w, h, card, base_url):
     c.rect(x, y, w, h, stroke=1, fill=0)
     c.setDash()
 
-    # === Titel-Block ===
-    title_h = 10 * mm
+    # === Titel-Block (eigene Höhe, dünne Trennlinie nach unten) ===
+    title_h = 11 * mm
     title_y = inner_y + inner_h - title_h
     c.setFillColor(colors.black); c.setFont("Helvetica-Bold", 11)
-    c.drawCentredString(inner_x + inner_w / 2, title_y + 4,
+    c.drawCentredString(inner_x + inner_w / 2, title_y + 5,
                          "Anhängekarte für Verletzte/Kranke")
     c.setFont("Helvetica", 5); c.setFillColor(TEXT_MUTED)
-    c.drawCentredString(inner_x + inner_w / 2, title_y + 0,
+    c.drawCentredString(inner_x + inner_w / 2, title_y + 1,
                          "Registration card · Fiche d'enregistrement")
+    # Trennlinie unter Titel — verhindert visuelle Überlappung mit Body
+    c.setStrokeColor(colors.black); c.setLineWidth(0.6)
+    c.line(inner_x, title_y, inner_x + inner_w, title_y)
 
     # === Personalia (links) + Patienten-Nr/m-f/Datum (rechts) ===
     body_y = inner_y + 2
-    body_h = title_y - body_y - 1
-    # Aufteilung: Personalia 58%, Pat-Nr-Spalte 42%
-    pers_w = inner_w * 0.58
+    body_h = title_y - body_y - 2  # 2mm Puffer zwischen Body und Titel
+    # Aufteilung: Personalia 62%, Pat-Nr-Spalte 38% (in landscape mehr Platz für Linien)
+    pers_w = inner_w * 0.62
     pat_w = inner_w - pers_w
     pat_x = inner_x + pers_w
 
@@ -741,18 +746,35 @@ def _draw_anhaengekarte_sticker(c, x, y, w, h, card, base_url):
 
 
 def render_anhaengekarte_stickers_pdf(*, event, cards, base_url,
-                                        cols=2, rows=2):
-    """4 A6-Sticker pro A4 (2×2 portrait). Jeder Sticker zeigt das volle
-    Personalia-Layout der DRK-Anhängekarte + QR in der Pat-Nr-Box."""
+                                        cols=1, rows=2):
+    """Sticker-Bogen — A4 portrait, je Bogen 2 A6-quer-Sticker (148×105mm,
+    untereinander). Jeder Sticker deckt die obere Section (Personalia +
+    Patienten-Nr-Box) einer DRK-Anhängekarte ab und wird genau darauf
+    geklebt.
+
+    Cols/Rows-Argumente bleiben für Rückwärtskompatibilität, Default ist
+    1×2 (=2 Sticker pro Bogen, A6 quer 148×105mm)."""
     from reportlab.lib.pagesizes import A4 as _A4_PORT
     PAGE_W, PAGE_H = _A4_PORT       # 210×297mm
-    margin = 0  # nur Schneidelinie an den Stickern selbst
+    # Fixe Sticker-Größe = A6 landscape (148×105mm). Bei alternativem
+    # Layout (z.B. 2 Spalten) skalieren wir die Höhe noch passend.
+    STICKER_W = 148 * mm
+    STICKER_H = 105 * mm
 
-    cols = max(1, min(int(cols or 2), 4))
-    rows = max(1, min(int(rows or 2), 6))
-    cell_w = (PAGE_W - 2 * margin) / cols
-    cell_h = (PAGE_H - 2 * margin) / rows
+    cols = max(1, min(int(cols or 1), 2))
+    rows = max(1, min(int(rows or 2), 3))
     per_page = cols * rows
+
+    # Bei mehr als 1 Spalte muss der Sticker schmaler werden, damit beide
+    # nebeneinander passen — wir halten dann das Seitenverhältnis bei.
+    if cols == 2:
+        STICKER_W = (PAGE_W - 6 * mm) / 2
+        STICKER_H = STICKER_W * 105 / 148
+
+    total_w = cols * STICKER_W
+    total_h = rows * STICKER_H
+    margin_x = (PAGE_W - total_w) / 2
+    margin_y_top = (PAGE_H - total_h) / 2
 
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=_A4_PORT)
@@ -771,9 +793,9 @@ def render_anhaengekarte_stickers_pdf(*, event, cards, base_url,
         for i, card in enumerate(page_cards):
             col = i % cols
             row = i // cols
-            x = margin + col * cell_w
-            y = PAGE_H - margin - (row + 1) * cell_h
-            _draw_anhaengekarte_sticker(c, x, y, cell_w, cell_h,
+            x = margin_x + col * STICKER_W
+            y = PAGE_H - margin_y_top - (row + 1) * STICKER_H
+            _draw_anhaengekarte_sticker(c, x, y, STICKER_W, STICKER_H,
                                           card, base_url)
         c.showPage()
     c.save()
