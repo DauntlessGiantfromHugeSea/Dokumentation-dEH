@@ -976,15 +976,15 @@ def _make_page_footer(data, exporter_label=None, protocol_uid=None):
 
 # ============================ Main ==============================
 
-def _draw_barcode(canvas, value, *, x_mm=12, y_mm=14, w_mm=60, h_mm=10):
-    """Code128-Barcode unten am PDF. Wird zum Scannen mit Admin-Scanner."""
+def _draw_barcode(canvas, value, *, x_mm=12, y_mm=14, w_mm=28, h_mm=4):
+    """Schmaler Code128-Barcode unten am PDF (admin-Scanner). Wird
+    kompakt links unten platziert — Klartext direkt darunter in 5pt."""
     if not value:
         return
     try:
         from reportlab.graphics.barcode import code128
         bc = code128.Code128(str(value), barHeight=h_mm * mm,
-                              barWidth=0.42 * mm, humanReadable=False)
-        # Scale to target width
+                              barWidth=0.28 * mm, humanReadable=False)
         bc_w = bc.width
         scale = (w_mm * mm) / bc_w if bc_w else 1.0
         canvas.saveState()
@@ -992,10 +992,10 @@ def _draw_barcode(canvas, value, *, x_mm=12, y_mm=14, w_mm=60, h_mm=10):
         canvas.scale(scale, 1.0)
         bc.drawOn(canvas, 0, 0)
         canvas.restoreState()
-        # Klartext darunter
-        canvas.setFont("Helvetica", 6.5)
+        # Klartext darunter (klein)
+        canvas.setFont("Helvetica", 5)
         canvas.setFillColor(colors.grey)
-        canvas.drawString(x_mm * mm, (y_mm - 2) * mm, str(value))
+        canvas.drawString(x_mm * mm, (y_mm - 1.5) * mm, str(value))
     except Exception:
         pass
 
