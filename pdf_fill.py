@@ -21,6 +21,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.platypus import (
+    KeepTogether,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -828,8 +829,9 @@ def _top_header(d):
 
 # ============================ Signature page ============================
 
-def _draw_footer(canvas, data, exporter_label, page_num):
-    """Identischer Footer wie auf den Hauptseiten — auf jede Seite drauf."""
+def _draw_footer(canvas, data, exporter_label, page_num, protocol_uid=None):
+    """Identischer Footer wie auf den Hauptseiten — auf jede Seite drauf.
+    Optional: Code128-Barcode (Protokoll-UID) für den Admin-Scanner."""
     sig1_signed = bool(_decode_data_url(_first(data.get("signature_einsatzkraft1"))))
     sig2_signed = bool(_decode_data_url(_first(data.get("signature_einsatzkraft2"))))
     sig1_name = _first(data.get("einsatzkraft1")) or "Einsatzkraft 1"
@@ -845,6 +847,9 @@ def _draw_footer(canvas, data, exporter_label, page_num):
                      else f"Exportiert {exported_at}")
 
     canvas.saveState()
+    # Barcode unten links (über dem Footer-Text) wenn protocol_uid gegeben
+    if protocol_uid:
+        _draw_barcode(canvas, protocol_uid, x_mm=12, y_mm=14, w_mm=60, h_mm=8)
     canvas.setFont("Helvetica", 6.5)
     canvas.setFillColor(colors.grey)
     canvas.setStrokeColor(colors.HexColor("#CCCCCC"))
@@ -856,7 +861,8 @@ def _draw_footer(canvas, data, exporter_label, page_num):
     canvas.restoreState()
 
 
-def _build_signature_page(data, exporter_label=None, page_num=3):
+def _build_signature_page(data, exporter_label=None, page_num=3,
+                            protocol_uid=None):
     sigs = []
     for n in (1, 2):
         sig_data = _decode_data_url(_first(data.get(f"signature_einsatzkraft{n}")))
@@ -917,7 +923,7 @@ def _build_signature_page(data, exporter_label=None, page_num=3):
             c.setFillColor(colors.black)
 
     # Footer wie auf Hauptseiten
-    _draw_footer(c, data, exporter_label, page_num)
+    _draw_footer(c, data, exporter_label, page_num, protocol_uid=protocol_uid)
 
     c.showPage()
     c.save()
@@ -926,9 +932,9 @@ def _build_signature_page(data, exporter_label=None, page_num=3):
 
 # ============================ Page footer ============================
 
-def _make_page_footer(data, exporter_label=None):
+def _make_page_footer(data, exporter_label=None, protocol_uid=None):
     """Footer auf jeder Seite: links Unterschriften-Status, mittig
-    Export-Info, rechts Seitenzahl."""
+    Export-Info, rechts Seitenzahl. Optional: Barcode unten links."""
     sig1_signed = bool(_decode_data_url(_first(data.get("signature_einsatzkraft1"))))
     sig2_signed = bool(_decode_data_url(_first(data.get("signature_einsatzkraft2"))))
     sig1_name = _first(data.get("einsatzkraft1")) or "Einsatzkraft 1"
@@ -948,13 +954,17 @@ def _make_page_footer(data, exporter_label=None):
 
     def _on_page(canvas, doc):
         canvas.saveState()
+        # Barcode (Protokoll-UID) unten links — admin-only scanner
+        if protocol_uid:
+            _draw_barcode(canvas, protocol_uid,
+                            x_mm=12, y_mm=14, w_mm=60, h_mm=8)
         canvas.setFont("Helvetica", 6.5)
         canvas.setFillColor(colors.grey)
         # Trenn-Linie über dem Footer
         canvas.setStrokeColor(colors.HexColor("#CCCCCC"))
         canvas.setLineWidth(0.3)
         canvas.line(12 * mm, 11 * mm, 198 * mm, 11 * mm)
-        # Links: Unterschriften
+        # Links: Unterschriften (über dem Barcode)
         canvas.drawString(12 * mm, 7 * mm, sig_text[:90])
         # Mittig: Exporter + Zeitstempel
         canvas.drawCentredString(105 * mm, 7 * mm, exporter_text[:80])
@@ -966,7 +976,32 @@ def _make_page_footer(data, exporter_label=None):
 
 # ============================ Main ==============================
 
-def render_pdf(data, exporter_label=None, medical_info=None):
+def _draw_barcode(canvas, value, *, x_mm=12, y_mm=14, w_mm=60, h_mm=10):
+    """Code128-Barcode unten am PDF. Wird zum Scannen mit Admin-Scanner."""
+    if not value:
+        return
+    try:
+        from reportlab.graphics.barcode import code128
+        bc = code128.Code128(str(value), barHeight=h_mm * mm,
+                              barWidth=0.42 * mm, humanReadable=False)
+        # Scale to target width
+        bc_w = bc.width
+        scale = (w_mm * mm) / bc_w if bc_w else 1.0
+        canvas.saveState()
+        canvas.translate(x_mm * mm, y_mm * mm)
+        canvas.scale(scale, 1.0)
+        bc.drawOn(canvas, 0, 0)
+        canvas.restoreState()
+        # Klartext darunter
+        canvas.setFont("Helvetica", 6.5)
+        canvas.setFillColor(colors.grey)
+        canvas.drawString(x_mm * mm, (y_mm - 2) * mm, str(value))
+    except Exception:
+        pass
+
+
+def render_pdf(data, exporter_label=None, medical_info=None,
+               protocol_uid=None):
     """Rendert das Notfallprotokoll auf 2 A4-Seiten + ggf. Unterschriften.
 
     Erwartet das `data`-Dict eines zentralen Berichts (so wie es in
@@ -1003,16 +1038,18 @@ def render_pdf(data, exporter_label=None, medical_info=None):
         story.append(_section_medical(medical_info))
         story.append(Spacer(1, 6))
 
-    # 2. Notfallgeschehen
-    story.append(_section_bar("2. Notfallgeschehen / Anamnese / Erstbefund"))
-    story.append(_section_2_notfall(data))
-    story.append(Spacer(1, 4))
+    # 2. Notfallgeschehen — KeepTogether sichert das Sektion nicht
+    # in der Mitte der Tabelle umbricht.
+    story.append(KeepTogether([
+        _section_bar("2. Notfallgeschehen / Anamnese / Erstbefund"),
+        _section_2_notfall(data),
+        Spacer(1, 4),
+    ]))
 
-    # Verletzungslokalisation (Body-Chart) — nur wenn Marker vorhanden
+    # Verletzungslokalisation (Body-Chart) — nur wenn Marker vorhanden,
+    # eigene Seite damit sie die folgenden Sektionen nicht ans Ende drückt.
     markers = _parse_body_markers(data.get("body_markers"))
     if markers:
-        story.append(_section_bar("Verletzungslokalisation"))
-        # Tabelle: links Body-Chart, rechts Marker-Liste
         from reportlab.platypus import Table as _Tab, TableStyle as _TS
         marker_lines = "<br/>".join(
             f"<b>{i + 1}.</b> {'hinten' if m.get('side') == 'back' else 'vorne'}"
@@ -1034,42 +1071,57 @@ def render_pdf(data, exporter_label=None, medical_info=None):
             ("TOPPADDING", (0, 0), (-1, -1), 4),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ]))
-        story.append(tbl)
-        story.append(Spacer(1, 6))
+        story.append(KeepTogether([
+            _section_bar("Verletzungslokalisation"),
+            tbl,
+            Spacer(1, 6),
+        ]))
 
-    # 3. Erstbefund
-    story.append(_section_bar("3. Erstbefund"))
-    story.append(_section_3_erstbefund(data))
+    # 3. Erstbefund — als Block zusammenhalten
+    story.append(KeepTogether([
+        _section_bar("3. Erstbefund"),
+        _section_3_erstbefund(data),
+    ]))
 
     # Page break
     story.append(PageBreak())
 
     # 4. Erstdiagnose
-    story.append(_section_bar("4. Erstdiagnose"))
-    story.append(_section_4_erstdiagnose(data))
-    story.append(Spacer(1, 6))
+    story.append(KeepTogether([
+        _section_bar("4. Erstdiagnose"),
+        _section_4_erstdiagnose(data),
+        Spacer(1, 6),
+    ]))
 
-    # 5. Verlauf
-    story.append(_section_bar("5. Verlauf"))
-    story.extend(_section_5_verlauf(data))
-    story.append(Spacer(1, 6))
+    # 5. Verlauf (kann mehrere Flowables enthalten)
+    story.append(KeepTogether(
+        [_section_bar("5. Verlauf")] + list(_section_5_verlauf(data))
+        + [Spacer(1, 6)]
+    ))
 
     # 6. Maßnahmen
-    story.append(_section_bar("6. Maßnahmen"))
-    story.append(_section_6_massnahmen(data))
-    story.append(Spacer(1, 6))
+    story.append(KeepTogether([
+        _section_bar("6. Maßnahmen"),
+        _section_6_massnahmen(data),
+        Spacer(1, 6),
+    ]))
 
     # 7. Übergabe
-    story.append(_section_bar("7. Übergabe"))
-    story.append(_section_7_uebergabe(data))
-    story.append(Spacer(1, 6))
+    story.append(KeepTogether([
+        _section_bar("7. Übergabe"),
+        _section_7_uebergabe(data),
+        Spacer(1, 6),
+    ]))
 
-    # 8/9 + 10
-    story.append(_section_8_9(data))
-    story.append(Spacer(1, 4))
-    story.append(_section_10_material(data))
+    # 8/9 + 10 — können zusammen
+    story.append(KeepTogether([
+        _section_8_9(data),
+        Spacer(1, 4),
+        _section_10_material(data),
+    ]))
 
-    on_page = _make_page_footer(data, exporter_label=exporter_label)
+    on_page = _make_page_footer(data, exporter_label=exporter_label,
+                                  protocol_uid=protocol_uid)
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     main_pdf = buf.getvalue()
 
@@ -1078,6 +1130,7 @@ def render_pdf(data, exporter_label=None, medical_info=None):
 
     # Signaturseite anhängen — Seitenzahl folgt auf Hauptseiten
     sig_pdf = _build_signature_page(data, exporter_label=exporter_label,
+                                     protocol_uid=protocol_uid,
                                      page_num=n_main + 1)
     if not sig_pdf:
         return main_pdf

@@ -760,6 +760,56 @@ def create_app(test_config: dict | None = None) -> Flask:
     # ----- Lookup for the new-protocol form (so the UI can announce
     # "Folgebehandlung" before submit) -----
 
+    # ----- Admin-Barcode-Scanner -----
+
+    @app.route("/admin/scan")
+    @admin_required
+    def admin_scan():
+        """Admin-Scanner-Seite: Webcam-Barcode-Reader. Erkannte Codes
+        werden via /admin/scan/lookup aufgelöst und auf die passende
+        Detail-/Akte-Seite weitergeleitet."""
+        return render_template("admin_scan.html")
+
+    @app.route("/admin/scan/lookup")
+    @admin_required
+    def admin_scan_lookup():
+        """Liefert das Ziel für eine gescannte Code-Eingabe."""
+        code = (request.args.get("code") or "").strip().upper()
+        if not code:
+            return {"error": "code required"}, 400
+        db = models.get_db()
+        # Zentrales Protokoll? Format ZEH-NNNNNN
+        import re as _re
+        m = _re.match(r"^ZEH-?(\d+)$", code)
+        if m:
+            pid = int(m.group(1))
+            if models.get_central_protocol(db, pid):
+                return {"kind": "central", "id": pid,
+                        "url": url_for("central_detail", pid=pid)}
+        # Dezentrales Protokoll? DEH-NNNNNN
+        m = _re.match(r"^DEH-?(\d+)$", code)
+        if m:
+            pid = int(m.group(1))
+            if models.get_protocol(db, pid):
+                return {"kind": "decentral", "id": pid,
+                        "url": url_for("protocol_detail", protocol_id=pid)}
+        # MANV-Karten-Token? 12 oder 16 Hex
+        if _re.match(r"^[0-9A-F]{12,16}$", code):
+            card = models.get_manv_card_by_token(db, code.lower())
+            if card:
+                return {"kind": "manv_card", "id": card["id"],
+                        "url": url_for("manv_card", cid=card["id"])}
+        # Patient-Stammnummer?
+        row = db.execute(
+            "SELECT id FROM patients WHERE stammnummer = ? LIMIT 1",
+            (code,),
+        ).fetchone()
+        if row:
+            return {"kind": "patient", "id": row["id"],
+                    "url": url_for("patient_detail", patient_id=row["id"])}
+        return {"error": "unknown",
+                "message": f"Kein Datensatz für {code!r} gefunden."}, 404
+
     @app.route("/api/next-laufende-nr")
     @decentral_view_required
     def api_next_laufende_nr():
@@ -1547,11 +1597,15 @@ def create_app(test_config: dict | None = None) -> Flask:
                         patient["emergency_contact_relation"],
                 }
         try:
+            # Stabile UID für den Barcode am Footer — Admin scant
+            # diesen und landet direkt auf der Akte / dem Protokoll.
+            uid = f"ZEH-{pid:06d}"
             pdf_bytes = render_central_pdf(
                 pdf_data,
                 exporter_label=(current_user.full_name
                                 or current_user.username),
                 medical_info=medical_info,
+                protocol_uid=uid,
             )
         except FileNotFoundError as e:
             return {"error": str(e)}, 500

@@ -607,7 +607,7 @@ h3 {
 .body-chart-static {
   position: relative;
   display: inline-block;
-  max-width: 460px;
+  max-width: 280px;
   width: 100%;
   margin: 8px 0;
 }
@@ -620,12 +620,12 @@ h3 {
 }
 .body-chart-static-overlay .bmark {
   position: absolute;
-  width: 22px; height: 22px;
+  width: 18px; height: 18px;
   border-radius: 50%;
   background: #d32f2f;
   color: #fff;
   font-weight: 700;
-  font-size: 11px;
+  font-size: 10px;
   display: flex; align-items: center; justify-content: center;
   transform: translate(-50%, -50%);
   box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 0 0 2px #fff;
