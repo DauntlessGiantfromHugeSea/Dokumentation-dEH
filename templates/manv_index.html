@@ -1,81 +1,178 @@
 {% extends "base.html" %}
-{% block title %}MANV-Vorfälle{% endblock %}
+{% block title %}MANV{% endblock %}
 {% block content %}
+
+{# ============ NICHT-ADMIN: nur alarmiertes Event ============ #}
+{% if not is_admin_view %}
+  {% if alarmiertes %}
+    <div class="page-header">
+      <div>
+        <h1>🚨 Aktiver MANV-Vorfall</h1>
+        <p class="tagline">
+          Sticker auf der DRK-Karte scannen → Patient ist diesem Vorfall
+          automatisch zugewiesen.
+        </p>
+      </div>
+    </div>
+    <div class="card" style="border-left: 6px solid var(--error);">
+      <div class="card-header">{{ alarmiertes.name }}
+        <span class="badge totp-on" style="margin-left:8px;">ALARMIERT</span>
+      </div>
+      {% if alarmiertes.alarm_at %}
+        <p style="margin:0 0 10px;">
+          <strong>Alarm seit:</strong> {{ format_dt(alarmiertes.alarm_at) }}
+        </p>
+      {% endif %}
+      {% if alarmiertes.situation %}
+        <p><strong>Situation:</strong> {{ alarmiertes.situation }}</p>
+      {% endif %}
+      {% if alarmiertes.einsatzort %}
+        <p><strong>Einsatzort:</strong> {{ alarmiertes.einsatzort }}</p>
+      {% endif %}
+      {% if alarmiertes.lage_bild %}
+        <p><strong>Lagebild:</strong><br>
+          <span style="white-space:pre-wrap;">{{ alarmiertes.lage_bild }}</span></p>
+      {% endif %}
+      <div class="btn-row" style="margin-top:14px;">
+        <a class="btn" href="{{ url_for('manv_event', eid=alarmiertes.id) }}">
+          → Karten / Patienten öffnen
+        </a>
+      </div>
+    </div>
+  {% else %}
+    {# Kein alarmiertes Event #}
+    <div class="page-header">
+      <div>
+        <h1>MANV</h1>
+        <p class="tagline">Massenanfall von Verletzten</p>
+      </div>
+    </div>
+    <div class="card" style="text-align: center; padding: 40px 24px;">
+      <div style="font-size: 3rem; opacity: 0.4; margin-bottom: 12px;">🔕</div>
+      <h2 style="margin: 0 0 8px; color: var(--muted);">Keine aktive Alarmierung</h2>
+      <p class="muted" style="margin: 0;">
+        Aktuell ist kein MANV-Vorfall alarmiert. Sobald die Einsatzleitung
+        einen Alarm auslöst, erscheint hier der aktive Vorfall samt
+        Lagebild und Karten-Übersicht.
+      </p>
+    </div>
+  {% endif %}
+
+{% else %}
+{# ============ ADMIN-VIEW: alle Events verwalten ============ #}
+
 <div class="page-header">
   <div>
-    <h1>MANV-Vorfälle</h1>
+    <h1>MANV — Admin-Übersicht</h1>
     <p class="tagline">
-      Massenanfall von Verletzten — Sticker mit QR-Code vor dem Camp
-      auf leere DRK-Anhängekarten kleben, im Einsatz scannen.
+      Vorfälle anlegen, im Voraus pflegen, im Ernstfall alarmieren.
+      User sehen nur das aktuell alarmierte Event.
     </p>
   </div>
   <div class="btn-row">
-    {% if current_user.is_admin %}
-      <a class="btn small secondary" href="{{ url_for('manv_pool') }}">
-        📦 Sticker-Vorrat
-      </a>
-    {% endif %}
+    <a class="btn small secondary" href="{{ url_for('manv_pool') }}">
+      📦 Sticker-Vorrat
+    </a>
   </div>
 </div>
 
-{% if current_user.is_admin %}
+{% if alarmiertes %}
+<div class="card" style="border-left: 6px solid var(--error);">
+  <div class="card-header">🚨 Aktuell ALARMIERT: {{ alarmiertes.name }}
+    <span class="muted" style="font-weight:400;color:rgba(255,255,255,0.85);">
+      seit {{ format_dt(alarmiertes.alarm_at) }}
+    </span>
+  </div>
+  <p style="margin:0;">
+    Alle User sehen dieses Event. Pool-Karten-Scans landen automatisch hier.
+    <a href="{{ url_for('manv_event', eid=alarmiertes.id) }}">→ Detail öffnen</a>
+  </p>
+</div>
+{% else %}
+<div class="card" style="border-left: 4px solid var(--muted);">
+  <div class="card-header">Kein aktives MANV alarmiert</div>
+  <p style="margin:0;">
+    User sehen <em>„Keine aktive Alarmierung"</em>. Pool-Scans funktionieren
+    erst, sobald hier ein Event alarmiert ist.
+  </p>
+</div>
+{% endif %}
+
 <div class="card">
   <div class="card-header">Neuen MANV-Vorfall anlegen</div>
   <form method="post" action="{{ url_for('manv_new') }}" class="stack">
-    <div class="row three">
+    <div class="row">
       <label class="field">
         Vorfall-Name <span class="req">*</span>
         <input name="name" required placeholder="z. B. Bühnenunfall Hauptzelt">
       </label>
       <label class="field">
-        Karten-Präfix <span class="req">*</span>
-        <input name="card_prefix" required placeholder="z. B. MANV01"
-               pattern="[A-Za-z0-9\-]+" maxlength="20">
+        Karten-Präfix
+        <input name="card_prefix" placeholder="z. B. MANV01"
+               pattern="[A-Za-z0-9\-]+" maxlength="20" value="MANV">
+      </label>
+    </div>
+    <div class="row">
+      <label class="field">
+        Situation
+        <input name="situation"
+               placeholder="z. B. Tribüneneinsturz · 15 Verletzte">
       </label>
       <label class="field">
-        Anzahl initial drucken
-        <input name="initial_cards" type="number" min="0" max="500" value="50">
+        Einsatzort
+        <input name="einsatzort"
+               placeholder="z. B. Hauptzelt, Eingang Süd">
       </label>
     </div>
     <label class="field">
-      Notiz / Lagebild
-      <textarea name="notes" rows="2"
-                placeholder="kurze Lagebeschreibung, Einsatzleitung, …"></textarea>
+      Lagebild
+      <textarea name="lage_bild" rows="2"
+                placeholder="Aktuelle Lage / besondere Hinweise — kann später ergänzt werden"></textarea>
     </label>
-    <div><button class="btn" type="submit">MANV anlegen + Karten erzeugen</button></div>
+    <label class="field">
+      Interne Notiz
+      <textarea name="notes" rows="2"
+                placeholder="Einsatzleitung, interne Hinweise"></textarea>
+    </label>
+    <div>
+      <button class="btn" type="submit">+ Anlegen (noch nicht alarmieren)</button>
+    </div>
+    <p class="muted" style="font-size:0.85rem;margin:0;">
+      Tipp: Vorfälle kannst du vorab anlegen und alle Felder editieren —
+      User sehen erst was, wenn du den 🚨 Alarmieren-Button klickst.
+    </p>
   </form>
 </div>
-{% endif %}
 
 <div class="card">
-  <div class="card-header">Bestehende Vorfälle ({{ events|length }})</div>
+  <div class="card-header">Alle Vorfälle ({{ events|length }})</div>
   {% if events %}
     <table class="data">
       <thead>
         <tr>
           <th>Name</th>
-          <th>Präfix</th>
           <th>Status</th>
-          <th class="right">Karten</th>
-          <th class="right">Benutzt</th>
-          <th>Gestartet</th>
+          <th>Situation</th>
+          <th>Angelegt</th>
           <th class="right">Aktion</th>
         </tr>
       </thead>
       <tbody>
         {% for e in events %}
         <tr>
-          <td><strong>{{ e.name }}</strong></td>
-          <td><code>{{ e.card_prefix }}</code></td>
+          <td><strong>{{ e.name }}</strong>
+            <br><small class="muted">{{ e.card_prefix }}</small>
+          </td>
           <td>
-            {% if e.status == 'aktiv' %}
-              <span class="badge totp-on">aktiv</span>
+            {% if e.is_alarmiert %}
+              <span class="badge totp-on">🚨 alarmiert</span>
+            {% elif e.status == 'aktiv' %}
+              <span class="badge">geplant</span>
             {% else %}
-              <span class="badge">abgeschlossen</span>
+              <span class="muted">abgeschlossen</span>
             {% endif %}
           </td>
-          <td class="right">{{ e.card_count }}</td>
-          <td class="right">{{ e.used_count }}</td>
+          <td>{{ e.situation or '—' }}</td>
           <td>{{ format_dt(e.started_at) }}</td>
           <td class="right">
             <a class="btn small secondary"
@@ -86,8 +183,8 @@
       </tbody>
     </table>
   {% else %}
-    <p class="muted">Noch kein MANV-Vorfall.
-      {% if current_user.is_admin %}Lege oben einen an.{% endif %}</p>
+    <p class="muted">Noch kein MANV-Vorfall angelegt.</p>
   {% endif %}
 </div>
+{% endif %}
 {% endblock %}

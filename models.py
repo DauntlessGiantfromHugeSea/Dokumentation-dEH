@@ -414,6 +414,35 @@ def init_db(db_path: Path) -> None:
                 "ALTER TABLE triage_entries ADD COLUMN treatment_started_by INTEGER"
             )
 
+        # Migration: manv_events um Alarmierungs- + Lage-Felder erweitern
+        try:
+            me_cols = {row[1] for row in
+                       conn.execute("PRAGMA table_info(manv_events)")}
+        except Exception:
+            me_cols = set()
+        added_is_alarmiert = False
+        for col, decl in [
+            ("is_alarmiert", "INTEGER NOT NULL DEFAULT 0"),
+            ("alarm_at", "TEXT"),
+            ("alarm_by", "INTEGER"),
+            ("situation", "TEXT"),
+            ("einsatzort", "TEXT"),
+            ("lage_bild", "TEXT"),
+        ]:
+            if me_cols and col not in me_cols:
+                conn.execute(
+                    f"ALTER TABLE manv_events ADD COLUMN {col} {decl}")
+                if col == "is_alarmiert":
+                    added_is_alarmiert = True
+        # Beim ersten Migrationslauf: bestehende aktive Events auch als
+        # alarmiert markieren — sonst würden sie für User schlagartig
+        # verschwinden.
+        if added_is_alarmiert:
+            conn.execute(
+                "UPDATE manv_events SET is_alarmiert=1, "
+                "alarm_at=COALESCE(alarm_at, started_at) "
+                "WHERE status='aktiv'")
+
         # Migration: manv_cards.manv_event_id soll nullable sein
         # (Pool-Karten = Sticker auf der DRK-Karte, aber noch nicht im Einsatz).
         # SQLite kann NOT NULL nicht direkt entfernen — wir bauen die Tabelle
@@ -2322,16 +2351,85 @@ MANV_STATUS_VALUES = (
 
 def create_manv_event(conn, *, name: str, card_prefix: str,
                        notes: Optional[str] = None,
+                       situation: Optional[str] = None,
+                       einsatzort: Optional[str] = None,
+                       lage_bild: Optional[str] = None,
                        created_by: Optional[int] = None) -> int:
+    """Legt einen MANV-Vorfall an, der zunächst NICHT alarmiert ist
+    (status='aktiv', is_alarmiert=0). Erst wenn ein Admin alarmiert,
+    sehen normale User das Event."""
     cur = conn.execute(
         """
-        INSERT INTO manv_events (name, card_prefix, notes, created_by)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO manv_events
+          (name, card_prefix, notes, situation, einsatzort, lage_bild,
+           created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (name.strip(), card_prefix.strip(),
-         (notes or "").strip() or None, created_by),
+         (notes or "").strip() or None,
+         (situation or "").strip() or None,
+         (einsatzort or "").strip() or None,
+         (lage_bild or "").strip() or None,
+         created_by),
     )
     return cur.lastrowid
+
+
+MANV_EVENT_EDIT_FIELDS = (
+    "name", "card_prefix", "notes", "situation", "einsatzort", "lage_bild"
+)
+
+
+def update_manv_event(conn, eid: int, fields: dict) -> bool:
+    """Editiert die operativen Felder eines MANV-Events.
+    Kann jederzeit aufgerufen werden, auch nach Alarmierung."""
+    cols = [f for f in fields if f in MANV_EVENT_EDIT_FIELDS]
+    if not cols:
+        return False
+    set_sql = ", ".join(f"{c}=?" for c in cols)
+    params = [(fields[c] or "").strip() or None if isinstance(fields[c], str)
+               else fields[c] for c in cols]
+    params.append(eid)
+    conn.execute(f"UPDATE manv_events SET {set_sql} WHERE id=?", params)
+    return True
+
+
+def alarm_manv_event(conn, eid: int, *,
+                      by_user_id: Optional[int] = None) -> bool:
+    """Setzt is_alarmiert=1. Bestehende alarmierte Events werden
+    abgeschlossen (nur eins kann gleichzeitig alarmiert sein)."""
+    # Alle anderen alarmierten Events auf 'abgeschlossen' setzen
+    conn.execute(
+        "UPDATE manv_events SET status='abgeschlossen', "
+        "closed_at=datetime('now'), is_alarmiert=0 "
+        "WHERE is_alarmiert=1 AND id != ?", (eid,),
+    )
+    cur = conn.execute(
+        "UPDATE manv_events SET is_alarmiert=1, status='aktiv', "
+        "alarm_at=COALESCE(alarm_at, datetime('now')), "
+        "alarm_by=COALESCE(alarm_by, ?), closed_at=NULL "
+        "WHERE id=?", (by_user_id, eid),
+    )
+    return cur.rowcount > 0
+
+
+def dealarm_manv_event(conn, eid: int) -> bool:
+    """Versehentlich alarmiert → zurück auf 'geplant' (is_alarmiert=0).
+    Daten + Status='aktiv' bleiben erhalten, Event ist für User wieder
+    unsichtbar."""
+    cur = conn.execute(
+        "UPDATE manv_events SET is_alarmiert=0, alarm_at=NULL, alarm_by=NULL "
+        "WHERE id=?", (eid,),
+    )
+    return cur.rowcount > 0
+
+
+def get_alarmiertes_manv_event(conn) -> Optional[sqlite3.Row]:
+    """Das EINE Event, das aktuell für User sichtbar ist."""
+    return conn.execute(
+        "SELECT * FROM manv_events WHERE is_alarmiert=1 AND status='aktiv' "
+        "ORDER BY datetime(alarm_at) DESC LIMIT 1"
+    ).fetchone()
 
 
 def get_manv_event(conn, eid: int) -> Optional[sqlite3.Row]:
@@ -2557,13 +2655,9 @@ def manv_card_link_protocol(conn, cid: int, protocol_id: int) -> bool:
 
 
 def get_active_manv_event(conn) -> Optional[sqlite3.Row]:
-    """Liefert das jüngste aktive MANV-Event (status='aktiv'). Es soll
-    immer max. eins geben — beim Anlegen eines neuen wird das alte
-    auto-abgeschlossen."""
-    return conn.execute(
-        "SELECT * FROM manv_events WHERE status='aktiv' "
-        "ORDER BY datetime(started_at) DESC LIMIT 1"
-    ).fetchone()
+    """Das jüngste ALARMIERTE Event. Wenn ein Pool-Sticker gescannt
+    wird, landet die Karte automatisch hier. Vor Alarmierung: None."""
+    return get_alarmiertes_manv_event(conn)
 
 
 def close_all_active_manv_events(conn, *, except_id: Optional[int] = None) -> int:

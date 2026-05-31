@@ -1881,10 +1881,23 @@ def create_app(test_config: dict | None = None) -> Flask:
     @login_required
     def manv_index():
         db = models.get_db()
-        events = models.list_manv_events(db)
+        if current_user.is_admin:
+            # Admin sieht alle Events (geplant + alarmiert + abgeschlossen)
+            events = models.list_manv_events(db)
+            alarmiertes = models.get_alarmiertes_manv_event(db)
+            return render_template(
+                "manv_index.html", events=events,
+                alarmiertes=alarmiertes,
+                is_admin_view=True,
+                format_dt=models.format_dt,
+            )
+        # Nicht-Admin: sieht nur das aktuell alarmierte Event (oder Empty-State)
+        alarmiertes = models.get_alarmiertes_manv_event(db)
         return render_template(
             "manv_index.html",
-            events=events,
+            events=[alarmiertes] if alarmiertes else [],
+            alarmiertes=alarmiertes,
+            is_admin_view=False,
             format_dt=models.format_dt,
         )
 
@@ -1899,19 +1912,62 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not name:
             flash("Vorfall-Name ist Pflicht.", "error")
             return redirect(url_for("manv_index"))
-        # Alle bisherigen aktiven Events automatisch abschließen — es
-        # darf nur EINS aktiv sein.
-        closed = models.close_all_active_manv_events(db)
         eid = models.create_manv_event(
             db, name=name, card_prefix=prefix,
             notes=request.form.get("notes"),
+            situation=request.form.get("situation"),
+            einsatzort=request.form.get("einsatzort"),
+            lage_bild=request.form.get("lage_bild"),
             created_by=current_user.id,
         )
         db.commit()
-        msg = f"MANV „{name}“ ist jetzt das aktive Event."
-        if closed:
-            msg += f" {closed} älteres Event wurde auto-abgeschlossen."
-        flash(msg, "success")
+        flash(f"MANV „{name}“ angelegt. Noch NICHT alarmiert — User "
+              f"sehen das Event erst, wenn du es alarmierst.", "success")
+        return redirect(url_for("manv_event", eid=eid))
+
+    @app.route("/manv/event/<int:eid>/edit", methods=["POST"])
+    @login_required
+    def manv_event_edit(eid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        if not models.get_manv_event(db, eid):
+            abort(404)
+        fields = {f: request.form.get(f) for f in models.MANV_EVENT_EDIT_FIELDS}
+        models.update_manv_event(db, eid, fields)
+        db.commit()
+        flash("Vorfall-Daten aktualisiert.", "success")
+        return redirect(url_for("manv_event", eid=eid))
+
+    @app.route("/manv/event/<int:eid>/alarm", methods=["POST"])
+    @login_required
+    def manv_event_alarm(eid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        ev = models.get_manv_event(db, eid)
+        if not ev:
+            abort(404)
+        if models.alarm_manv_event(db, eid, by_user_id=current_user.id):
+            db.commit()
+            flash(f"🚨 MANV „{ev['name']}“ ist jetzt ALARMIERT. "
+                  f"Alle User sehen das Event und können scannen.", "success")
+        return redirect(url_for("manv_event", eid=eid))
+
+    @app.route("/manv/event/<int:eid>/dealarm", methods=["POST"])
+    @login_required
+    def manv_event_dealarm(eid: int):
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        ev = models.get_manv_event(db, eid)
+        if not ev:
+            abort(404)
+        if models.dealarm_manv_event(db, eid):
+            db.commit()
+            flash(f"Alarmierung für „{ev['name']}“ aufgehoben — "
+                  f"Event ist wieder geplant (für User unsichtbar).",
+                  "success")
         return redirect(url_for("manv_event", eid=eid))
 
     @app.route("/manv/event/<int:eid>")
@@ -1921,6 +1977,10 @@ def create_app(test_config: dict | None = None) -> Flask:
         event = models.get_manv_event(db, eid)
         if not event:
             abort(404)
+        # Nicht-Admins dürfen nur ALARMIERTE Events sehen — sonst Redirect
+        if not current_user.is_admin and not event["is_alarmiert"]:
+            flash("Aktuell ist kein MANV alarmiert.", "info")
+            return redirect(url_for("manv_index"))
         cards = models.list_manv_cards(db, eid)
         stats = models.manv_event_stats(db, eid)
         return render_template(

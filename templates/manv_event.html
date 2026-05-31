@@ -4,16 +4,18 @@
 <div class="page-header">
   <div>
     <h1>{{ event.name }}
-      {% if event.status == 'aktiv' %}
-        <span class="badge totp-on" style="margin-left:8px;">aktiv</span>
+      {% if event.is_alarmiert %}
+        <span class="badge totp-on" style="margin-left:8px;">🚨 ALARMIERT</span>
+      {% elif event.status == 'aktiv' %}
+        <span class="badge" style="margin-left:8px;">geplant</span>
       {% else %}
         <span class="badge" style="margin-left:8px;">abgeschlossen</span>
       {% endif %}
     </h1>
     <p class="tagline">
       Präfix <code>{{ event.card_prefix }}</code> ·
-      gestartet {{ format_dt(event.started_at) }}
-      {% if event.notes %}· {{ event.notes }}{% endif %}
+      angelegt {{ format_dt(event.started_at) }}
+      {% if event.alarm_at %}· alarmiert {{ format_dt(event.alarm_at) }}{% endif %}
     </p>
   </div>
   <div class="btn-row">
@@ -46,6 +48,97 @@
     {% endif %}
   </div>
 </div>
+
+{# ===== Alarmierungs-/Edit-Sektion (nur Admin) ===== #}
+{% if current_user.is_admin %}
+  {% if not event.is_alarmiert and event.status == 'aktiv' %}
+    <div class="card" style="border-left: 6px solid var(--error); background: var(--error-light);">
+      <div class="card-header" style="background: var(--error);">🚨 Alarmierung auslösen</div>
+      <p style="margin: 0 0 12px;">
+        Dieser Vorfall ist <strong>geplant</strong>, aber noch nicht alarmiert.
+        User sehen ihn aktuell <strong>nicht</strong>. Felder kannst du auch
+        nach dem Alarm jederzeit nachpflegen.
+      </p>
+      <form method="post" action="{{ url_for('manv_event_alarm', eid=event.id) }}"
+            onsubmit="return confirm('Wirklich JETZT alarmieren? Alle User sehen den Vorfall danach sofort.');">
+        <button class="btn lg" type="submit"
+                style="background: var(--error); border-color: var(--error);">
+          🚨 JETZT ALARMIEREN
+        </button>
+      </form>
+    </div>
+  {% elif event.is_alarmiert %}
+    <div class="card" style="border-left: 4px solid var(--warning);">
+      <div class="card-header">Alarmierung aufheben</div>
+      <p style="margin: 0 0 12px;">
+        Versehentlich alarmiert? Hier zurück auf <em>„geplant"</em> setzen —
+        User sehen den Vorfall dann wieder nicht. Daten bleiben erhalten.
+      </p>
+      <form method="post" action="{{ url_for('manv_event_dealarm', eid=event.id) }}"
+            onsubmit="return confirm('Alarmierung wirklich aufheben?');">
+        <button class="btn small secondary" type="submit">
+          Alarmierung aufheben
+        </button>
+      </form>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-header">Vorfall bearbeiten</div>
+    <form method="post" action="{{ url_for('manv_event_edit', eid=event.id) }}"
+          class="stack">
+      <div class="row">
+        <label class="field">
+          Name
+          <input name="name" value="{{ event.name or '' }}" required>
+        </label>
+        <label class="field">
+          Karten-Präfix
+          <input name="card_prefix" value="{{ event.card_prefix or '' }}"
+                 pattern="[A-Za-z0-9\-]+" maxlength="20">
+        </label>
+      </div>
+      <div class="row">
+        <label class="field">
+          Situation
+          <input name="situation" value="{{ event.situation or '' }}"
+                 placeholder="z. B. Tribüneneinsturz · 15 Verletzte">
+        </label>
+        <label class="field">
+          Einsatzort
+          <input name="einsatzort" value="{{ event.einsatzort or '' }}"
+                 placeholder="z. B. Hauptzelt, Eingang Süd">
+        </label>
+      </div>
+      <label class="field">
+        Lagebild
+        <textarea name="lage_bild" rows="3"
+                  placeholder="Aktuelle Lage / Hinweise">{{ event.lage_bild or '' }}</textarea>
+      </label>
+      <label class="field">
+        Interne Notiz
+        <textarea name="notes" rows="2">{{ event.notes or '' }}</textarea>
+      </label>
+      <div><button class="btn small" type="submit">Speichern</button></div>
+    </form>
+  </div>
+{% else %}
+  {# Read-only-Anzeige für nicht-Admins #}
+  {% if event.situation or event.einsatzort or event.lage_bild %}
+  <div class="card" style="border-left: 4px solid var(--error);">
+    <div class="card-header">Lagebild</div>
+    {% if event.situation %}
+      <p><strong>Situation:</strong> {{ event.situation }}</p>
+    {% endif %}
+    {% if event.einsatzort %}
+      <p><strong>Einsatzort:</strong> {{ event.einsatzort }}</p>
+    {% endif %}
+    {% if event.lage_bild %}
+      <p style="white-space:pre-wrap;">{{ event.lage_bild }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+{% endif %}
 
 <div class="akte-stats">
   <div class="akte-stat" style="border-left: 4px solid {{ kategorie_color['I'] }};">
