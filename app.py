@@ -1546,7 +1546,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             # waren beim Laden gestrippt und kommen entsprechend leer zurück.
             if not current_user.can_view_contact:
                 data = models.merge_central_contact(data, rec.get("data") or {})
-            ok = models.update_central_protocol(db, pid, data)
+            ok = models.update_central_protocol(db, pid, data,
+                                                changed_by=current_user.id)
             db.commit()
             if not ok:
                 return {"error": "not found"}, 404

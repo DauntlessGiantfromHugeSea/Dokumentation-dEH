@@ -252,7 +252,17 @@
 
   /* Unterschriften-Pads */
   .sig-wrap { display: flex; flex-direction: column; gap: 6px; }
-  .sig-label { font-size: 0.85rem; font-weight: 600; }
+  .sig-label {
+    font-size: 0.95rem; font-weight: 600;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
+    padding: 6px 10px; background: var(--accent-soft);
+    border-radius: var(--radius-sm); border-left: 3px solid var(--accent);
+  }
+  .sig-label .sig-role { color: var(--accent-dark); }
+  .sig-label .sig-name { color: var(--text); font-weight: 700; }
+  .sig-label .sig-name-missing {
+    color: var(--error); font-size: 0.82rem; font-weight: 500;
+  }
   .sig-label .muted { font-weight: 400; color: var(--muted); }
   .sig-pad {
     width: 100%;
@@ -1217,7 +1227,11 @@ if ('serviceWorker' in navigator) {
             <div class="grid cols-2">
               <div class="sig-wrap">
                 <label class="sig-label" for="sig-pad-1">
-                  Einsatzkraft 1 <span id="sig-name-1" class="muted"></span>
+                  <span class="sig-role">Einsatzkraft 1</span>
+                  <strong class="sig-name" id="sig-name-1"></strong>
+                  <span class="sig-name-missing" id="sig-name-missing-1">
+                    — bitte Name oben unter „2 Einsatzkräfte" eintragen
+                  </span>
                 </label>
                 <canvas id="sig-pad-1" class="sig-pad" width="600" height="160"></canvas>
                 <div class="sig-actions">
@@ -1230,7 +1244,11 @@ if ('serviceWorker' in navigator) {
               </div>
               <div class="sig-wrap">
                 <label class="sig-label" for="sig-pad-2">
-                  Einsatzkraft 2 <span id="sig-name-2" class="muted"></span>
+                  <span class="sig-role">Einsatzkraft 2</span>
+                  <strong class="sig-name" id="sig-name-2"></strong>
+                  <span class="sig-name-missing" id="sig-name-missing-2">
+                    — bitte Name oben unter „2 Einsatzkräfte" eintragen
+                  </span>
                 </label>
                 <canvas id="sig-pad-2" class="sig-pad" width="600" height="160"></canvas>
                 <div class="sig-actions">
@@ -2176,22 +2194,26 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
       // Pre-fill name labels from einsatzkraft1/2 inputs
       const ek1 = document.querySelector('[name="einsatzkraft1"]');
       const ek2 = document.querySelector('[name="einsatzkraft2"]');
-      const lab1 = document.getElementById('sig-name-1');
-      const lab2 = document.getElementById('sig-name-2');
-      if (lab1) lab1.textContent = ek1 && ek1.value ? '— ' + ek1.value : '';
-      if (lab2) lab2.textContent = ek2 && ek2.value ? '— ' + ek2.value : '';
+      setSigName(1, ek1 && ek1.value);
+      setSigName(2, ek2 && ek2.value);
     });
     // Update labels live
     form.addEventListener('input', (e) => {
-      if (e.target.name === 'einsatzkraft1') {
-        const lab = document.getElementById('sig-name-1');
-        if (lab) lab.textContent = e.target.value ? '— ' + e.target.value : '';
-      }
-      if (e.target.name === 'einsatzkraft2') {
-        const lab = document.getElementById('sig-name-2');
-        if (lab) lab.textContent = e.target.value ? '— ' + e.target.value : '';
-      }
+      if (e.target.name === 'einsatzkraft1') setSigName(1, e.target.value);
+      if (e.target.name === 'einsatzkraft2') setSigName(2, e.target.value);
     });
+  }
+  function setSigName(n, val) {
+    const nameEl = document.getElementById('sig-name-' + n);
+    const missingEl = document.getElementById('sig-name-missing-' + n);
+    const has = !!(val && String(val).trim());
+    if (nameEl) {
+      nameEl.textContent = has ? '— ' + val : '';
+      nameEl.style.display = has ? '' : 'none';
+    }
+    if (missingEl) {
+      missingEl.style.display = has ? 'none' : '';
+    }
   }
 })();
 </script>

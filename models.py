@@ -1445,6 +1445,55 @@ def get_central_protocol(conn: sqlite3.Connection, pid: int) -> Optional[dict]:
     return rec
 
 
+def _signature_audit_value(data: dict, n: int) -> Optional[str]:
+    """Beschreibung für den Audit-Log-Eintrag einer EK-Unterschrift:
+    Name der Einsatzkraft (aus einsatzkraft1/2) + erfassender User."""
+    ek_name = _scalar(data.get(f"einsatzkraft{n}")) or f"Einsatzkraft {n}"
+    by = _scalar(data.get(f"signature_einsatzkraft{n}_by"))
+    at = _scalar(data.get(f"signature_einsatzkraft{n}_at"))
+    parts = [str(ek_name)]
+    if by:
+        parts.append(f"erfasst von {by}")
+    if at:
+        parts.append(f"am {at}")
+    return " · ".join(parts)
+
+
+def _log_signature_changes(conn: sqlite3.Connection,
+                           patient_id: Optional[int],
+                           old_data: Optional[dict],
+                           new_data: dict,
+                           changed_by: Optional[int]) -> None:
+    """Schreibt patient_changes-Einträge für hinzugefügte/geänderte
+    EK-Unterschriften. Wird nur ausgeführt wenn das Protokoll an einen
+    Patienten gebunden ist (sonst kein Audit-Ziel)."""
+    if patient_id is None:
+        return
+    for n in (1, 2):
+        field = f"signature_einsatzkraft{n}"
+        old_sig = (old_data or {}).get(field) if old_data else None
+        new_sig = new_data.get(field)
+        old_present = bool(_scalar(old_sig))
+        new_present = bool(_scalar(new_sig))
+        # Nur loggen, wenn sich etwas ändert: hinzugefügt, geändert oder entfernt
+        if old_present == new_present and old_sig == new_sig:
+            continue
+        if new_present:
+            new_val = _signature_audit_value(new_data, n)
+        else:
+            new_val = None
+        if old_present:
+            old_val = _signature_audit_value(old_data or {}, n)
+        else:
+            old_val = None
+        conn.execute(
+            "INSERT INTO patient_changes "
+            "(patient_id, changed_by, field_name, old_value, new_value) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (patient_id, changed_by, field, old_val, new_val),
+        )
+
+
 def create_central_protocol(conn: sqlite3.Connection, data: dict,
                             created_by: Optional[int],
                             event_id: Optional[int] = None) -> int:
@@ -1472,11 +1521,24 @@ def create_central_protocol(conn: sqlite3.Connection, data: dict,
         "UPDATE central_protocols SET global_id = ?, laufende_nr = ? WHERE id = ?",
         (gid, nr, new_id),
     )
+    # Audit-Log: ggf. mitgegebene Unterschriften gleich verbuchen
+    _log_signature_changes(conn, patient_id, None, data, created_by)
     return new_id
 
 
 def update_central_protocol(conn: sqlite3.Connection, pid: int,
-                            data: dict) -> bool:
+                            data: dict,
+                            changed_by: Optional[int] = None) -> bool:
+    # Vorzustand für Audit holen, bevor wir überschreiben
+    old_row = conn.execute(
+        "SELECT data FROM central_protocols WHERE id = ?", (pid,)
+    ).fetchone()
+    old_data = {}
+    if old_row and old_row["data"]:
+        try:
+            old_data = _json.loads(old_row["data"]) or {}
+        except Exception:
+            old_data = {}
     patient_id = _link_central_to_patient(conn, data)
     cur = conn.execute(
         """
@@ -1494,6 +1556,8 @@ def update_central_protocol(conn: sqlite3.Connection, pid: int,
             pid,
         ),
     )
+    if cur.rowcount > 0:
+        _log_signature_changes(conn, patient_id, old_data, data, changed_by)
     return cur.rowcount > 0
 
 
@@ -1780,6 +1844,8 @@ PATIENT_FIELD_LABELS = {
     "medications_text": "Medikamente (Details)",
     "extras_notes": "Sonstige Hinweise",
     "__akte_export__": "Akten-PDF exportiert",
+    "signature_einsatzkraft1": "Unterschrift Einsatzkraft 1",
+    "signature_einsatzkraft2": "Unterschrift Einsatzkraft 2",
 }
 
 SENSITIVE_PATIENT_FIELDS = (
