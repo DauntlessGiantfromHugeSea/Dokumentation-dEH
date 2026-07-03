@@ -42,9 +42,7 @@
             {% elif c.sichtung_kategorie == 'II' %}SK II · gelb
             {% else %}SK III · grün{% endif %}
           </span>
-          <span class="badge" style="background: var(--error); color: #fff;">
-            MANV
-          </span>
+          <span class="badge manv-pulse">🚨 MANV</span>
         </div>
         <div class="triage-name">
           {% set fullname = ((c.vorname or '') ~ ' ' ~ (c.name or '')).strip() %}
@@ -132,9 +130,14 @@
   {% endfor %}
 </div>
 {% elif not manv_waiting %}
-<div class="empty">
-  Aktuell wartet niemand. Neue Patienten über
-  „<a href="{{ url_for('triage_new') }}">+ Patient anmelden</a>" erfassen.
+<div class="empty" data-icon="🌱">
+  <p style="margin: 0 0 10px; font-weight: 600; color: var(--text-soft);">
+    Aktuell wartet niemand.
+  </p>
+  <p style="margin: 0 0 14px;">
+    Neue Patienten am Kiosk erfassen — oder direkt hier anmelden.
+  </p>
+  <a class="btn" href="{{ url_for('triage_new') }}">+ Patient anmelden</a>
 </div>
 {% endif %}
 

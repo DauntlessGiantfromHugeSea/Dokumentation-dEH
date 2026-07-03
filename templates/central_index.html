@@ -877,7 +877,11 @@ if ('serviceWorker' in navigator) {
       </header>
 
       <nav class="stepper" id="stepper"></nav>
-      <div class="progress-bar"><div id="progress"></div></div>
+      <div class="progress-meta">
+        <span>Fortschritt</span>
+        <span><strong id="progress-percent">0 %</strong> · <span id="progress-count">0 / 9</span> Seiten</span>
+      </div>
+      <div class="progress-track"><div class="progress-bar" id="progress" style="width:0%"></div></div>
 
       <form id="protocol-form" autocomplete="off">
 
@@ -1561,9 +1565,20 @@ if ('serviceWorker' in navigator) {
     });
   }
   function updateCompletion() {
+    let filled = 0;
+    const total = 9;
     document.querySelectorAll('.stepper button').forEach(b => {
-      b.classList.toggle('completed', pageHasContent(Number(b.dataset.page)));
+      const has = pageHasContent(Number(b.dataset.page));
+      b.classList.toggle('completed', has);
+      if (has) filled++;
     });
+    const pct = Math.round((filled / total) * 100);
+    const bar = document.getElementById('progress');
+    if (bar) bar.style.width = pct + '%';
+    const pctEl = document.getElementById('progress-percent');
+    if (pctEl) pctEl.textContent = pct + ' %';
+    const cntEl = document.getElementById('progress-count');
+    if (cntEl) cntEl.textContent = filled + ' / ' + total;
   }
 
   // ============ Toast ============

@@ -1,30 +1,40 @@
 {% extends "base.html" %}
 {% block title %}Personen{% endblock %}
 {% block content %}
-<h1>Personen</h1>
-<p class="tagline">Alle Personen, zu denen mindestens ein Einsatzbericht existiert.</p>
+<div class="page-header">
+  <div>
+    <h1>Personen</h1>
+    <p class="tagline">Alle Personen, zu denen mindestens ein Einsatzbericht existiert.</p>
+  </div>
+</div>
 
 {% if patients %}
-<table class="data">
+<div style="margin-bottom: 12px;">
+  <input type="search" id="patient-filter" placeholder="🔎 Filtern nach Name oder Stammnummer …"
+         style="width: 100%; max-width: 420px; padding: 10px 14px;
+                border: 1px solid var(--border-strong);
+                border-radius: var(--radius-sm); font: inherit;">
+</div>
+<table class="data" id="patient-table">
   <thead>
     <tr>
       <th>Name</th>
       <th>Geburtsdatum</th>
       <th>Stammnummer</th>
-      <th class="right">Dezentral</th>
-      <th class="right">Zentral</th>
+      <th class="right">dEH</th>
+      <th class="right">zEH</th>
       <th>Letzte Behandlung</th>
       <th class="right"></th>
     </tr>
   </thead>
   <tbody>
     {% for p in patients %}
-    <tr>
+    <tr data-name="{{ (p.name or '')|lower }}" data-stamm="{{ (p.stammnummer or '')|lower }}">
       <td><a href="{{ url_for('patient_detail', patient_id=p.id) }}">{{ p.name }}</a></td>
       <td>{{ format_dt(p.geburtsdatum) }}</td>
       <td>{{ p.stammnummer or '—' }}</td>
-      <td class="right">{{ p.decentral_count }}</td>
-      <td class="right">{{ p.central_count }}</td>
+      <td class="right"><span class="badge">{{ p.decentral_count }}</span></td>
+      <td class="right"><span class="badge accent">{{ p.central_count }}</span></td>
       <td>{{ format_dt(p.last_treatment_any) or '—' }}</td>
       <td class="right">
         <a class="btn small secondary" href="{{ url_for('patient_detail', patient_id=p.id) }}">Öffnen</a>
@@ -33,7 +43,29 @@
     {% endfor %}
   </tbody>
 </table>
+<p id="patient-filter-empty" class="muted" style="display: none; text-align: center; margin: 18px 0;">
+  Kein Treffer.
+</p>
+<script>
+(function () {
+  var f = document.getElementById('patient-filter');
+  var rows = Array.from(document.querySelectorAll('#patient-table tbody tr'));
+  var empty = document.getElementById('patient-filter-empty');
+  if (!f) return;
+  f.addEventListener('input', function () {
+    var q = f.value.trim().toLowerCase();
+    var shown = 0;
+    rows.forEach(function (r) {
+      var hit = !q || (r.dataset.name && r.dataset.name.indexOf(q) !== -1)
+                    || (r.dataset.stamm && r.dataset.stamm.indexOf(q) !== -1);
+      r.style.display = hit ? '' : 'none';
+      if (hit) shown++;
+    });
+    empty.style.display = shown ? 'none' : '';
+  });
+})();
+</script>
 {% else %}
-<div class="empty card">Noch keine Personen erfasst.</div>
+<div class="empty" data-icon="👥">Noch keine Personen erfasst.</div>
 {% endif %}
 {% endblock %}
