@@ -2113,26 +2113,74 @@ def classify_prior(indicator_keys: list[str]) -> str:
     return "SK3"
 
 
+# ==================== mSTaRT-Algorithmus ====================
+# Fragen in fester Reihenfolge; erstes „ja" endet die Prüfung und
+# vergibt die Kategorie. Reihenfolge = Priorität.
+
+MSTART_QUESTIONS = [
+    # key,        Frage,                                              yes_cat, hint
+    ("gehfaehig",   "Patient gehfähig?",                              "SK3",   None),
+    ("toedlich",    "Tödliche Verletzung? Atemstillstand auch nach "
+                    "Freimachen der Atemwege?",                       "TOT",   None),
+    ("atmung",      "Atemfrequenz >30 oder <10/min · Atmung nur mit "
+                    "Guedeltubus? (Untersuchungsdauer 10 s)",         "SK1",   None),
+    ("blutung",     "Unstillbare, spritzende Blutung?",               "SK1",
+                    "Blutstillung versuchen: Tourniquet / Druckverband anlegen."),
+    ("radialis",    "Fehlender Radialispuls? (Untersuchungsdauer 10 s)",
+                    "SK1",                                            None),
+    ("befehle",     "Folgt einfachen Befehlen NICHT?",                "SK1",   None),
+]
+
+MSTART_CATEGORY_LABEL = {
+    "SK1": "SK I · rot — sofort",
+    "SK2": "SK II · gelb — dringend",
+    "SK3": "SK III · grün — kann warten",
+    "TOT": "SK IV · schwarz — verstorben",
+}
+
+VALID_TRIAGE_CATEGORIES = ("SK1", "SK2", "SK3", "TOT")
+
+
+def classify_mstart(answers: dict) -> tuple[str, Optional[str]]:
+    """Wendet den mSTaRT-Baum an. `answers` ist ein Dict wie
+    {"gehfaehig": "ja", "toedlich": "nein", ...}. Gibt (kategorie,
+    trigger_key) zurück — trigger_key ist der Fragen-Schlüssel, der
+    zuerst mit „ja" beantwortet wurde (None wenn keine)."""
+    for key, _q, yes_cat, _hint in MSTART_QUESTIONS:
+        if (answers or {}).get(key) == "ja":
+            return yes_cat, key
+    # Keine Frage mit „ja" beantwortet → gelb / SK II
+    return "SK2", None
+
+
 def create_triage_entry(conn, *, name=None, geburtsdatum=None,
                          indicators=None, notes=None,
+                         category=None,
                          created_by=None, event_id=None) -> int:
+    """Legt Triage-Eintrag an. Wenn `category` explizit übergeben wird
+    (z. B. aus dem mSTaRT-Baum oder der Schnell-Auswahl), gewinnt der;
+    sonst wird aus den PRIOR-Indikatoren klassifiziert. Bei TOT wird
+    der Eintrag direkt auf status='abgeschlossen' gesetzt, damit
+    Verstorbene nicht in der Warteliste erscheinen."""
     indicators = indicators or []
-    category = classify_prior(indicators)
+    if category not in VALID_TRIAGE_CATEGORIES:
+        category = classify_prior(indicators)
     # Patienten matchen, falls Name + Geburtsdatum ausreichend sind
     patient_id = None
     if name and geburtsdatum:
         patient_id = upsert_patient(conn, name, geburtsdatum, None)
+    status = "abgeschlossen" if category == "TOT" else "wartend"
     cur = conn.execute(
         """
         INSERT INTO triage_entries
           (event_id, patient_id, name, geburtsdatum, category, indicators, notes,
-           created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           status, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (event_id or get_default_event_id(conn), patient_id, (name or "").strip() or None,
          (geburtsdatum or "").strip() or None,
          category, _json.dumps(indicators), (notes or "").strip() or None,
-         created_by),
+         status, created_by),
     )
     return cur.lastrowid
 

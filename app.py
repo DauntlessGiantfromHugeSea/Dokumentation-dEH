@@ -1049,29 +1049,54 @@ def create_app(test_config: dict | None = None) -> Flask:
             name = (request.form.get("name") or "").strip()
             geburtsdatum = (request.form.get("geburtsdatum") or "").strip()
             notes = (request.form.get("notes") or "").strip()
-            # Schnell-Auswahl per Knopf — übersteuert die berechnete
-            # Kategorie (z. B. wenn der Aufnehmende ohne PRIOR-Klick
-            # direkt SK I rot meldet).
+            # mSTaRT-Antworten aus dem Formular sammeln (pro Frage
+            # ein hidden input mstart_<key>).
+            mstart_answers = {
+                key: (request.form.get("mstart_" + key) or "").strip()
+                for key, *_ in models.MSTART_QUESTIONS
+            }
+            # Kategorien-Kaskade:
+            # 1) explizite Auswahl aus mSTaRT / Schnell (mstart_category)
+            # 2) sonst aus mSTaRT-Antworten berechnen (falls welche da sind)
+            # 3) sonst PRIOR-Indikatoren
+            final_category = (request.form.get("mstart_category") or "").strip()
+            mstart_trigger = None
+            if final_category not in models.VALID_TRIAGE_CATEGORIES:
+                if any(v == "ja" for v in mstart_answers.values()):
+                    final_category, mstart_trigger = models.classify_mstart(
+                        mstart_answers)
+                else:
+                    final_category = None  # → indicators-basiert
             quick_cat = (request.form.get("quick_category") or "").strip()
+            if not final_category and quick_cat in models.VALID_TRIAGE_CATEGORIES:
+                final_category = quick_cat
+            # mSTaRT-Antworten + Trigger in notes ergänzen (Audit)
+            note_parts = [notes] if notes else []
+            answered = [k for k, v in mstart_answers.items() if v in ("ja", "nein")]
+            if answered:
+                summary = ", ".join(f"{k}={mstart_answers[k]}"
+                                    for k in answered)
+                note_parts.append(f"[mSTaRT] {summary}")
+            merged_notes = " · ".join(note_parts) if note_parts else None
             tid = models.create_triage_entry(
                 db, name=name, geburtsdatum=geburtsdatum,
-                indicators=indicators, notes=notes,
+                indicators=indicators, notes=merged_notes,
+                category=final_category,
                 created_by=current_user.id, event_id=event_id,
             )
-            if quick_cat in ("SK1", "SK2", "SK3"):
-                db.execute(
-                    "UPDATE triage_entries SET category = ? WHERE id = ?",
-                    (quick_cat, tid),
-                )
             db.commit()
-            flash(f"Triage-Eintrag #{tid} angelegt.", "success")
-            # Kiosk-Mode: nach dem Anlegen sofort zurück zum leeren Formular
+            row = models.get_triage_entry(db, tid)
+            cat_label = models.MSTART_CATEGORY_LABEL.get(
+                (row or {}).get("category", ""), "")
+            flash(f"Triage-Eintrag #{tid} angelegt — {cat_label}.", "success")
             if current_user.is_triage_intake:
                 return redirect(url_for("triage_new"))
             return redirect(url_for("triage_list"))
         return render_template(
             "triage_new.html",
             indicators=models.PRIOR_INDICATORS,
+            mstart_questions=models.MSTART_QUESTIONS,
+            mstart_labels=models.MSTART_CATEGORY_LABEL,
         )
 
     @app.route("/api/triage/recent")

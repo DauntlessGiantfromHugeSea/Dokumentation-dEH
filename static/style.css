@@ -2598,3 +2598,188 @@ table.data th {
 .mobile-menu-item:active {
   background: var(--accent-light) !important;
 }
+
+/* ============================================================
+   ================ mSTaRT-Triage-Interview ===================
+   ============================================================ */
+
+.mstart-card { padding-bottom: 22px; }
+
+.mstart-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: mstart-counter;
+}
+.mstart-q {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 10px;
+  padding: 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  background: var(--surface);
+  align-items: center;
+  transition: opacity 0.2s, background 0.2s, border-color 0.2s;
+}
+.mstart-q-num {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.mstart-q-text {
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+  font-size: 0.98rem;
+}
+.mstart-q-hint {
+  font-size: 0.82rem;
+  color: var(--error);
+  margin-top: 4px;
+  font-weight: 500;
+}
+.mstart-q-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.mstart-btn {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 90px;
+  min-height: 44px;
+  transition: background var(--t-fast), border-color var(--t-fast),
+              color var(--t-fast), transform var(--t-fast);
+}
+.mstart-btn:hover  { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.mstart-btn:active { transform: translateY(0); }
+.mstart-btn-yes { color: var(--error); border-color: var(--error); }
+.mstart-btn-yes:hover { background: var(--error-light); }
+.mstart-btn-no  { color: var(--muted); }
+.mstart-btn-no:hover  { background: var(--surface-soft); border-color: var(--border-strong); }
+
+/* Antwortstates */
+.mstart-q.answered-yes {
+  background: linear-gradient(90deg, var(--error-light), transparent 60%);
+  border-color: var(--error);
+}
+.mstart-q.answered-yes .mstart-btn-yes {
+  background: var(--error);
+  color: #fff;
+  border-color: var(--error);
+}
+.mstart-q.answered-no {
+  background: var(--surface-soft);
+  border-color: var(--border);
+}
+.mstart-q.answered-no .mstart-btn-no {
+  background: var(--muted-soft);
+  color: #fff;
+  border-color: var(--muted-soft);
+}
+.mstart-q.mstart-skipped {
+  opacity: 0.35;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    -45deg, transparent, transparent 6px,
+    var(--surface-soft) 6px, var(--surface-soft) 12px);
+}
+
+/* Cat-Tag im Ja-Button */
+.cat-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.cat-tag-SK1 { background: #d64545; color: #fff; }
+.cat-tag-SK2 { background: #f4c000; color: #4d3a00; }
+.cat-tag-SK3 { background: #1f6b3a; color: #fff; }
+.cat-tag-TOT { background: #1a1a1a; color: #fff; }
+
+/* Ergebnis-Panel */
+.mstart-result {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  border-left: 6px solid var(--accent);
+  background: var(--surface-soft);
+  text-align: center;
+  animation: fadein 0.25s ease;
+}
+@keyframes fadein { from { opacity: 0; transform: translateY(-4px); } }
+.mstart-result-cat {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+.mstart-result-desc {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.mstart-result-hint {
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--error);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.92rem;
+  border: 2px solid var(--error);
+}
+.mstart-result.cat-SK1 { background: #ffe8e8; border-left-color: #d64545; }
+.mstart-result.cat-SK1 .mstart-result-cat { color: #a51919; }
+.mstart-result.cat-SK2 { background: #fff8dc; border-left-color: #f4c000; }
+.mstart-result.cat-SK2 .mstart-result-cat { color: #7a5d00; }
+.mstart-result.cat-SK3 { background: #e5f4ea; border-left-color: #1f6b3a; }
+.mstart-result.cat-SK3 .mstart-result-cat { color: #1a5230; }
+.mstart-result.cat-TOT { background: #2a2a2a; border-left-color: #000; }
+.mstart-result.cat-TOT .mstart-result-cat { color: #fff; }
+.mstart-result.cat-TOT .mstart-result-desc { color: #ccc; }
+
+/* Submit-Button-Farbe je nach Kategorie */
+.mstart-submit.cat-SK1 { background: #d64545; border-color: #d64545; color: #fff; }
+.mstart-submit.cat-SK2 { background: #f4c000; border-color: #f4c000; color: #4d3a00; }
+.mstart-submit.cat-SK3 { background: #1f6b3a; border-color: #1f6b3a; color: #fff; }
+.mstart-submit.cat-TOT { background: #1a1a1a; border-color: #1a1a1a; color: #fff; }
+
+/* Kompakter auf Mobile */
+@media (max-width: 640px) {
+  .mstart-q {
+    grid-template-columns: 28px 1fr;
+    padding: 10px;
+  }
+  .mstart-q-num { width: 26px; height: 26px; font-size: 0.85rem; }
+  .mstart-q-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .mstart-btn { min-width: 0; width: 100%; padding: 12px 8px; }
+  .mstart-q-text { font-size: 0.94rem; }
+  .cat-tag { display: block; margin: 4px 0 0; }
+}
+
+/* Badge für TOT-Kategorie in der Triage-Liste */
+.cat-badge-TOT { background: #1a1a1a; color: #fff; }

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Patient anmelden — PRIOR{% endblock %}
+{% block title %}Patient anmelden — mSTaRT{% endblock %}
 {% block content %}
 <div class="page-header">
   <div>
     <h1>Patient anmelden</h1>
     <p class="tagline">
-      Schnellster Weg: Schnell-Kategorie wählen + speichern.
-      Optional PRIOR-Indikatoren ankreuzen für genauere Doku.
+      mSTaRT-Sichtung: Fragen von oben nach unten — beim ersten „Ja"
+      steht die Kategorie fest, Rest überspringen.
     </p>
   </div>
   {% if not current_user.is_triage_intake %}
@@ -16,37 +16,61 @@
 
 <form method="post" class="stack" id="triageForm">
 
-  <div class="card">
-    <div class="card-header">Schnell-Auswahl — Sichtungskategorie</div>
-    <div class="quick-cat">
-      <label class="quick-cat-btn cat-SK1">
-        <input type="radio" name="quick_category" value="SK1">
-        <span class="qc-tag">SK I</span>
-        <span class="qc-label">rot · sofort</span>
-      </label>
-      <label class="quick-cat-btn cat-SK2">
-        <input type="radio" name="quick_category" value="SK2">
-        <span class="qc-tag">SK II</span>
-        <span class="qc-label">gelb · dringend</span>
-      </label>
-      <label class="quick-cat-btn cat-SK3">
-        <input type="radio" name="quick_category" value="SK3" checked>
-        <span class="qc-tag">SK III</span>
-        <span class="qc-label">grün · kann warten</span>
-      </label>
-    </div>
-    <p class="muted" style="margin: 10px 0 0; font-size: 0.85rem;">
-      Standard ist SK&nbsp;III grün. Indikatoren unten können die Kategorie
-      automatisch auf SK&nbsp;I/II hochstufen.
+  <!-- ============ mSTaRT-Interview ============ -->
+  <div class="card mstart-card" id="mstartCard">
+    <div class="card-header">mSTaRT-Sichtung — 6 Fragen</div>
+    <p class="muted" style="font-size: 0.88rem; margin: 8px 0 14px;">
+      Erstes <strong>Ja</strong> vergibt die Kategorie und beendet den Baum.
+      Wenn keine Frage mit Ja beantwortet wird → <strong>SK II gelb</strong>.
     </p>
+
+    <ol class="mstart-list">
+      {% for key, question, yes_cat, hint in mstart_questions %}
+      <li class="mstart-q" data-key="{{ key }}" data-yes-cat="{{ yes_cat }}"
+          data-index="{{ loop.index0 }}">
+        <div class="mstart-q-num">{{ loop.index }}</div>
+        <div class="mstart-q-body">
+          <div class="mstart-q-text">{{ question }}</div>
+          {% if hint %}
+            <div class="mstart-q-hint">💡 {{ hint }}</div>
+          {% endif %}
+        </div>
+        <div class="mstart-q-actions">
+          <button type="button" class="mstart-btn mstart-btn-yes"
+                  data-answer="ja" data-yes-cat="{{ yes_cat }}"
+                  data-key="{{ key }}">
+            <span class="cat-tag cat-tag-{{ yes_cat }}">Ja → {{ yes_cat }}</span>
+          </button>
+          <button type="button" class="mstart-btn mstart-btn-no"
+                  data-answer="nein" data-key="{{ key }}">
+            Nein
+          </button>
+        </div>
+        <input type="hidden" name="mstart_{{ key }}" value="">
+      </li>
+      {% endfor %}
+    </ol>
+
+    <div class="mstart-result" id="mstartResult" style="display: none;">
+      <div class="mstart-result-cat" id="mstartResultCat">—</div>
+      <div class="mstart-result-desc" id="mstartResultDesc"></div>
+      <div class="mstart-result-hint" id="mstartResultHint" style="display: none;"></div>
+      <button type="button" class="btn small secondary" id="mstartReset">
+        ↻ Neu beginnen
+      </button>
+    </div>
+
+    <!-- Kategorie-Ergebnis wird hier hinein serialisiert (final für Submit) -->
+    <input type="hidden" name="mstart_category" id="mstartCategory" value="">
   </div>
 
+  <!-- ============ Personalia ============ -->
   <div class="card">
     <div class="card-header">Person</div>
     <div class="row cols-2-1">
       <label class="field">
         Name (Vorname Nachname, falls bekannt)
-        <input name="name" id="triageName" autofocus autocomplete="off"
+        <input name="name" id="triageName" autocomplete="off"
                placeholder="z. B. Anna Müller">
       </label>
       <label class="field">
@@ -56,11 +80,12 @@
     </div>
     <div id="triageLookup" class="lookup-hint" style="display: none;"></div>
     <p class="muted" style="font-size: 0.85rem; margin: 0;">
-      Beide Felder optional. Bei akuten Notfällen reicht das später —
+      Beide Felder optional. Bei akuten Notfällen später ergänzen —
       Hauptsache, der Patient ist im Wartebereich sichtbar.
     </p>
   </div>
 
+  <!-- ============ Notiz ============ -->
   <div class="card">
     <div class="card-header">Notiz (optional)</div>
     <label class="field">
@@ -70,18 +95,29 @@
     </label>
   </div>
 
+  <!-- ============ PRIOR-Indikatoren (Fallback / genauere Doku) ============ -->
   <details class="card prior-details">
     <summary class="card-header" style="cursor: pointer;">
-      PRIOR-Indikatoren (optional, für genauere Doku)
+      PRIOR-Indikatoren (optional — für genauere Doku, überschreibt mSTaRT
+      wenn ein SK-I-Indikator ausgewählt wird)
     </summary>
     <p class="muted" style="margin: 12px 0 14px; font-size: 0.9rem;">
       Mehrfachauswahl möglich. Erstes SK&nbsp;I-Match → Kategorie wird
-      automatisch auf SK&nbsp;I gesetzt (übersteuert die Schnell-Auswahl).
+      auf SK&nbsp;I gesetzt (übersteuert die mSTaRT-Ergebnis, falls
+      höher priorisiert).
     </p>
 
+    {% set groups = [
+      ("Eigenschutz / MANV", "manv"),
+      ("Leitsymptom", "leitsymptom"),
+      ("ABCDE-Check", "abcde"),
+      ("Mobilität", "mobilitaet"),
+      ("Zusatz bei Kindern", "kind"),
+    ] %}
+    {% for title, gkey in groups %}
     <div class="prior-group">
-      <h3>Eigenschutz / MANV</h3>
-      {% for k, label, cat, group in indicators if group == "manv" %}
+      <h3>{{ title }}</h3>
+      {% for k, label, cat, group in indicators if group == gkey %}
       <label class="prior-row">
         <input type="checkbox" name="indicators" value="{{ k }}">
         <span>{{ label }}</span>
@@ -89,113 +125,137 @@
       </label>
       {% endfor %}
     </div>
-
-    <div class="prior-group">
-      <h3>Leitsymptom</h3>
-      {% for k, label, cat, group in indicators if group == "leitsymptom" %}
-      <label class="prior-row">
-        <input type="checkbox" name="indicators" value="{{ k }}">
-        <span>{{ label }}</span>
-        <span class="badge cat-badge-{{ cat }}">{{ cat[:2] }} {{ cat[2:] }}</span>
-      </label>
-      {% endfor %}
-    </div>
-
-    <div class="prior-group">
-      <h3>ABCDE-Check</h3>
-      {% for k, label, cat, group in indicators if group == "abcde" %}
-      <label class="prior-row">
-        <input type="checkbox" name="indicators" value="{{ k }}">
-        <span>{{ label }}</span>
-        <span class="badge cat-badge-{{ cat }}">{{ cat[:2] }} {{ cat[2:] }}</span>
-      </label>
-      {% endfor %}
-    </div>
-
-    <div class="prior-group">
-      <h3>Mobilität</h3>
-      {% for k, label, cat, group in indicators if group == "mobilitaet" %}
-      <label class="prior-row">
-        <input type="checkbox" name="indicators" value="{{ k }}">
-        <span>{{ label }}</span>
-        <span class="badge cat-badge-{{ cat }}">{{ cat[:2] }} {{ cat[2:] }}</span>
-      </label>
-      {% endfor %}
-    </div>
-
-    <div class="prior-group">
-      <h3>Zusatz bei Kindern</h3>
-      {% for k, label, cat, group in indicators if group == "kind" %}
-      <label class="prior-row">
-        <input type="checkbox" name="indicators" value="{{ k }}">
-        <span>{{ label }}</span>
-        <span class="badge cat-badge-{{ cat }}">{{ cat[:2] }} {{ cat[2:] }}</span>
-      </label>
-      {% endfor %}
-    </div>
+    {% endfor %}
   </details>
 
-  <div id="prior-result" class="prior-result"></div>
-
   <div class="btn-row">
-    <button class="btn" type="submit" style="font-size: 1.05rem; padding: 12px 24px;">
-      Eintragen
-    </button>
+    <button class="btn lg" type="submit" id="submitBtn">Eintragen</button>
     {% if not current_user.is_triage_intake %}
       <a class="btn secondary" href="{{ url_for('triage_list') }}">Abbrechen</a>
     {% else %}
-      <button type="reset" class="btn secondary">Zurücksetzen</button>
+      <button type="reset" class="btn secondary" id="resetBtn">Zurücksetzen</button>
     {% endif %}
   </div>
 </form>
 
+<!-- ==================== mSTaRT-JS ==================== -->
 <script>
-// Live-Vorschau: Schnell-Auswahl + PRIOR-Indikatoren → effektive Kategorie
 (function () {
-  const result = document.getElementById('prior-result');
+  const QUESTIONS = [
+    {% for key, question, yes_cat, hint in mstart_questions %}
+    { key: "{{ key }}", yesCat: "{{ yes_cat }}",
+      hint: {{ (hint or '')|tojson }} },
+    {% endfor %}
+  ];
+  const LABELS = {{ mstart_labels|tojson }};
+  const items = Array.from(document.querySelectorAll('.mstart-q'));
+  const result = document.getElementById('mstartResult');
+  const resultCat = document.getElementById('mstartResultCat');
+  const resultDesc = document.getElementById('mstartResultDesc');
+  const resultHint = document.getElementById('mstartResultHint');
+  const catInput = document.getElementById('mstartCategory');
+  const resetBtn = document.getElementById('mstartReset');
+  const submitBtn = document.getElementById('submitBtn');
 
-  function compute() {
-    // Indikator-Kategorien sammeln
-    const checked = Array.from(
-      document.querySelectorAll('input[name="indicators"]:checked'));
-    const cats = new Set();
-    for (const cb of checked) {
-      const badge = cb.parentElement.querySelector('.badge');
-      if (badge) {
-        const t = badge.textContent.trim().replace(/\s+/g, '');
-        if (t.startsWith('SK1')) cats.add('SK1');
-        else if (t.startsWith('SK2')) cats.add('SK2');
-        else if (t.startsWith('SK3')) cats.add('SK3');
-      }
+  function setCategoryUI(cat, triggerKey) {
+    const label = LABELS[cat] || cat;
+    resultCat.textContent = label;
+    resultCat.className = 'mstart-result-cat cat-' + cat;
+    resultDesc.textContent = triggerKey
+      ? 'Ausgelöst durch Frage »' + triggerKey + '«'
+      : 'Alle Fragen mit „Nein" → gelb / SK II';
+    result.style.display = '';
+    result.className = 'mstart-result cat-' + cat;
+    catInput.value = cat;
+
+    // Submit-Button-Farbe an Kategorie koppeln
+    submitBtn.className = 'btn lg mstart-submit cat-' + cat;
+    submitBtn.textContent = 'Als ' + label + ' eintragen';
+
+    // Hinweis-Box (z. B. Tourniquet bei Blutung)
+    const q = QUESTIONS.find(q => q.key === triggerKey);
+    if (q && q.hint) {
+      resultHint.textContent = '⚠ ' + q.hint;
+      resultHint.style.display = '';
+    } else {
+      resultHint.style.display = 'none';
     }
-    // Schnell-Auswahl
-    const quick = (document.querySelector('input[name="quick_category"]:checked') || {}).value;
-
-    let cat;
-    if (cats.has('SK1')) cat = 'SK1';
-    else if (quick === 'SK1') cat = 'SK1';
-    else if (cats.has('SK2') || quick === 'SK2') cat = 'SK2';
-    else cat = 'SK3';
-
-    const labels = {
-      SK1: 'SK I · rot — sofort',
-      SK2: 'SK II · gelb — dringend',
-      SK3: 'SK III · grün — kann warten',
-    };
-    result.className = 'prior-result cat-' + cat;
-    result.innerHTML = '<strong>Sichtungskategorie:</strong> ' + labels[cat];
   }
 
-  document.querySelectorAll(
-    'input[name="indicators"], input[name="quick_category"]'
-  ).forEach(el => el.addEventListener('change', compute));
-  compute();
+  function clearCategoryUI() {
+    result.style.display = 'none';
+    catInput.value = '';
+    submitBtn.className = 'btn lg';
+    submitBtn.textContent = 'Eintragen';
+  }
+
+  function evaluate() {
+    // Erstes „ja" bestimmt die Kategorie
+    for (const q of QUESTIONS) {
+      const li = items.find(i => i.dataset.key === q.key);
+      const hidden = li && li.querySelector('input[type=hidden]');
+      if (hidden && hidden.value === 'ja') {
+        setCategoryUI(q.yesCat, q.key);
+        // alle folgenden Fragen visuell deaktivieren
+        for (const other of items) {
+          const idx = Number(other.dataset.index);
+          const thisIdx = Number(li.dataset.index);
+          if (idx > thisIdx) other.classList.add('mstart-skipped');
+          else other.classList.remove('mstart-skipped');
+        }
+        return;
+      }
+    }
+    // Kein „ja" → wenn alle beantwortet sind: SK2. Sonst noch offen.
+    const allAnswered = QUESTIONS.every(q => {
+      const li = items.find(i => i.dataset.key === q.key);
+      const hidden = li && li.querySelector('input[type=hidden]');
+      return hidden && hidden.value === 'nein';
+    });
+    if (allAnswered) {
+      setCategoryUI('SK2', null);
+      for (const it of items) it.classList.remove('mstart-skipped');
+    } else {
+      clearCategoryUI();
+    }
+  }
+
+  // Antwort-Buttons verdrahten
+  items.forEach(li => {
+    const hidden = li.querySelector('input[type=hidden]');
+    li.querySelectorAll('.mstart-btn').forEach(btn => {
+      btn.addEventListener('click', function () {
+        const ans = btn.dataset.answer;
+        hidden.value = ans;
+        li.classList.remove('answered-yes', 'answered-no');
+        li.classList.add(ans === 'ja' ? 'answered-yes' : 'answered-no');
+        evaluate();
+        // Sanft zur nächsten Frage scrollen (nur bei Nein)
+        if (ans === 'nein') {
+          const nextIdx = Number(li.dataset.index) + 1;
+          const next = items[nextIdx];
+          if (next) next.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+    });
+  });
+
+  // Reset
+  if (resetBtn) {
+    resetBtn.addEventListener('click', function () {
+      items.forEach(li => {
+        li.classList.remove('answered-yes', 'answered-no', 'mstart-skipped');
+        li.querySelector('input[type=hidden]').value = '';
+      });
+      clearCategoryUI();
+      items[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
 })();
 </script>
 
+<!-- ==================== Personen-Lookup (unverändert) ==================== -->
 <script>
-// Personenabgleich: sobald Name oder Geburtsdatum getippt wird,
-// /api/triage/lookup abfragen und Treffer im Hint-Container anzeigen.
 (function () {
   const nameEl = document.getElementById('triageName');
   const dobEl = document.getElementById('triageDob');
@@ -209,10 +269,8 @@
 
   function renderMatches(matches) {
     if (!matches.length) {
-      hint.style.display = 'none';
-      hint.innerHTML = '';
-      hint.classList.remove('visible');
-      return;
+      hint.style.display = 'none'; hint.innerHTML = '';
+      hint.classList.remove('visible'); return;
     }
     const intro = matches.length === 1
       ? '<strong>Bekannte Person — ein Treffer:</strong>'
@@ -225,37 +283,27 @@
             + 'data-name="' + escapeHtml(m.name || '') + '" '
             + 'data-dob="' + escapeHtml(m.geburtsdatum || '') + '">'
             + '<span class="lm-name">' + escapeHtml(m.name || '—') + '</span>'
-            + (m.geburtsdatum
-                ? ' <span class="muted">· geb. ' + escapeHtml(m.geburtsdatum) + '</span>'
-                : '')
-            + (m.stammnummer
-                ? ' <span class="badge">' + escapeHtml(m.stammnummer) + '</span>'
-                : '')
+            + (m.geburtsdatum ? ' <span class="muted">· geb. '
+                + escapeHtml(m.geburtsdatum) + '</span>' : '')
+            + (m.stammnummer ? ' <span class="badge">'
+                + escapeHtml(m.stammnummer) + '</span>' : '')
             + ' <span class="muted">· ' + total + ' Vorbehandlung'
             + (total === 1 ? '' : 'en') + '</span>'
             + '</button></li>';
     }
     html += '</ul>';
-    if (matches.length > 1) {
-      html += '<p class="muted" style="margin:6px 0 0;font-size:0.8rem;">'
-            + 'Tipp: Person anklicken, um Name + Geburtsdatum zu übernehmen.'
-            + '</p>';
-    }
     hint.innerHTML = html;
     hint.style.display = 'block';
     hint.classList.add('visible');
-
     hint.querySelectorAll('.lookup-match-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const n = btn.getAttribute('data-name') || '';
         const d = btn.getAttribute('data-dob') || '';
         if (n) nameEl.value = n;
         if (d) dobEl.value = d;
-        // Visuell markieren, dass übernommen wurde
         hint.querySelectorAll('.lookup-match-btn').forEach(
           b => b.classList.remove('selected'));
         btn.classList.add('selected');
-        // Direkt erneut prüfen, damit der Hint die Auswahl bestätigt.
         check();
       });
     });
@@ -265,10 +313,8 @@
     const name = nameEl.value.trim();
     const dob = dobEl.value.trim();
     if (!name && !dob) {
-      hint.style.display = 'none';
-      hint.innerHTML = '';
-      hint.classList.remove('visible');
-      return;
+      hint.style.display = 'none'; hint.innerHTML = '';
+      hint.classList.remove('visible'); return;
     }
     try {
       const url = new URL('/api/triage/lookup', window.location.origin);
@@ -278,14 +324,11 @@
       if (!res.ok) return;
       const data = await res.json();
       renderMatches(data.matches || []);
-    } catch (_) { /* offline */ }
+    } catch (_) {}
   }
 
   let timer = null;
-  function debounced() {
-    clearTimeout(timer);
-    timer = setTimeout(check, 250);
-  }
+  function debounced() { clearTimeout(timer); timer = setTimeout(check, 250); }
   nameEl.addEventListener('input', debounced);
   dobEl.addEventListener('change', check);
   check();
