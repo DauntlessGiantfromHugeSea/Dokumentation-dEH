@@ -313,14 +313,26 @@
     const body = (entry.name || 'Patient ohne Namen')
       + ' ist im Wartebereich angekommen';
     if ('Notification' in window && Notification.permission === 'granted') {
-      try {
-        new Notification(title, {
-          body: body,
-          icon: '/static/favicon.png',
-          tag: 'triage-' + entry.id,
-          requireInteraction: isRed,
-        });
-      } catch (_) { /* einige Browser werfen hier — egal */ }
+      const opts = {
+        body: body,
+        icon: '/static/favicon.png',
+        badge: '/static/favicon.png',
+        tag: 'triage-' + entry.id,
+        requireInteraction: isRed,
+        vibrate: isRed ? [200, 100, 200, 100, 200] : [200],
+      };
+      // Mobile Chrome erlaubt `new Notification()` nicht — dort MUSS die
+      // Notification über den Service-Worker laufen. Desktop-Fallback
+      // bleibt der direkte Konstruktor.
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready
+          .then(reg => reg.showNotification(title, opts))
+          .catch(() => {
+            try { new Notification(title, opts); } catch (_) {}
+          });
+      } else {
+        try { new Notification(title, opts); } catch (_) {}
+      }
     }
     playBeep(isRed);
   }

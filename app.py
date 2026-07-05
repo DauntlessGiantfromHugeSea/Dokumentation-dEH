@@ -283,7 +283,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
             row = models.get_user_by_username(models.get_db(), username)
-            if row and models.verify_password(row, password):
+            if row and models.verify_login_credential(row, password):
                 # Per-user opt-out: if 2FA is disabled for this user, skip
                 # both setup and challenge — log them in directly.
                 if not row["totp_required"]:
@@ -1055,21 +1055,18 @@ def create_app(test_config: dict | None = None) -> Flask:
                 key: (request.form.get("mstart_" + key) or "").strip()
                 for key, *_ in models.MSTART_QUESTIONS
             }
-            # Kategorien-Kaskade:
-            # 1) explizite Auswahl aus mSTaRT / Schnell (mstart_category)
-            # 2) sonst aus mSTaRT-Antworten berechnen (falls welche da sind)
-            # 3) sonst PRIOR-Indikatoren
+            # Kategorie kommt AUSSCHLIESSLICH aus dem mSTaRT-Baum:
+            # 1) vom Frontend berechnetes Ergebnis (mstart_category)
+            # 2) sonst serverseitig aus den Antworten ableiten
+            # 3) ohne beantwortete Fragen → SK3 (gehfähig angenommen)
+            # Zusatzindikatoren sind reine Doku, kein Kategorie-Einfluss.
             final_category = (request.form.get("mstart_category") or "").strip()
-            mstart_trigger = None
             if final_category not in models.VALID_TRIAGE_CATEGORIES:
-                if any(v == "ja" for v in mstart_answers.values()):
-                    final_category, mstart_trigger = models.classify_mstart(
+                if any(v in ("ja", "nein") for v in mstart_answers.values()):
+                    final_category, _trigger = models.classify_mstart(
                         mstart_answers)
                 else:
-                    final_category = None  # → indicators-basiert
-            quick_cat = (request.form.get("quick_category") or "").strip()
-            if not final_category and quick_cat in models.VALID_TRIAGE_CATEGORIES:
-                final_category = quick_cat
+                    final_category = "SK3"
             # mSTaRT-Antworten + Trigger in notes ergänzen (Audit)
             note_parts = [notes] if notes else []
             answered = [k for k, v in mstart_answers.items() if v in ("ja", "nein")]
@@ -2778,7 +2775,45 @@ def create_app(test_config: dict | None = None) -> Flask:
                 db.commit()
                 flash("Passwort geändert.", "success")
                 return redirect(url_for("index"))
-        return render_template("account_password.html")
+        db = models.get_db()
+        row = models.get_user_by_id(db, current_user.id)
+        has_login_pin = False
+        try:
+            has_login_pin = bool(row["login_pin_hash"])
+        except (IndexError, KeyError):
+            pass
+        return render_template("account_password.html",
+                               has_login_pin=has_login_pin)
+
+    @app.route("/account/login-pin", methods=["POST"])
+    @login_required
+    def account_login_pin():
+        """Anmelde-PIN setzen/entfernen — als Alternative zum Passwort
+        beim Login (z. B. Tablet mit Handschuhen). Bestätigung per
+        aktuellem Passwort."""
+        db = models.get_db()
+        current = request.form.get("current_password", "")
+        new_pin = (request.form.get("new_pin") or "").strip()
+        confirm = (request.form.get("confirm_pin") or "").strip()
+        action = (request.form.get("action") or "set").strip()
+        row = models.get_user_by_id(db, current_user.id)
+        if not models.verify_password(row, current):
+            flash("Aktuelles Passwort stimmt nicht.", "error")
+        elif action == "remove":
+            models.set_login_pin(db, current_user.id, None)
+            db.commit()
+            flash("Anmelde-PIN entfernt — Login nur noch mit Passwort.",
+                  "success")
+        elif len(new_pin) < 4 or len(new_pin) > 8 or not new_pin.isdigit():
+            flash("PIN muss 4–8 Ziffern haben (nur Zahlen).", "error")
+        elif new_pin != confirm:
+            flash("Die beiden PIN-Eingaben stimmen nicht überein.", "error")
+        else:
+            models.set_login_pin(db, current_user.id, new_pin)
+            db.commit()
+            flash("Anmelde-PIN gesetzt — beim Login einfach PIN statt "
+                  "Passwort eingeben.", "success")
+        return redirect(url_for("account_password"))
 
     # ----- Admin user management -----
 
@@ -2995,6 +3030,30 @@ def create_app(test_config: dict | None = None) -> Flask:
             models.set_user_password(db, user_id, new_password)
             db.commit()
             flash(f"Passwort für '{row['username']}' zurückgesetzt.", "success")
+        return redirect(_admin_settings_url("users"))
+
+    @app.route("/admin/users/<int:user_id>/login-pin", methods=["POST"])
+    @admin_required
+    def admin_user_login_pin(user_id: int):
+        """Anmelde-PIN eines Users setzen oder entfernen (Admin)."""
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        action = (request.form.get("action") or "set").strip()
+        if action == "remove":
+            models.set_login_pin(db, user_id, None)
+            db.commit()
+            flash(f"Anmelde-PIN für '{row['username']}' entfernt.", "success")
+        else:
+            new_pin = (request.form.get("new_pin") or "").strip()
+            if len(new_pin) < 4 or len(new_pin) > 8 or not new_pin.isdigit():
+                flash("PIN muss 4–8 Ziffern haben (nur Zahlen).", "error")
+            else:
+                models.set_login_pin(db, user_id, new_pin)
+                db.commit()
+                flash(f"Anmelde-PIN für '{row['username']}' gesetzt.",
+                      "success")
         return redirect(_admin_settings_url("users"))
 
     @app.route("/admin/users/<int:user_id>/toggle-admin", methods=["POST"])

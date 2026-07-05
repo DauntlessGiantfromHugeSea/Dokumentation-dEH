@@ -1,6 +1,6 @@
 // Version hochbumpen damit Mobile-Caches mit altem Stand invalidiert
 // werden (PWAs auf iOS/Android cachen sonst sehr aggressiv).
-const CACHE_NAME = 'camp-doku-shell-v3';
+const CACHE_NAME = 'camp-doku-shell-v4';
 const SHELL_ASSETS = [
   '/static/style.css',
   '/static/favicon.png',
@@ -44,5 +44,26 @@ self.addEventListener('fetch', event => {
       }
       return response;
     }).catch(() => caches.match(request))
+  );
+});
+
+// Klick auf eine Triage-Benachrichtigung: Wartebereich fokussieren
+// (bestehendes Tab wiederverwenden) oder neu öffnen.
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then(list => {
+        for (const client of list) {
+          if (client.url.includes('/triage') && 'focus' in client) {
+            return client.focus();
+          }
+        }
+        if (list.length && 'focus' in list[0]) {
+          list[0].navigate('/triage');
+          return list[0].focus();
+        }
+        return clients.openWindow('/triage');
+      })
   );
 });

@@ -45,7 +45,8 @@
   <div id="manualResult" style="margin-top:12px;"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/html5-qrcode.min.js"></script>
+{# Scanner-Lib lokal ausliefern — funktioniert auch ohne Internet im Camp #}
+<script src="{{ url_for('static', filename='vendor/html5-qrcode.min.js') }}"></script>
 <script>
 (function () {
   const status = document.getElementById('scanStatus');

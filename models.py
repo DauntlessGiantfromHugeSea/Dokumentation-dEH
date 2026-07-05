@@ -411,6 +411,9 @@ def init_db(db_path: Path) -> None:
             )
         if "admin_pin_hash" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN admin_pin_hash TEXT")
+        if "login_pin_hash" not in cols:
+            # Anmelde-PIN als Alternative zum Passwort (z. B. Tablet im Feld)
+            conn.execute("ALTER TABLE users ADD COLUMN login_pin_hash TEXT")
         for perm in ("perm_view_contact", "perm_export_pdf",
                      "perm_export_akte", "perm_edit_patient"):
             if perm not in cols:
@@ -872,6 +875,35 @@ def verify_password(user_row: sqlite3.Row, password: str) -> bool:
     return check_password_hash(user_row["password_hash"], password)
 
 
+def verify_login_credential(user_row: sqlite3.Row, credential: str) -> bool:
+    """Login-Prüfung: Passwort ODER (falls gesetzt) Anmelde-PIN.
+    Beides läuft über dasselbe Eingabefeld auf der Login-Seite."""
+    if not credential:
+        return False
+    if check_password_hash(user_row["password_hash"], credential):
+        return True
+    try:
+        pin_hash = user_row["login_pin_hash"]
+    except (IndexError, KeyError):
+        pin_hash = None
+    if pin_hash and check_password_hash(pin_hash, credential):
+        return True
+    return False
+
+
+def set_login_pin(conn: sqlite3.Connection, user_id: int,
+                  pin: Optional[str]) -> None:
+    """Anmelde-PIN setzen (gehasht) oder mit None entfernen."""
+    if pin is None:
+        conn.execute("UPDATE users SET login_pin_hash = NULL WHERE id = ?",
+                     (user_id,))
+    else:
+        conn.execute(
+            "UPDATE users SET login_pin_hash = ? WHERE id = ?",
+            (generate_password_hash(pin), user_id),
+        )
+
+
 USER_PERMISSIONS = (
     "perm_view_contact",   # Adresse / Krankenkasse / Telefon ohne PIN sehen
     "perm_export_pdf",     # Notfallprotokoll-PDF erzeugen
@@ -885,6 +917,7 @@ def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         f"SELECT id, username, full_name, is_admin, role, "
         f"       totp_secret, totp_confirmed, totp_required, "
+        f"       (login_pin_hash IS NOT NULL) AS has_login_pin, "
         f"       {cols}, created_at "
         f"FROM users ORDER BY username COLLATE NOCASE"
     ).fetchall()
@@ -2157,14 +2190,15 @@ def create_triage_entry(conn, *, name=None, geburtsdatum=None,
                          indicators=None, notes=None,
                          category=None,
                          created_by=None, event_id=None) -> int:
-    """Legt Triage-Eintrag an. Wenn `category` explizit übergeben wird
-    (z. B. aus dem mSTaRT-Baum oder der Schnell-Auswahl), gewinnt der;
-    sonst wird aus den PRIOR-Indikatoren klassifiziert. Bei TOT wird
-    der Eintrag direkt auf status='abgeschlossen' gesetzt, damit
-    Verstorbene nicht in der Warteliste erscheinen."""
+    """Legt Triage-Eintrag an. Kategorie kommt aus dem mSTaRT-Baum
+    (Aufrufer übergibt sie explizit); ohne gültige Kategorie wird SK3
+    angenommen. Die Zusatzindikatoren sind reine Dokumentation und
+    beeinflussen die Kategorie NICHT. Bei TOT wird der Eintrag direkt
+    auf status='abgeschlossen' gesetzt, damit Verstorbene nicht in der
+    Warteliste erscheinen."""
     indicators = indicators or []
     if category not in VALID_TRIAGE_CATEGORIES:
-        category = classify_prior(indicators)
+        category = "SK3"
     # Patienten matchen, falls Name + Geburtsdatum ausreichend sind
     patient_id = None
     if name and geburtsdatum:

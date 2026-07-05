@@ -255,7 +255,7 @@
           {# ===== Aktionen-Grid: 4 logische Gruppen ===== #}
           <div class="user-card-actions">
 
-            {# Gruppe 1: Passwort #}
+            {# Gruppe 1: Passwort + Anmelde-PIN #}
             <div class="user-action-group">
               <div class="user-action-label">Passwort</div>
               <form method="post"
@@ -264,6 +264,25 @@
                 <input name="new_password" type="text" required minlength="6"
                        placeholder="Neues Passwort">
                 <button class="btn small" type="submit">Setzen</button>
+              </form>
+              <div class="user-action-label" style="margin-top: 8px;">
+                Anmelde-PIN
+                {% if u.has_login_pin %}
+                  <span class="badge success">aktiv</span>
+                {% endif %}
+              </div>
+              <form method="post"
+                    action="{{ url_for('admin_user_login_pin', user_id=u.id) }}"
+                    class="user-action-form">
+                <input name="new_pin" type="text" inputmode="numeric"
+                       pattern="[0-9]{4,8}" minlength="4" maxlength="8"
+                       placeholder="PIN (4–8 Ziffern)">
+                <button class="btn small" type="submit" name="action" value="set">Setzen</button>
+                {% if u.has_login_pin %}
+                  <button class="btn small secondary" type="submit"
+                          name="action" value="remove" formnovalidate
+                          onclick="return confirm('Anmelde-PIN entfernen?');">✕</button>
+                {% endif %}
               </form>
             </div>
 

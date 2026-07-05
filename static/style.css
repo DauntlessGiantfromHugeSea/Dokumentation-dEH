@@ -2783,3 +2783,85 @@ table.data th {
 
 /* Badge für TOT-Kategorie in der Triage-Liste */
 .cat-badge-TOT { background: #1a1a1a; color: #fff; }
+
+/* ============================================================
+   ====== Feld-/Dropdown-Fixes: nichts wird abgeschnitten ======
+   ============================================================ */
+
+/* Grid-Kinder dürfen schrumpfen — verhindert abgeschnittene
+   Inputs/Selects in .row-Grids (Standard: min-width:auto blockiert das) */
+form.stack .row > *,
+.row > label.field,
+label.field { min-width: 0; }
+
+/* Inputs/Selects füllen ihre Zelle immer exakt aus */
+label.field input,
+label.field textarea,
+label.field select {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 42px;
+}
+label.field textarea { min-height: 78px; }
+
+/* Selects: eigener Chevron, Text läuft nie unter den Pfeil,
+   lange Optionen werden mit Ellipsis gekürzt statt abgeschnitten */
+label.field select,
+.menu-event-switch select,
+.mobile-menu-event-switch select,
+.user-action-form select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%237a6f6a' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 34px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Dropdown-Panels: nie über den Viewport hinaus; lange Einträge
+   umbrechen statt clippen */
+.nav-dropdown-panel,
+.user-menu-panel {
+  max-width: min(340px, calc(100vw - 24px));
+}
+.nav-dropdown-panel .menu-item,
+.user-menu-panel .menu-item {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Tabellen-Zellen mit Formularen: kein Overflow */
+table.data td form { max-width: 100%; }
+table.data td input,
+table.data td select { max-width: 100%; box-sizing: border-box; }
+
+/* User-Verwaltung: Aktions-Formulare umbrechen sauber */
+.user-action-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.user-action-form input,
+.user-action-form select {
+  flex: 1 1 130px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.user-action-form .btn { flex: 0 0 auto; }
+
+/* Datalist/Date-Inputs auf iOS: einheitliche Höhe */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  min-height: 42px;
+  -webkit-appearance: none;
+}
+
+/* Toolbar-Felder dürfen schrumpfen */
+.toolbar label.field { min-width: 0; }
+.toolbar select, .toolbar input { max-width: 100%; }
