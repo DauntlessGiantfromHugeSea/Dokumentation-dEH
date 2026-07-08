@@ -34,6 +34,7 @@ from flask_login import (
     logout_user,
 )
 
+import frodor_client
 import models
 from pdf_export import render_protocol_pdf
 from pdf_fill import render_pdf as render_central_pdf
@@ -171,6 +172,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     # Auto-init schema on startup so the first request never hits a missing table.
     with app.app_context():
         models.init_db(Path(app.config["DB_PATH"]))
+
+    # frodor-Anbindung (Camp-Anmeldungen): Templates blenden Picker/Buttons
+    # nur ein, wenn die FRODOR_* Umgebungsvariablen gesetzt sind.
+    @app.context_processor
+    def _inject_frodor():
+        return {"frodor_available": frodor_client.is_configured()}
 
     # Vor jedem Request: App-Anzeige-Zeitzone aus DB lesen und in g
     # ablegen, damit format_dt sie nutzen kann.
@@ -472,8 +479,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         comments = models.list_comments(db, protocol_id)
         siblings = models.list_patient_protocols(
             db, protocol["patient_id"], event_id=protocol["event_id"])
+        patient = models.get_patient(db, protocol["patient_id"])
         return render_template("protocol_detail.html", protocol=protocol,
                                comments=comments, siblings=siblings,
+                               frodor_upload=models.get_frodor_upload(
+                                   db, "decentral", protocol_id),
+                               frodor_linked=bool(
+                                   patient and patient["frodor_registration_uuid"]),
                                format_dt=models.format_dt)
 
     @app.route("/protocols/<int:protocol_id>/edit", methods=["GET", "POST"])
@@ -844,6 +856,203 @@ def create_app(test_config: dict | None = None) -> Flask:
             "previous_decentral": counts["decentral"],
             "previous_central": counts["central"],
         }
+
+    # ----- frodor (Camp-Anmeldungen) -----
+
+    @app.route("/api/frodor/registrations")
+    @login_required
+    def frodor_registrations():
+        """Live-Suche in den Camp-Anmeldungen (frodor). Liefert bewusst nur
+        Identifikationsdaten — medizinische Details wandern erst bei der
+        Übernahme (adopt) serverseitig in die Patientenakte."""
+        _require_event_create()
+        if not frodor_client.is_configured():
+            return {"available": False, "results": []}
+        query = request.args.get("q", "")
+        try:
+            hits = frodor_client.search_registrations(query)
+        except frodor_client.FrodorError as e:
+            return {"available": True, "error": str(e), "results": []}, 502
+        return {
+            "available": True,
+            "results": [
+                {
+                    "uuid": r["uuid"],
+                    "name": r["name"],
+                    "geburtsdatum": r["geburtsdatum"],
+                    "stamm": r["stamm"],
+                }
+                for r in hits
+            ],
+        }
+
+    @app.route("/api/frodor/adopt", methods=["POST"])
+    @login_required
+    def frodor_adopt():
+        """Anmeldung übernehmen: lokalen Patienten anlegen/verknüpfen
+        (inkl. Notfallkontakt/Allergien/Medikamenten, sofern lokal leer)."""
+        _require_event_create()
+        if not frodor_client.is_configured():
+            abort(404)
+        reg_uuid = (request.get_json(silent=True) or {}).get("uuid", "")
+        if not reg_uuid:
+            return {"error": "uuid fehlt"}, 400
+        try:
+            reg = frodor_client.get_registration(reg_uuid)
+        except frodor_client.FrodorError as e:
+            return {"error": str(e)}, 502
+        if not reg:
+            return {"error": "Anmeldung nicht gefunden."}, 404
+        db = models.get_db()
+        patient_id = models.adopt_frodor_registration(db, reg)
+        db.commit()
+        return {
+            "patient_id": patient_id,
+            "name": reg["name"],
+            "vorname": reg["first_name"],
+            "nachname": reg["last_name"],
+            "geburtsdatum": reg["geburtsdatum"],
+            "stammnummer": reg["stamm"],
+        }
+
+    def _push_protocol_to_frodor(source_type: str, source_id: int) -> tuple[bool, str]:
+        """PDF rendern und an die verknüpfte frodor-Anmeldung hängen.
+
+        Zwei Schritte (Datei-Eintrag, dann Storage-Upload) mit lokalem
+        Status je Schritt — ein abgebrochener Upload wird beim nächsten
+        Versuch am gespeicherten Pfad fortgesetzt statt doppelt angelegt.
+        """
+        db = models.get_db()
+
+        if source_type == "decentral":
+            protocol = models.get_protocol(db, source_id)
+            if not protocol:
+                abort(404)
+            _require_event_view(protocol["event_id"])
+            patient_id = protocol["patient_id"]
+            label = protocol["laufende_nr"] or f"#dEH{source_id}"
+            display_name = f"Einsatzbericht {label} (dezentral).pdf"
+            pdf_bytes = render_protocol_pdf(
+                protocol, models.list_comments(db, source_id))
+        else:
+            rec = models.get_central_protocol(db, source_id)
+            if not rec:
+                abort(404)
+            _require_event_view(rec.get("event_id"))
+            patient_id = rec.get("patient_id")
+            label = rec.get("laufende_nr") or f"ZEH-{source_id}"
+            display_name = f"Protokoll {label} (zentral).pdf"
+            # Archiv-Kopie für frodor: immer vollständig (inkl. Kontakt-/
+            # Med-Daten) — der Zugriff wird dort über frodor-Rollen geregelt.
+            medical_info = None
+            if patient_id:
+                patient = models.get_patient(db, patient_id)
+                if patient:
+                    medical_info = {
+                        "has_allergies": patient["has_allergies"],
+                        "allergies_text": patient["allergies_text"],
+                        "has_medications": patient["has_medications"],
+                        "medications_text": patient["medications_text"],
+                        "emergency_contact_name": patient["emergency_contact_name"],
+                        "emergency_contact_phone": patient["emergency_contact_phone"],
+                        "emergency_contact_relation":
+                            patient["emergency_contact_relation"],
+                    }
+            try:
+                pdf_bytes = render_central_pdf(
+                    rec["data"],
+                    exporter_label=(current_user.full_name
+                                    or current_user.username),
+                    medical_info=medical_info,
+                    protocol_uid=f"ZEH-{source_id:06d}",
+                )
+            except FileNotFoundError as e:
+                return False, f"PDF konnte nicht erstellt werden: {e}"
+
+        if not patient_id:
+            return False, "Bericht hat keinen zugeordneten Patienten."
+        patient = models.get_patient(db, patient_id)
+        reg_uuid = patient["frodor_registration_uuid"] if patient else None
+        if not reg_uuid:
+            return False, ("Patient ist mit keiner Camp-Anmeldung verknüpft. "
+                           "Beim nächsten Bericht die Person über die "
+                           "Anmeldungs-Suche auswählen.")
+
+        upload = models.get_frodor_upload(db, source_type, source_id)
+        resume_path = (upload["path"]
+                       if upload and upload["status"] == "row_created"
+                       else None)
+        if upload is None or upload["registration_uuid"] != reg_uuid:
+            upload = models.start_frodor_upload(db, source_type, source_id,
+                                                reg_uuid, current_user.id)
+            db.commit()
+            resume_path = None
+
+        try:
+            if resume_path:
+                path = resume_path
+            else:
+                path = frodor_client.build_protocol_path(reg_uuid)
+                frodor_client.create_file_entry(reg_uuid, path, display_name)
+                models.set_frodor_upload_state(db, upload["id"], "row_created",
+                                               path=path)
+                db.commit()
+            frodor_client.upload_file_content(path, pdf_bytes)
+            models.set_frodor_upload_state(db, upload["id"], "uploaded",
+                                           path=path, error=None)
+            db.commit()
+            return True, "Protokoll wurde an frodor übertragen."
+        except frodor_client.FrodorError as e:
+            # 'row_created' behalten, wenn nur der Storage-Schritt scheiterte
+            failed_status = ("row_created"
+                             if models.get_frodor_upload(
+                                 db, source_type, source_id)["status"] == "row_created"
+                             else "failed")
+            models.set_frodor_upload_state(db, upload["id"], failed_status,
+                                           error=str(e))
+            db.commit()
+            return False, f"Übertragung fehlgeschlagen: {e}"
+
+    @app.route("/protocols/<int:protocol_id>/frodor", methods=["POST"])
+    @login_required
+    def protocol_frodor_push(protocol_id: int):
+        if not frodor_client.is_configured():
+            abort(404)
+        ok, message = _push_protocol_to_frodor("decentral", protocol_id)
+        flash(message, "success" if ok else "error")
+        return redirect(request.form.get("next")
+                        or url_for("protocol_detail", protocol_id=protocol_id))
+
+    @app.route("/central/<int:pid>/frodor", methods=["POST"])
+    @login_required
+    def central_frodor_push(pid: int):
+        if not frodor_client.is_configured():
+            abort(404)
+        if not current_user.can_export_pdf:
+            abort(403)
+        ok, message = _push_protocol_to_frodor("central", pid)
+        flash(message, "success" if ok else "error")
+        return redirect(request.form.get("next")
+                        or url_for("central_detail", pid=pid))
+
+    @app.route("/frodor/uploads")
+    @login_required
+    def frodor_uploads_overview():
+        """Status-Seite aller Übertragungen inkl. Wiederholen-Buttons."""
+        if not frodor_client.is_configured():
+            abort(404)
+        _require_event_view()
+        uploads = models.list_frodor_uploads(models.get_db())
+        connection = None
+        connection_error = None
+        try:
+            connection = frodor_client.check_connection()
+        except frodor_client.FrodorError as e:
+            connection_error = str(e)
+        return render_template("frodor_uploads.html", uploads=uploads,
+                               connection=connection,
+                               connection_error=connection_error,
+                               format_dt=models.format_dt)
 
     # ----- Export -----
 
@@ -1425,6 +1634,8 @@ def create_app(test_config: dict | None = None) -> Flask:
                 ) if r["id"] != pid
             ]
         triage = models.get_triage_for_protocol(db, pid)
+        patient = (models.get_patient(db, rec["patient_id"])
+                   if rec.get("patient_id") else None)
         return render_template(
             "central_detail.html",
             protocol=rec,
@@ -1433,6 +1644,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             central_siblings=central_siblings,
             triage=triage,
             indicator_lookup=models.PRIOR_INDICATOR_BY_KEY,
+            frodor_upload=models.get_frodor_upload(db, "central", pid),
+            frodor_linked=bool(patient and patient["frodor_registration_uuid"]),
             format_dt=models.format_dt,
         )
 

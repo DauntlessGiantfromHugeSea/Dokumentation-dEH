@@ -24,3 +24,7 @@ data/
 
 # Env
 .env
+deploy.env
+
+# Backups (verschlüsselt, aber gehören nicht ins Repo)
+backups/

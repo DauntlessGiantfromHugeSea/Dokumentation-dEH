@@ -73,6 +73,9 @@
               {% if can_create_in_current_event %}
                 <a class="menu-item" href="{{ url_for('export_form') }}">Export</a>
               {% endif %}
+              {% if frodor_available %}
+                <a class="menu-item" href="{{ url_for('frodor_uploads_overview') }}">frodor-Übertragungen</a>
+              {% endif %}
             </div>
           </div>
         {% endif %}

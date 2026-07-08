@@ -1,0 +1,29 @@
+# Deployment auf dem VPS — bewusst OHNE Traefik-Labels und nur an
+# 127.0.0.1 gebunden: Die App ist aus dem Internet nicht erreichbar,
+# der Zugriff läuft ausschließlich über Tailscale
+# (tailscale serve → https://<host>.<tailnet>.ts.net, siehe README).
+#
+#   docker compose -f deploy.compose.yaml up -d --build
+#   docker compose -f deploy.compose.yaml exec app flask create-user admin --full-name "Camp-Leitung"
+
+services:
+  app:
+    build: .
+    image: camp-doku:latest
+    container_name: camp-doku
+    restart: unless-stopped
+    ports:
+      # Nur localhost! Nicht "8010:8000" — Docker umgeht UFW-Regeln,
+      # das explizite 127.0.0.1-Binding ist die verlässliche Absicherung.
+      - "127.0.0.1:8010:8000"
+    volumes:
+      - ./data:/data
+    env_file:
+      - deploy.env
+    environment:
+      - DB_PATH=/data/app.db
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/login', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3

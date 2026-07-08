@@ -10,23 +10,30 @@
   {% endif %}
 </p>
 
+{% if frodor_available and not result %}
+<div class="card" style="margin-bottom: 1rem;">
+  <div id="frodorPicker"></div>
+</div>
+{% endif %}
+
 {# ------- Suchformular ------- #}
-<form method="post" action="{{ url_for('central_new') }}" class="card stack">
+<form method="post" action="{{ url_for('central_new') }}" class="card stack"
+      id="centralSearchForm">
   <div class="card-header">Wer wird behandelt?</div>
   <div class="row three">
     <label class="field">
       Vorname
-      <input name="vorname" value="{{ prefill.vorname }}"
+      <input name="vorname" id="centralVorname" value="{{ prefill.vorname }}"
              autocomplete="off" {% if not result %}autofocus{% endif %}>
     </label>
     <label class="field">
       Nachname
-      <input name="nachname" value="{{ prefill.nachname }}"
+      <input name="nachname" id="centralNachname" value="{{ prefill.nachname }}"
              autocomplete="off">
     </label>
     <label class="field">
       Geburtsdatum
-      <input name="geburtsdatum" type="date"
+      <input name="geburtsdatum" id="centralGeburtsdatum" type="date"
              value="{{ prefill.geburtsdatum }}">
     </label>
   </div>
@@ -185,5 +192,21 @@
       neue Person sicher.
     </p>
   </div>
+{% endif %}
+
+{% if frodor_available and not result %}
+<script src="{{ url_for('static', filename='frodor_picker.js') }}"></script>
+<script>
+initFrodorPicker(document.getElementById('frodorPicker'), {
+  onSelect: function (p) {
+    // Nach der Übernahme existiert die Person lokal → Suche direkt
+    // ausführen, landet als eindeutiger Treffer im Bestätigungs-Schritt.
+    document.getElementById('centralVorname').value = p.vorname;
+    document.getElementById('centralNachname').value = p.nachname;
+    document.getElementById('centralGeburtsdatum').value = p.geburtsdatum;
+    document.getElementById('centralSearchForm').submit();
+  }
+});
+</script>
 {% endif %}
 {% endblock %}

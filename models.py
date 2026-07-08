@@ -356,6 +356,24 @@ CREATE TABLE IF NOT EXISTS app_settings (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Übertragungen von Protokoll-PDFs an frodor (Camp-Anmeldungs-Plattform).
+-- Zwei-Schritt-Upload: erst Datei-Eintrag in frodor ('row_created'), dann
+-- PDF in den Storage ('uploaded'). Bleibt ein Upload hängen (Camp-WLAN),
+-- kann er über den gespeicherten path idempotent wiederholt werden.
+CREATE TABLE IF NOT EXISTS frodor_uploads (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type       TEXT NOT NULL,       -- 'decentral' | 'central'
+    source_id         INTEGER NOT NULL,    -- protocols.id oder central_protocols.id
+    registration_uuid TEXT NOT NULL,
+    path              TEXT,
+    status            TEXT NOT NULL DEFAULT 'pending',  -- pending|row_created|uploaded|failed
+    error             TEXT,
+    uploaded_by       INTEGER REFERENCES users(id),
+    created_at        TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    UNIQUE(source_type, source_id)
+);
 """
 
 
@@ -435,6 +453,8 @@ def init_db(db_path: Path) -> None:
             ("has_medications", "INTEGER"),
             ("medications_text", "TEXT"),
             ("extras_notes", "TEXT"),
+            # Verknüpfung zur frodor-Anmeldung (registrations.uuid)
+            ("frodor_registration_uuid", "TEXT"),
         ]:
             if col not in pat_cols:
                 conn.execute(f"ALTER TABLE patients ADD COLUMN {col} {decl}")
@@ -1012,6 +1032,109 @@ def upsert_patient(conn: sqlite3.Connection, name: str, geburtsdatum: str,
 
 def get_patient(conn: sqlite3.Connection, patient_id: int) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM patients WHERE id = ?", (patient_id,)).fetchone()
+
+
+# ---------------------------------------------------------------------------
+# frodor-Anbindung (Camp-Anmeldungen)
+# ---------------------------------------------------------------------------
+
+def adopt_frodor_registration(conn: sqlite3.Connection, reg: dict) -> int:
+    """Lokalen Patienten aus einer frodor-Registrierung anlegen/verknüpfen.
+
+    Upsert über (name, geburtsdatum) wie überall sonst. Die frodor-UUID wird
+    immer gesetzt; Stammnummer/Notfallkontakt/Allergien/Medikamente werden
+    nur übernommen, wenn lokal noch leer (lokale Eingaben gewinnen).
+    """
+    patient_id = upsert_patient(conn, reg["name"], reg["geburtsdatum"],
+                                reg.get("stamm") or None)
+    row = get_patient(conn, patient_id)
+
+    updates: dict = {"frodor_registration_uuid": reg["uuid"]}
+
+    contact = (reg.get("contacts") or [{}])[0]
+    if not row["emergency_contact_name"] and contact.get("name"):
+        updates["emergency_contact_name"] = contact["name"]
+        phone = contact.get("mobile") or contact.get("phone") or None
+        if not row["emergency_contact_phone"] and phone:
+            updates["emergency_contact_phone"] = phone
+        if not row["emergency_contact_relation"] and contact.get("relation"):
+            updates["emergency_contact_relation"] = contact["relation"]
+
+    if row["has_allergies"] is None:
+        allergies = (reg.get("allergies") or "").strip()
+        updates["has_allergies"] = 1 if allergies else 0
+        if allergies and not row["allergies_text"]:
+            updates["allergies_text"] = allergies
+
+    if row["has_medications"] is None and reg.get("has_medications") is not None:
+        updates["has_medications"] = 1 if reg["has_medications"] else 0
+        medications = (reg.get("medications") or "").strip()
+        if medications and not row["medications_text"]:
+            updates["medications_text"] = medications
+
+    if not row["extras_notes"] and (reg.get("restrictions") or "").strip():
+        updates["extras_notes"] = f"Einschränkungen (Anmeldung): {reg['restrictions'].strip()}"
+
+    set_clause = ", ".join(f"{col} = ?" for col in updates)
+    conn.execute(f"UPDATE patients SET {set_clause} WHERE id = ?",
+                 [*updates.values(), patient_id])
+    return patient_id
+
+
+def get_frodor_upload(conn: sqlite3.Connection, source_type: str,
+                      source_id: int) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM frodor_uploads WHERE source_type = ? AND source_id = ?",
+        (source_type, source_id),
+    ).fetchone()
+
+
+def start_frodor_upload(conn: sqlite3.Connection, source_type: str,
+                        source_id: int, registration_uuid: str,
+                        uploaded_by: Optional[int]) -> sqlite3.Row:
+    """Upload-Zeile anlegen bzw. für einen erneuten Versuch übernehmen.
+
+    Ein bereits erfolgreicher Upload ('uploaded') wird nicht neu gestartet —
+    der Aufrufer entscheidet, ob er mit neuem Pfad erneut senden will.
+    """
+    conn.execute(
+        """
+        INSERT INTO frodor_uploads (source_type, source_id, registration_uuid, uploaded_by)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(source_type, source_id) DO UPDATE SET
+            registration_uuid = excluded.registration_uuid,
+            uploaded_by = excluded.uploaded_by,
+            updated_at = datetime('now', 'localtime')
+        """,
+        (source_type, source_id, registration_uuid, uploaded_by),
+    )
+    return get_frodor_upload(conn, source_type, source_id)
+
+
+def set_frodor_upload_state(conn: sqlite3.Connection, upload_id: int,
+                            status: str, *, path: Optional[str] = None,
+                            error: Optional[str] = None) -> None:
+    conn.execute(
+        """
+        UPDATE frodor_uploads
+        SET status = ?, path = COALESCE(?, path), error = ?,
+            updated_at = datetime('now', 'localtime')
+        WHERE id = ?
+        """,
+        (status, path, error, upload_id),
+    )
+
+
+def list_frodor_uploads(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Alle Übertragungen, neueste zuerst — für die Status-Seite."""
+    return conn.execute(
+        """
+        SELECT fu.*, p.name AS patient_name
+        FROM frodor_uploads fu
+        LEFT JOIN patients p ON p.frodor_registration_uuid = fu.registration_uuid
+        ORDER BY fu.updated_at DESC
+        """,
+    ).fetchall()
 
 
 def list_patients(conn: sqlite3.Connection,

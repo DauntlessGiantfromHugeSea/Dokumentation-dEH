@@ -41,30 +41,112 @@ Aufrufen: http://localhost:8000/
 | `DB_PATH`     | `data/app.db`    | Pfad zur SQLite-Datei                         |
 | `PORT`        | `8000`           | HTTP-Port                                     |
 
-## Online-Deployment
+### frodor-Anbindung (optional)
 
-### Docker
+Verbindet die App mit den Camp-Anmeldungen der frodor-Plattform: Personen
+lassen sich beim Anlegen eines Berichts aus den Anmeldungen suchen
+(Notfallkontakt/Allergien/Medikamente werden übernommen), und fertige
+Protokolle können als PDF an die Anmeldung übertragen werden
+(Detailseite → „An frodor übertragen", Status unter `/frodor/uploads`).
+Ohne diese Variablen ist die Anbindung komplett deaktiviert.
+
+| Variable                   | Default       | Beschreibung                                |
+| -------------------------- | ------------- | ------------------------------------------- |
+| `FRODOR_SUPABASE_URL`      | —             | Supabase-URL, z. B. `https://<ref>.supabase.co` |
+| `FRODOR_SUPABASE_ANON_KEY` | —             | anon/publishable Key des Projekts           |
+| `FRODOR_EMAIL`             | —             | Service-Account (Rolle „Sanitätsdokumentation") |
+| `FRODOR_PASSWORD`          | —             | Passwort des Service-Accounts               |
+| `FRODOR_EVENT_SLUG`        | `dc-ost-2026` | Event, dessen Anmeldungen genutzt werden    |
+
+## Deployment (VPS + Tailscale)
+
+Empfohlenes Setup: Docker-Container auf dem eigenen VPS, **nicht öffentlich
+erreichbar** — Zugriff ausschließlich über Tailscale (WireGuard-VPN). Nur
+Geräte, die explizit ins Tailnet aufgenommen wurden, erreichen die App.
+Ein Fehler in der App ist damit aus dem Internet nicht ausnutzbar, weil
+niemand aus dem Internet den Port erreicht.
+
+### 1. Container starten
 
 ```bash
-docker build -t camp-doku .
-docker run -d \
-  -p 8000:8000 \
-  -v /pfad/zu/persistentem/volume:/data \
-  -e SECRET_KEY="$(openssl rand -hex 32)" \
-  --name camp-doku camp-doku
+git clone <repo> /opt/camp-doku && cd /opt/camp-doku
+cp deploy.env.example deploy.env   # Werte setzen (SECRET_KEY, FRODOR_*, Backup-Key)
+docker compose -f deploy.compose.yaml up -d --build
 
-# Ersten User im laufenden Container anlegen
-docker exec -it camp-doku flask create-user admin --full-name "Camp-Leitung"
+# Ersten User anlegen (wird automatisch Admin)
+docker compose -f deploy.compose.yaml exec app \
+  flask create-user admin --full-name "Camp-Leitung"
 ```
 
-Die SQLite-Datei liegt unter `/data/app.db` und sollte über ein
-persistentes Volume gesichert werden.
+Der Container bindet bewusst nur an `127.0.0.1:8010` (kein Traefik-Label,
+kein öffentlicher Port). Die SQLite-DB liegt als Bind-Mount unter `./data/`.
 
-### Hosting-Empfehlungen
+### 2. Tailscale davor
 
-- **Fly.io** oder **Railway**: Dockerfile direkt deployen, Volume für `/data`.
-- **Eigener VPS**: Container mit nginx als TLS-Reverse-Proxy davorschalten.
-- **Backup**: Regelmäßig `app.db` kopieren (z. B. `cron` + `sqlite3 .backup`).
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+
+# HTTPS im Tailnet (echtes Zertifikat unter https://<host>.<tailnet>.ts.net;
+# HTTPS wird für PWA/Service-Worker benötigt). HTTPS-Zertifikate müssen im
+# Admin-Panel einmalig aktiviert sein (DNS → HTTPS Certificates → Enable).
+sudo tailscale serve --bg 8010
+```
+
+Auf jedem erlaubten Gerät (Sani-Tablets): Tailscale-App installieren und
+ins selbe Tailnet einloggen. Für geteilte Camp-Geräte besser pro Gerät
+einen Auth-Key mit Tag ausstellen (Admin-Panel → Settings → Keys),
+z. B. `tag:sani` — dann lässt sich der Zugriff per ACL einschränken:
+
+```jsonc
+// Tailscale Admin → Access Controls
+{
+  "tagOwners": { "tag:sani": ["autogroup:admin"] },
+  "acls": [
+    { "action": "accept", "src": ["tag:sani", "autogroup:admin"],
+      "dst": ["<vps-hostname>:443"] }
+  ]
+}
+```
+
+Gerät verloren/ausgemustert → im Tailscale-Admin entfernen, Zugriff ist
+sofort weg (zusätzlich App-Login + TOTP als zweite Schicht).
+
+### 3. Backups (verschlüsselt, off-server entschlüsselbar)
+
+Einmalig auf dem **eigenen Laptop** (nicht auf dem Server):
+
+```bash
+age-keygen -o camp-doku-backup-key.txt   # sicher verwahren!
+# den "public key: age1..." in deploy.env als BACKUP_AGE_RECIPIENT eintragen
+```
+
+Auf dem VPS (`apt install sqlite3 age`), Cron stündlich:
+
+```
+0 * * * * /opt/camp-doku/scripts/backup.sh >> /var/log/camp-doku-backup.log 2>&1
+```
+
+Der Server kann Backups nur **erzeugen**, nicht entschlüsseln (nur der
+private Schlüssel auf dem Laptop kann das). Wiederherstellen:
+
+```bash
+age -d -i camp-doku-backup-key.txt -o app.db backups/app-<zeitstempel>.db.age
+```
+
+Optional `BACKUP_RSYNC_TARGET` in `deploy.env` setzen, um die Backups
+zusätzlich auf einen zweiten Host zu spiegeln.
+
+### 4. Nach dem Camp (Einmal-Nutzung)
+
+1. Letztes Backup ziehen und lokal verifizieren (`age -d … && sqlite3 app.db "PRAGMA integrity_check;"`).
+2. Container stoppen: `docker compose -f deploy.compose.yaml down`.
+3. `data/` und `backups/` vom Server löschen; verschlüsseltes Archiv gemäß
+   Löschkonzept/Aufbewahrungsfrist beim Verantwortlichen verwahren.
+4. frodor-Service-Account entziehen: Rückbau-Block in
+   `frodor-supabase/scripts/setup_sanitaetsdokumentation.sql` ausführen
+   und den Auth-User im Supabase-Dashboard löschen.
+5. Tailnet aufräumen (Camp-Geräte + Auth-Keys entfernen).
 
 ## Weitere Benutzer anlegen
 

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}frodor-Übertragungen{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>frodor-Übertragungen</h1>
+    <p class="tagline">Protokoll-PDFs, die an die Camp-Anmeldung übertragen wurden.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom: 1rem;">
+  {% if connection %}
+    <p style="margin: 0;">
+      ✓ Verbunden mit <strong>{{ connection.event_slug }}</strong> —
+      {{ connection.registration_count }} Anmeldungen sichtbar.
+    </p>
+  {% else %}
+    <p style="margin: 0;" class="error-text">
+      ⚠ frodor nicht erreichbar: {{ connection_error }}
+    </p>
+  {% endif %}
+</div>
+
+{% if uploads %}
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Bericht</th>
+        <th>Person</th>
+        <th>Status</th>
+        <th>Zuletzt</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in uploads %}
+      <tr>
+        <td>
+          {% if u.source_type == 'decentral' %}
+            <a href="{{ url_for('protocol_detail', protocol_id=u.source_id) }}">Dezentral #{{ u.source_id }}</a>
+          {% else %}
+            <a href="{{ url_for('central_detail', pid=u.source_id) }}">Zentral #{{ u.source_id }}</a>
+          {% endif %}
+        </td>
+        <td>{{ u.patient_name or '—' }}</td>
+        <td>
+          {% if u.status == 'uploaded' %}
+            <span class="badge success">übertragen</span>
+          {% elif u.status == 'row_created' %}
+            <span class="badge warn">unvollständig</span>
+          {% elif u.status == 'failed' %}
+            <span class="badge danger">fehlgeschlagen</span>
+          {% else %}
+            <span class="badge">{{ u.status }}</span>
+          {% endif %}
+          {% if u.error %}
+            <div class="muted" style="font-size: 0.8rem;">{{ u.error }}</div>
+          {% endif %}
+        </td>
+        <td>{{ format_dt(u.updated_at) }}</td>
+        <td>
+          {% if u.status != 'uploaded' %}
+            <form method="post" class="inline-form"
+                  action="{% if u.source_type == 'decentral' %}{{ url_for('protocol_frodor_push', protocol_id=u.source_id) }}{% else %}{{ url_for('central_frodor_push', pid=u.source_id) }}{% endif %}">
+              <input type="hidden" name="next"
+                     value="{{ url_for('frodor_uploads_overview') }}">
+              <button class="btn small" type="submit">Wiederholen</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <p class="muted" style="margin: 0;">
+    Noch keine Übertragungen. Auf der Detailseite eines Berichts
+    „An frodor übertragen" wählen — die Person muss dafür über die
+    Anmeldungs-Suche verknüpft sein.
+  </p>
+</div>
+{% endif %}
+{% endblock %}

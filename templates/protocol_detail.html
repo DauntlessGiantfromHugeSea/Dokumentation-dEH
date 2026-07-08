@@ -12,6 +12,34 @@
   <div class="btn-row">
     <a class="btn secondary small" href="{{ url_for('protocol_edit', protocol_id=protocol.id) }}">Bearbeiten</a>
     <a class="btn small" href="{{ url_for('protocol_pdf', protocol_id=protocol.id) }}">PDF</a>
+    {% if frodor_available %}
+      {% if frodor_linked %}
+        <form method="post" class="inline-form"
+              action="{{ url_for('protocol_frodor_push', protocol_id=protocol.id) }}">
+          <button class="btn secondary small" type="submit">
+            {% if frodor_upload and frodor_upload.status == 'uploaded' %}
+              Erneut an frodor senden
+            {% else %}
+              An frodor übertragen
+            {% endif %}
+          </button>
+        </form>
+        {% if frodor_upload %}
+          <span class="muted" style="font-size: 0.85rem;">
+            {% if frodor_upload.status == 'uploaded' %}
+              ✓ übertragen {{ format_dt(frodor_upload.updated_at) }}
+            {% elif frodor_upload.status in ('failed', 'row_created') %}
+              ⚠ Übertragung offen ({{ frodor_upload.error or 'unvollständig' }})
+            {% endif %}
+          </span>
+        {% endif %}
+      {% else %}
+        <span class="muted" style="font-size: 0.85rem;"
+              title="Person über die Anmeldungs-Suche wählen, um Protokolle an frodor zu übertragen.">
+          keine Camp-Anmeldung verknüpft
+        </span>
+      {% endif %}
+    {% endif %}
     <details class="inline-action">
       <summary class="btn small danger">Löschen</summary>
       <form method="post"

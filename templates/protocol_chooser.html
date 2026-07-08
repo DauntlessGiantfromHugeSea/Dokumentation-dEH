@@ -4,8 +4,14 @@
 <h1>Neuen Bericht anlegen</h1>
 <p class="tagline">Wenn du unsicher bist: zentral bei Behandlung, dezentral bei kurzer Hilfeleistung.</p>
 
+{% if frodor_available %}
+<div class="card" style="margin-bottom: 1rem;">
+  <div id="frodorPicker"></div>
+</div>
+{% endif %}
+
 <div class="chooser-grid">
-  <a class="chooser-card"
+  <a class="chooser-card" id="chooserDezentral"
      href="{{ url_for('protocol_new', name=prefill.name,
                       geburtsdatum=prefill.geburtsdatum,
                       stammnummer=prefill.stammnummer) }}">
@@ -19,7 +25,7 @@
     <div class="chooser-cta">Wählen →</div>
   </a>
 
-  <a class="chooser-card central"
+  <a class="chooser-card central" id="chooserZentral"
      href="{{ url_for('central_new',
                       vorname=prefill.name.split(' ')[0] if prefill.name else '',
                       nachname=prefill.name.rsplit(' ', 1)[-1] if prefill.name and ' ' in prefill.name else '',
@@ -38,4 +44,28 @@
 <div class="hint-line">
   Vorbehandlungen werden automatisch erkannt, sobald Name und Geburtsdatum passen.
 </div>
+
+{% if frodor_available %}
+<script src="{{ url_for('static', filename='frodor_picker.js') }}"></script>
+<script>
+initFrodorPicker(document.getElementById('frodorPicker'), {
+  onSelect: function (p) {
+    // Beide Karten-Links mit den übernommenen Daten versorgen
+    var dez = document.getElementById('chooserDezentral');
+    var url = new URL(dez.href, window.location.origin);
+    url.searchParams.set('name', p.name);
+    url.searchParams.set('geburtsdatum', p.geburtsdatum);
+    url.searchParams.set('stammnummer', p.stammnummer || '');
+    dez.href = url.toString();
+
+    var zen = document.getElementById('chooserZentral');
+    var zurl = new URL(zen.href, window.location.origin);
+    zurl.searchParams.set('vorname', p.vorname);
+    zurl.searchParams.set('nachname', p.nachname);
+    zurl.searchParams.set('geburtsdatum', p.geburtsdatum);
+    zen.href = zurl.toString();
+  }
+});
+</script>
+{% endif %}
 {% endblock %}

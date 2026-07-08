@@ -41,6 +41,10 @@
 
     <div id="lookupHint" class="lookup-hint"></div>
 
+    {% if frodor_available and mode == 'new' %}
+    <div id="frodorPicker"></div>
+    {% endif %}
+
     <div class="row cols-2-1">
       <label class="field">
         Name <span class="req">*</span>
@@ -243,6 +247,24 @@
   if (dobEl) dobEl.addEventListener('change', refresh);
   window.addEventListener('focus', refresh);
 })();
+</script>
+{% endif %}
+
+{% if frodor_available and mode == 'new' %}
+<script src="{{ url_for('static', filename='frodor_picker.js') }}"></script>
+<script>
+initFrodorPicker(document.getElementById('frodorPicker'), {
+  onSelect: function (p) {
+    document.getElementById('patientName').value = p.name;
+    document.getElementById('patientGeburtsdatum').value = p.geburtsdatum;
+    if (p.stammnummer) {
+      document.getElementById('patientStammnummer').value = p.stammnummer;
+    }
+    // Vorbehandlungs-Lookup anstoßen (Patient existiert nach adopt lokal)
+    document.getElementById('patientGeburtsdatum')
+      .dispatchEvent(new Event('change'));
+  }
+});
 </script>
 {% endif %}
 {% endblock %}
