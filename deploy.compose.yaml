@@ -3,13 +3,18 @@
 # der Zugriff läuft ausschließlich über Tailscale
 # (tailscale serve → https://<host>.<tailnet>.ts.net, siehe README).
 #
-#   docker compose -f deploy.compose.yaml up -d --build
+#   docker compose -f deploy.compose.yaml up -d
 #   docker compose -f deploy.compose.yaml exec app flask create-user admin --full-name "Camp-Leitung"
+#
+# Das Image kommt aus ghcr (gebaut von .github/workflows/deploy.yaml bei
+# jedem Push auf main). Bei privatem Repo vorher einmal auf dem VPS:
+#   docker login ghcr.io -u <github-user>   (PAT mit read:packages)
+# Update einspielen: docker compose -f deploy.compose.yaml pull && up -d
+# Alternativ lokal bauen: image-Zeile durch "build: ." ersetzen.
 
 services:
   app:
-    build: .
-    image: camp-doku:latest
+    image: ghcr.io/dauntlessgiantfromhugesea/camp-doku:latest
     container_name: camp-doku
     restart: unless-stopped
     ports:
@@ -22,6 +27,10 @@ services:
       - deploy.env
     environment:
       - DB_PATH=/data/app.db
+    labels:
+      # Kein Auto-Update durch Watchtower — während des Camps sollen
+      # Updates bewusst eingespielt werden (pull && up -d).
+      - com.centurylinklabs.watchtower.enable=false
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/login', timeout=5)"]
       interval: 60s

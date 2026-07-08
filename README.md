@@ -68,14 +68,29 @@ niemand aus dem Internet den Port erreicht.
 
 ### 1. Container starten
 
+Das Image wird bei jedem Push auf `main` automatisch nach ghcr gebaut
+(`.github/workflows/deploy.yaml`) und liegt unter
+`ghcr.io/dauntlessgiantfromhugesea/camp-doku`.
+
 ```bash
 git clone <repo> /opt/camp-doku && cd /opt/camp-doku
 cp deploy.env.example deploy.env   # Werte setzen (SECRET_KEY, FRODOR_*, Backup-Key)
-docker compose -f deploy.compose.yaml up -d --build
+
+# Bei privatem Repo einmalig: PAT mit read:packages
+docker login ghcr.io -u <github-user>
+
+docker compose -f deploy.compose.yaml up -d
 
 # Ersten User anlegen (wird automatisch Admin)
 docker compose -f deploy.compose.yaml exec app \
   flask create-user admin --full-name "Camp-Leitung"
+```
+
+Update einspielen (bewusst manuell, Watchtower ist für diesen Container
+deaktiviert):
+
+```bash
+docker compose -f deploy.compose.yaml pull && docker compose -f deploy.compose.yaml up -d
 ```
 
 Der Container bindet bewusst nur an `127.0.0.1:8010` (kein Traefik-Label,
