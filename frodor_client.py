@@ -240,6 +240,9 @@ def _normalize(reg: dict) -> dict:
         "team": data.get("team") or "",
         "allergies": (health.get("allergies") or "").strip(),
         "restrictions": (health.get("restrictions") or "").strip(),
+        # Interne Erste-Hilfe-Notizen aus der Anmeldung ('note') —
+        # je nach Whitelist unter health oder direkt in data.
+        "note": (str(health.get("note") or data.get("note") or "")).strip(),
         "has_medications": health.get("hasMedications"),
         "medications": (health.get("medications") or "").strip(),
         "tetanus": health.get("tetanus") or "",

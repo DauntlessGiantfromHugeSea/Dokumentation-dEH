@@ -1072,8 +1072,18 @@ def adopt_frodor_registration(conn: sqlite3.Connection, reg: dict) -> int:
         if medications and not row["medications_text"]:
             updates["medications_text"] = medications
 
-    if not row["extras_notes"] and (reg.get("restrictions") or "").strip():
-        updates["extras_notes"] = f"Einschränkungen (Anmeldung): {reg['restrictions'].strip()}"
+    # Einschränkungen + interne EH-Notizen aus der Anmeldung → Sonstige
+    # Hinweise (nur wenn lokal noch leer; lokale Eingaben gewinnen).
+    if not row["extras_notes"]:
+        note_parts = []
+        if (reg.get("restrictions") or "").strip():
+            note_parts.append(
+                f"Einschränkungen (Anmeldung): {reg['restrictions'].strip()}")
+        if (reg.get("note") or "").strip():
+            note_parts.append(
+                f"EH-Notiz (Anmeldung): {reg['note'].strip()}")
+        if note_parts:
+            updates["extras_notes"] = "\n".join(note_parts)
 
     set_clause = ", ".join(f"{col} = ?" for col in updates)
     conn.execute(f"UPDATE patients SET {set_clause} WHERE id = ?",
