@@ -2799,9 +2799,14 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
       setField('vorname', p.vorname);
       setField('nachname', p.nachname);
       setField('geburtsdatum', p.geburtsdatum);
-      // Kostenträger aus der Anmeldung — Feld existiert nur für User
-      // mit Kontakt-Berechtigung (setField ignoriert fehlende Felder).
+      // Kostenträger + Adresse aus der Anmeldung — Felder existieren
+      // nur für User mit Kontakt-Berechtigung (setField ignoriert
+      // fehlende Felder). Adresse kommt erst, wenn die frodor-Rolle
+      // sie freigibt.
       setField('krankenkasse', p.krankenkasse);
+      setField('strasse', p.strasse);
+      setField('plz', p.plz);
+      setField('stadt', p.stadt);
     }
   });
 })();

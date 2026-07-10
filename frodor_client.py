@@ -183,6 +183,28 @@ def _get_medical_module_id() -> int:
 # Registrierungen lesen
 # ---------------------------------------------------------------------------
 
+def _extract_address(data: dict) -> dict:
+    """Adresse aus dem Anmeldungs-JSONB, sofern die frodor-Rolle sie
+    liefert. Aktuell steht die Adresse NICHT in der Feld-Whitelist der
+    Rolle 'Sanitätsdokumentation' — sobald sie dort freigeschaltet wird,
+    greift dieses Mapping automatisch. Bis dahin bleiben die Felder leer.
+    Toleriert mehrere plausible Key-Schreibweisen."""
+    addr = data.get("address") or data.get("adresse") or {}
+    if not isinstance(addr, dict):
+        addr = {}
+    street = (addr.get("street") or addr.get("strasse")
+              or data.get("street") or "").strip()
+    house = (addr.get("houseNumber") or addr.get("number")
+             or addr.get("hausnummer") or "").strip()
+    if house and house not in street:
+        street = f"{street} {house}".strip()
+    zip_code = (addr.get("zip") or addr.get("zipCode") or addr.get("plz")
+                or data.get("zip") or "").strip()
+    city = (addr.get("city") or addr.get("town") or addr.get("ort")
+            or data.get("city") or "").strip()
+    return {"strasse": street, "plz": zip_code, "stadt": city}
+
+
 def _normalize(reg: dict) -> dict:
     """RPC-JSONB → flaches Dict fürs UI. Nur Whitelist-Felder vorhanden."""
     data = reg.get("data") or {}
@@ -192,7 +214,11 @@ def _normalize(reg: dict) -> dict:
         contacts = [contacts]
     first = (reg.get("first_name") or "").strip()
     last = (reg.get("last_name") or "").strip()
+    address = _extract_address(data)
     return {
+        "strasse": address["strasse"],
+        "plz": address["plz"],
+        "stadt": address["stadt"],
         "uuid": reg.get("uuid"),
         "first_name": first,
         "last_name": last,
