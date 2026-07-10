@@ -2888,3 +2888,14 @@ input[type="datetime-local"] {
 .badge.warn    { background: var(--warning-light); color: var(--warning); }
 .badge.danger  { background: var(--error-light);   color: var(--error); }
 .error-text    { color: var(--error); }
+
+/* --- "+ Anmelden"-CTA in der Topbar: hervorgehoben --- */
+header.topbar nav a.nav-cta {
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  font-weight: 600;
+}
+header.topbar nav a.nav-cta:hover {
+  background: rgba(255, 255, 255, 0.28);
+}

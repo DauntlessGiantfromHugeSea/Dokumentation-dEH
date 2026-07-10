@@ -889,6 +889,13 @@ if ('serviceWorker' in navigator) {
         <section class="page" data-page="1">
           <h2>Patient</h2>
 
+          {% if frodor_available %}
+          <div class="section">
+            <div class="label">Camp-Anmeldung übernehmen <span class="hint">frodor</span></div>
+            <div id="frodorPickerSpa"></div>
+          </div>
+          {% endif %}
+
           <div class="section">
             <div class="label">Person</div>
             <div class="grid cols-2">
@@ -2770,5 +2777,32 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
     </div>
   </div>
 </div>
+
+{% if frodor_available %}
+<!-- frodor: Camp-Anmeldung suchen + übernehmen — füllt die Personen-Felder
+     der SPA (z. B. wenn eine Triage-Anmeldung ohne Namen ankam). -->
+<script src="{{ url_for('static', filename='frodor_picker.js') }}"></script>
+<script>
+(function () {
+  var el = document.getElementById('frodorPickerSpa');
+  if (!el || typeof initFrodorPicker !== 'function') return;
+  function setField(id, val) {
+    var f = document.getElementById(id);
+    if (f && val) {
+      f.value = val;
+      f.dispatchEvent(new Event('input', { bubbles: true }));
+      f.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+  initFrodorPicker(el, {
+    onSelect: function (p) {
+      setField('vorname', p.vorname);
+      setField('nachname', p.nachname);
+      setField('geburtsdatum', p.geburtsdatum);
+    }
+  });
+})();
+</script>
+{% endif %}
 </body>
 </html>

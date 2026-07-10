@@ -67,6 +67,9 @@
   <!-- ============ Personalia ============ -->
   <div class="card">
     <div class="card-header">Person</div>
+    {% if frodor_available %}
+      <div id="frodorPickerTriage"></div>
+    {% endif %}
     <div class="row cols-2-1">
       <label class="field">
         Name (Vorname Nachname, falls bekannt)
@@ -333,4 +336,22 @@
   check();
 })();
 </script>
+
+{% if frodor_available %}
+<!-- frodor: Camp-Anmeldung suchen + übernehmen (füllt Name/Geburtsdatum) -->
+<script src="{{ url_for('static', filename='frodor_picker.js') }}"></script>
+<script>
+initFrodorPicker(document.getElementById('frodorPickerTriage'), {
+  onSelect: function (p) {
+    var nameEl = document.getElementById('triageName');
+    var dobEl = document.getElementById('triageDob');
+    if (nameEl && p.name) nameEl.value = p.name;
+    if (dobEl && p.geburtsdatum) dobEl.value = p.geburtsdatum;
+    // Lokalen Abgleich anstoßen — der übernommene Patient existiert
+    // jetzt in unserer DB und wird als Treffer bestätigt.
+    if (nameEl) nameEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+});
+</script>
+{% endif %}
 {% endblock %}

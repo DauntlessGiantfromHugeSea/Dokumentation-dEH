@@ -80,6 +80,9 @@
           </div>
         {% endif %}
 
+        {% if can_create_in_current_event %}
+          <a href="{{ url_for('triage_new') }}" class="nav-cta">+ Anmelden</a>
+        {% endif %}
         <a href="{{ url_for('triage_list') }}">Triage</a>
         <a href="{{ url_for('central_index') }}">Zentral</a>
 
@@ -187,6 +190,10 @@
 
         <div class="mobile-menu-section">
           <div class="mobile-menu-label">Navigation</div>
+          {% if can_create_in_current_event %}
+            <a class="mobile-menu-item" href="{{ url_for('triage_new') }}"
+               style="font-weight: 700; color: var(--accent-dark);">＋ Patient anmelden</a>
+          {% endif %}
           {% if current_user.can_view_decentral %}
             <a class="mobile-menu-item" href="{{ url_for('dashboard') }}">Dashboard</a>
           {% endif %}
