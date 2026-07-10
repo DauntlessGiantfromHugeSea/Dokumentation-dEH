@@ -914,16 +914,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             "geburtsdatum": reg["geburtsdatum"],
             "stammnummer": reg["stamm"],
         }
-        # Krankenkasse + Adresse nur an User weitergeben, die die
-        # Kontakt-/Versicherungsfelder überhaupt sehen dürfen — die SPA
-        # füllt damit die Protokoll-Felder (landen dann im PDF).
-        # Adresse kommt erst, wenn die frodor-Rolle sie in der
-        # Feld-Whitelist freigibt — bis dahin sind die Werte leer.
+        # Geschlecht ist unkritisch — für alle.
+        resp["geschlecht"] = reg.get("geschlecht") or ""
+        # Krankenkasse + Adresse + Telefon nur an User weitergeben, die
+        # die Kontakt-/Versicherungsfelder überhaupt sehen dürfen — die
+        # SPA füllt damit die Protokoll-Felder (landen dann im PDF).
         if current_user.can_view_contact:
             resp["krankenkasse"] = reg.get("insurance_provider") or ""
             resp["strasse"] = reg.get("strasse") or ""
             resp["plz"] = reg.get("plz") or ""
             resp["stadt"] = reg.get("stadt") or ""
+            resp["telefon"] = reg.get("telefon") or ""
         return resp
 
     def _push_protocol_to_frodor(source_type: str, source_id: int) -> tuple[bool, str]:

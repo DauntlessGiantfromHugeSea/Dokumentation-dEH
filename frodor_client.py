@@ -183,26 +183,35 @@ def _get_medical_module_id() -> int:
 # Registrierungen lesen
 # ---------------------------------------------------------------------------
 
-def _extract_address(data: dict) -> dict:
-    """Adresse aus dem Anmeldungs-JSONB, sofern die frodor-Rolle sie
-    liefert. Aktuell steht die Adresse NICHT in der Feld-Whitelist der
-    Rolle 'Sanitätsdokumentation' — sobald sie dort freigeschaltet wird,
-    greift dieses Mapping automatisch. Bis dahin bleiben die Felder leer.
-    Toleriert mehrere plausible Key-Schreibweisen."""
-    addr = data.get("address") or data.get("adresse") or {}
-    if not isinstance(addr, dict):
-        addr = {}
-    street = (addr.get("street") or addr.get("strasse")
-              or data.get("street") or "").strip()
-    house = (addr.get("houseNumber") or addr.get("number")
-             or addr.get("hausnummer") or "").strip()
-    if house and house not in street:
-        street = f"{street} {house}".strip()
-    zip_code = (addr.get("zip") or addr.get("zipCode") or addr.get("plz")
-                or data.get("zip") or "").strip()
-    city = (addr.get("city") or addr.get("town") or addr.get("ort")
-            or data.get("city") or "").strip()
-    return {"strasse": street, "plz": zip_code, "stadt": city}
+GENDER_MAP = {
+    "m": "männlich", "male": "männlich", "männlich": "männlich",
+    "w": "weiblich", "f": "weiblich", "female": "weiblich",
+    "weiblich": "weiblich",
+    "d": "divers", "divers": "divers", "diverse": "divers",
+    "other": "divers",
+}
+
+
+def _extract_personal(data: dict) -> dict:
+    """Personalia aus data.personal (Whitelist-Pfade der Rolle
+    'Sanitätsdokumentation'): street, streetNr, zip, city, mobile,
+    gender. Fehlt der Block (ältere Whitelist), bleiben die Felder
+    leer — kein Verhaltenswechsel."""
+    personal = data.get("personal") or {}
+    if not isinstance(personal, dict):
+        personal = {}
+    street = str(personal.get("street") or "").strip()
+    street_nr = str(personal.get("streetNr") or "").strip()
+    if street_nr and street_nr not in street:
+        street = f"{street} {street_nr}".strip()
+    gender_raw = str(personal.get("gender") or "").strip().lower()
+    return {
+        "strasse": street,
+        "plz": str(personal.get("zip") or "").strip(),
+        "stadt": str(personal.get("city") or "").strip(),
+        "telefon": str(personal.get("mobile") or "").strip(),
+        "geschlecht": GENDER_MAP.get(gender_raw, ""),
+    }
 
 
 def _normalize(reg: dict) -> dict:
@@ -214,11 +223,13 @@ def _normalize(reg: dict) -> dict:
         contacts = [contacts]
     first = (reg.get("first_name") or "").strip()
     last = (reg.get("last_name") or "").strip()
-    address = _extract_address(data)
+    personal = _extract_personal(data)
     return {
-        "strasse": address["strasse"],
-        "plz": address["plz"],
-        "stadt": address["stadt"],
+        "strasse": personal["strasse"],
+        "plz": personal["plz"],
+        "stadt": personal["stadt"],
+        "telefon": personal["telefon"],
+        "geschlecht": personal["geschlecht"],
         "uuid": reg.get("uuid"),
         "first_name": first,
         "last_name": last,
