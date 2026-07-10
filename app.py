@@ -906,7 +906,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         db = models.get_db()
         patient_id = models.adopt_frodor_registration(db, reg)
         db.commit()
-        return {
+        resp = {
             "patient_id": patient_id,
             "name": reg["name"],
             "vorname": reg["first_name"],
@@ -914,6 +914,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             "geburtsdatum": reg["geburtsdatum"],
             "stammnummer": reg["stamm"],
         }
+        # Krankenkasse (Kostenträger) nur an User weitergeben, die die
+        # Kontakt-/Versicherungsfelder überhaupt sehen dürfen — die SPA
+        # füllt damit das Krankenkassen-Feld fürs Protokoll/PDF.
+        if current_user.can_view_contact:
+            resp["krankenkasse"] = reg.get("insurance_provider") or ""
+        return resp
 
     def _push_protocol_to_frodor(source_type: str, source_id: int) -> tuple[bool, str]:
         """PDF rendern und an die verknüpfte frodor-Anmeldung hängen.

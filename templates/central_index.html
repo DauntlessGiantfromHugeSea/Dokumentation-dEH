@@ -2799,6 +2799,9 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
       setField('vorname', p.vorname);
       setField('nachname', p.nachname);
       setField('geburtsdatum', p.geburtsdatum);
+      // Kostenträger aus der Anmeldung — Feld existiert nur für User
+      // mit Kontakt-Berechtigung (setField ignoriert fehlende Felder).
+      setField('krankenkasse', p.krankenkasse);
     }
   });
 })();

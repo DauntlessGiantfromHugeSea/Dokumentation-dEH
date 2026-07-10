@@ -246,16 +246,24 @@ def _kasse_strip(d):
 def _patient_inner(d):
     """Inneres Patient-Layout (ohne äußere Box — wird vom Combined-Container
     umrahmt)."""
-    name_addr = ", ".join(p for p in [
-        " ".join(p for p in [_v(d.get("vorname")), _v(d.get("nachname"))] if p),
+    # Name auf Zeile 1, Adresse (Straße Nr, PLZ Ort) auf Zeile 2 —
+    # gleiche Box, nur eigene Zeile darunter.
+    full_name = " ".join(p for p in [_v(d.get("vorname")),
+                                     _v(d.get("nachname"))] if p)
+    addr = ", ".join(p for p in [
         _v(d.get("strasse")),
         " ".join(p for p in [_v(d.get("plz")), _v(d.get("stadt"))] if p),
     ] if p)
+    if full_name and addr:
+        name_addr_cell = Paragraph(
+            f"<b>{escape(full_name)}</b><br/>{escape(addr)}", S_VAL)
+    else:
+        name_addr_cell = full_name or addr
     rows = [
         [_kasse_strip(d)],
         [_label_value("Krankenkasse bzw. Kostenträger", d.get("krankenkasse"))],
         [_label_value("Name, Vorname, Adressdaten des Versicherten",
-                      name_addr)],
+                      name_addr_cell)],
         [_bordered_table(
             [[_label_value("Geschlecht", d.get("geschlecht")),
               _label_value("Geb. am", _fmt_date(d.get("geburtsdatum")))]],
