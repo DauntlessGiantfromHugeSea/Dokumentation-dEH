@@ -1521,6 +1521,13 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not rec:
             return {"error": "not found"}, 404
         _require_event_view(rec.get("event_id"))
+        # Unterschrift ist Pflicht für den Abschluss — mindestens eine
+        # Einsatzkraft muss signiert haben.
+        d = rec.get("data") or {}
+        if not (d.get("signature_einsatzkraft1")
+                or d.get("signature_einsatzkraft2")):
+            return {"error": "Abschluss nicht möglich: Unterschrift fehlt "
+                    "(Abschnitt Unterschriften)."}, 400
         triage = models.get_triage_for_protocol(db, pid)
         if not triage:
             return {"error": "no triage entry linked"}, 400

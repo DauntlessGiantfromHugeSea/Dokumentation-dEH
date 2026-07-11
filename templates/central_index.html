@@ -1840,6 +1840,19 @@ if ('serviceWorker' in navigator) {
     if (presetNachname) setIfEmpty('nachname', presetNachname);
     if (presetGeburtsdatum) setIfEmpty('geburtsdatum', presetGeburtsdatum);
 
+    // Einsatzkraft 1 = eingeloggter User (Auto-Vorbelegung). Label am
+    // Unterschriften-Pad direkt nachziehen — bewusst OHNE input-Event,
+    // sonst würde der Auto-Save ein leeres Protokoll anlegen.
+    setIfEmpty('einsatzkraft1',
+               {{ (current_user.full_name or current_user.username)|tojson }});
+    const ek1El = document.getElementById('einsatzkraft1');
+    if (ek1El && ek1El.value) {
+      const lab1 = document.getElementById('sig-name-1');
+      const miss1 = document.getElementById('sig-name-missing-1');
+      if (lab1) { lab1.textContent = '— ' + ek1El.value; lab1.style.display = ''; }
+      if (miss1) miss1.style.display = 'none';
+    }
+
     updateMeta(collectData());
     setStatus('', 'Bereit');
     goToPage(1); updateCompletion();
@@ -2003,6 +2016,18 @@ if ('serviceWorker' in navigator) {
   }
 
   async function finishTreatment() {
+      // Unterschrift ist Pflicht — ohne mindestens eine Signatur
+      // kann das Protokoll nicht abgeschlossen werden.
+      const sig1 = (document.getElementById('signature_einsatzkraft1') || {}).value;
+      const sig2 = (document.getElementById('signature_einsatzkraft2') || {}).value;
+      if (!sig1 && !sig2) {
+        toast('Abschluss nicht möglich: erst unterschreiben '
+              + '(Abschnitt „Unterschriften").');
+        goToPage(9);
+        const sigSection = document.getElementById('sig-pad-1');
+        if (sigSection) sigSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
       if (currentId == null) {
         const res = await apiCreate(collectData());
         if (res && res.id) {
