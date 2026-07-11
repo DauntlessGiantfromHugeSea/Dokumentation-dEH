@@ -1041,7 +1041,7 @@ def render_pdf(data, exporter_label=None, medical_info=None,
     # — direkt sichtbar für den Rettungsdienst.
     if medical_info:
         story.append(_section_bar(
-            "Wichtig für den Rettungsdienst — Vorinfos aus der Patientenakte"
+            "Vorinfos aus der Patientenakte"
         ))
         story.append(_section_medical(medical_info))
         story.append(Spacer(1, 6))
