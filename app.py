@@ -1998,21 +1998,60 @@ def create_app(test_config: dict | None = None) -> Flask:
             format_dt=models.format_dt,
         )
 
+    @app.route("/medications/frodor-sync", methods=["POST"])
+    @login_required
+    def medications_frodor_sync():
+        """Alle Medikamente aus den frodor-Anmeldungen importieren bzw.
+        live abgleichen: neue Personen mit Medikamenten-Angabe werden
+        angelegt, geänderte Anmeldungs-Medikamente aktualisiert. Lokal
+        gepflegte Medikationspläne bleiben unangetastet."""
+        if not current_user.is_admin:
+            abort(403)
+        if not frodor_client.is_configured():
+            flash("frodor ist nicht konfiguriert.", "error")
+            return redirect(url_for("medications_index"))
+        try:
+            regs = frodor_client.list_registrations(force=True)
+        except frodor_client.FrodorError as e:
+            flash(f"frodor nicht erreichbar: {e}", "error")
+            return redirect(url_for("medications_index"))
+        db = models.get_db()
+        stats = models.sync_frodor_medications(db, regs)
+        db.commit()
+        flash(
+            f"frodor-Abgleich: {stats['created']} neu angelegt, "
+            f"{stats['updated']} aktualisiert, "
+            f"{stats['unchanged']} unverändert "
+            f"({stats['skipped']} ohne Medikamenten-Angabe übersprungen).",
+            "success",
+        )
+        return redirect(url_for("medications_index"))
+
     @app.route("/medications/stammschein.pdf")
     @login_required
     def medications_stamm_sheet():
         """Medikamentenschein pro Stamm/Region: namentliche Liste mit
-        Medikament, Dosierung, Einnahme-Zeitpunkten, Lagerung, Hinweisen.
+        Medikament, Dosierung, Einnahme-Zeitpunkten, Lagerung, Hinweisen
+        + Medikamenten laut Camp-Anmeldung (frodor, live abgeglichen).
         ?stamm=<wert> filtert auf einen Stamm ('' = ohne Stamm);
         ohne Parameter: alle Stämme gruppiert, je Stamm eine Seite."""
         if not current_user.is_admin:
             abort(403)
         db = models.get_db()
+        # Live-Abgleich vor dem Export (best effort — Export funktioniert
+        # auch, wenn frodor gerade nicht erreichbar ist).
+        if frodor_client.is_configured():
+            try:
+                regs = frodor_client.list_registrations()
+                models.sync_frodor_medications(db, regs)
+                db.commit()
+            except frodor_client.FrodorError:
+                pass
         stamm = request.args.get("stamm")  # None = alle
-        rows = models.list_medications_by_stamm(db, stamm=stamm)
+        sheet_patients = models.medication_sheet_patients(db, stamm=stamm)
         from medication_plan_pdf import render_stamm_medication_sheet
         pdf_bytes = render_stamm_medication_sheet(
-            [dict(r) for r in rows],
+            sheet_patients,
             stamm_filter=stamm,
             exporter_label=(current_user.full_name
                             or current_user.username),

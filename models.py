@@ -2768,17 +2768,109 @@ def list_patients_with_medications(conn) -> list[sqlite3.Row]:
 
 
 def list_medication_stamm_values(conn) -> list[str]:
-    """Alle Stämme/Regionen, für die es aktive Medikationspläne gibt —
-    für das Export-Dropdown. Leerer Stamm wird als '' geführt."""
+    """Alle Stämme/Regionen, für die es Medikamente gibt — aus aktiven
+    Plänen ODER aus Anmeldungs-Medikamenten (medications_text). Für das
+    Export-Dropdown. Leerer Stamm wird als '' geführt."""
     rows = conn.execute(
         """
         SELECT DISTINCT COALESCE(TRIM(p.stammnummer), '') AS stamm
         FROM patients p
         JOIN medications m ON m.patient_id = p.id AND m.active = 1
+        UNION
+        SELECT DISTINCT COALESCE(TRIM(stammnummer), '') AS stamm
+        FROM patients
+        WHERE TRIM(COALESCE(medications_text, '')) != ''
         ORDER BY stamm COLLATE NOCASE
         """
     ).fetchall()
     return [r["stamm"] for r in rows]
+
+
+def sync_frodor_medications(conn, regs: list[dict]) -> dict:
+    """Bulk-Import/-Abgleich der Medikamente aus frodor-Anmeldungen.
+
+    Übernimmt alle Registrierungen, die eine Medikamenten-Angabe haben
+    (hasMedications oder Freitext). Neue Personen werden angelegt
+    (adopt inkl. Notfallkontakt etc.); bei bestehenden gilt für die
+    ANMELDUNGS-Medikamente frodor als Quelle der Wahrheit — der
+    Freitext wird bei Änderung aktualisiert. Lokal gepflegte
+    strukturierte Medikationspläne (medications-Tabelle) bleiben
+    unangetastet. Gibt Zähler zurück."""
+    created = 0
+    updated = 0
+    unchanged = 0
+    skipped = 0
+    for reg in regs:
+        med_text = (reg.get("medications") or "").strip()
+        has_meds = reg.get("has_medications")
+        if not med_text and not has_meds:
+            skipped += 1
+            continue
+        if not reg.get("name") or not reg.get("geburtsdatum"):
+            skipped += 1
+            continue
+        existing = conn.execute(
+            "SELECT id FROM patients WHERE name = ? AND geburtsdatum = ?",
+            (reg["name"], reg["geburtsdatum"]),
+        ).fetchone()
+        pid = adopt_frodor_registration(conn, reg)
+        if not existing:
+            created += 1
+            continue
+        # Bestehender Patient: Anmeldungs-Medikamente live nachziehen
+        row = get_patient(conn, pid)
+        if med_text and (row["medications_text"] or "").strip() != med_text:
+            conn.execute(
+                "UPDATE patients SET medications_text = ?, "
+                "has_medications = 1 WHERE id = ?",
+                (med_text, pid),
+            )
+            updated += 1
+        else:
+            unchanged += 1
+    return {"created": created, "updated": updated,
+            "unchanged": unchanged, "skipped": skipped}
+
+
+def medication_sheet_patients(conn, stamm: Optional[str] = None) -> list[dict]:
+    """Daten für den Medikamentenschein: pro Person die strukturierten
+    Plan-Medikamente UND der Anmeldungs-Freitext (frodor). Gruppierbar
+    nach Stamm. Personen erscheinen, wenn sie mindestens eines von
+    beidem haben."""
+    med_rows = list_medications_by_stamm(conn, stamm=stamm)
+    where = ""
+    params: tuple = ()
+    if stamm is not None:
+        where = "AND COALESCE(TRIM(stammnummer), '') = ?"
+        params = (stamm.strip(),)
+    text_rows = conn.execute(
+        f"""
+        SELECT id AS patient_id, name, geburtsdatum,
+               COALESCE(TRIM(stammnummer), '') AS stamm,
+               TRIM(medications_text) AS anmeldung_text
+        FROM patients
+        WHERE TRIM(COALESCE(medications_text, '')) != '' {where}
+        """,
+        params,
+    ).fetchall()
+
+    patients: dict = {}
+    def _entry(pid, name, geb, stamm_v):
+        if pid not in patients:
+            patients[pid] = {"patient_id": pid, "name": name,
+                             "geburtsdatum": geb, "stamm": stamm_v,
+                             "meds": [], "anmeldung_text": ""}
+        return patients[pid]
+
+    for r in med_rows:
+        e = _entry(r["patient_id"], r["name"], r["geburtsdatum"], r["stamm"])
+        e["meds"].append(dict(r))
+    for r in text_rows:
+        e = _entry(r["patient_id"], r["name"], r["geburtsdatum"], r["stamm"])
+        e["anmeldung_text"] = r["anmeldung_text"]
+
+    return sorted(patients.values(),
+                  key=lambda e: (e["stamm"].lower(), e["name"].lower()))
 
 
 def list_medications_by_stamm(conn, stamm: Optional[str] = None) -> list[sqlite3.Row]:

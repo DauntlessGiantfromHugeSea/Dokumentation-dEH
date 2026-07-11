@@ -353,26 +353,32 @@ def _patient_med_table(meds, width):
     return tbl
 
 
-def render_stamm_medication_sheet(rows, *, stamm_filter=None,
+S_ANMELDUNG = ParagraphStyle(
+    "Anmeldung", fontName="Helvetica", fontSize=8.5, leading=11,
+    textColor=colors.HexColor("#333333"),
+    backColor=colors.HexColor("#FFF8E8"),
+    borderPadding=5, borderWidth=0.5,
+    borderColor=colors.HexColor("#D8C58A"))
+
+
+def render_stamm_medication_sheet(sheet_patients, *, stamm_filter=None,
                                     exporter_label=None):
     """Medikamentenschein pro Stamm/Region.
 
-    `rows` = flache Liste aus list_medications_by_stamm() (Patient × Med).
-    Gruppiert nach Stamm → pro Stamm eine Sektion (neuer Stamm = neue
-    Seite), darin pro Patient namentlich eine Tabelle mit Medikament,
-    Dosierung, Einnahme-Zeitpunkten, Lagerung und Hinweisen.
+    `sheet_patients` = Liste aus medication_sheet_patients(): pro Person
+    {name, geburtsdatum, stamm, meds: [...], anmeldung_text}. Pro Stamm
+    eine Sektion (neuer Stamm = neue Seite); je Person die strukturierte
+    Plan-Tabelle (Medikament/Dosierung/Einnahme/Lagerung/Hinweise) und —
+    falls vorhanden — die Medikamenten-Angabe aus der Camp-Anmeldung
+    (frodor, live abgeglichen) als gelber Block.
     """
     from collections import OrderedDict
     from xml.sax.saxutils import escape as _esc
 
-    # rows → {stamm: {patient_key: {"patient": ..., "meds": [...]}}}
-    grouped: "OrderedDict[str, OrderedDict]" = OrderedDict()
-    for r in rows:
-        stamm = (r["stamm"] or "").strip()
-        pat_key = (r["patient_id"])
-        grouped.setdefault(stamm, OrderedDict())
-        grouped[stamm].setdefault(pat_key, {"patient": r, "meds": []})
-        grouped[stamm][pat_key]["meds"].append(r)
+    grouped: "OrderedDict[str, list]" = OrderedDict()
+    for entry in sheet_patients:
+        stamm = (entry.get("stamm") or "").strip()
+        grouped.setdefault(stamm, []).append(entry)
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -389,7 +395,7 @@ def render_stamm_medication_sheet(rows, *, stamm_filter=None,
         story.append(Paragraph("Medikamentenschein", S_STAMM_TITLE))
         story.append(Spacer(1, 6))
         story.append(Paragraph(
-            "Keine aktiven Medikationspläne"
+            "Keine Medikamente erfasst"
             + (f" für Stamm „{_esc(stamm_filter)}“" if stamm_filter else "")
             + ".", S_TXT))
     else:
@@ -408,20 +414,26 @@ def render_stamm_medication_sheet(rows, *, stamm_filter=None,
                    if exporter_label else "")
                 + f" · {len(patients)} Person(en)", S_SMALL))
             story.append(Spacer(1, 8))
-            for entry in patients.values():
-                p = entry["patient"]
-                geb = (p["geburtsdatum"] or "").strip()
+            for entry in patients:
+                geb = (entry.get("geburtsdatum") or "").strip()
                 if geb:
                     try:
                         geb = _date.fromisoformat(geb[:10]).strftime("%d.%m.%Y")
                     except ValueError:
                         pass
                 story.append(Paragraph(
-                    _esc(p["name"] or "—")
+                    _esc(entry.get("name") or "—")
                     + (f" · geb. {_esc(geb)}" if geb else ""),
                     S_PATIENT))
                 story.append(Spacer(1, 3))
-                story.append(_patient_med_table(entry["meds"], avail_w))
+                if entry.get("meds"):
+                    story.append(_patient_med_table(entry["meds"], avail_w))
+                    story.append(Spacer(1, 4))
+                if (entry.get("anmeldung_text") or "").strip():
+                    story.append(Paragraph(
+                        "<b>Medikamente laut Camp-Anmeldung:</b> "
+                        + _esc(entry["anmeldung_text"].strip()),
+                        S_ANMELDUNG))
                 story.append(Spacer(1, 10))
 
     def _footer(canvas, doc_):

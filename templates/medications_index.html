@@ -43,8 +43,24 @@
   </form>
   {% if not stamm_values %}
     <p class="muted" style="font-size: 0.85rem; margin: 10px 0 0;">
-      Noch keine aktiven Medikationspläne vorhanden.
+      Noch keine Medikamente erfasst.
     </p>
+  {% endif %}
+  {% if frodor_available %}
+    <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border);">
+      <form method="post" action="{{ url_for('medications_frodor_sync') }}"
+            style="display: inline-block;"
+            onsubmit="return confirm('Alle Medikamenten-Angaben aus den Camp-Anmeldungen importieren/abgleichen?');">
+        <button class="btn secondary" type="submit">
+          ⟳ Alle aus frodor importieren &amp; abgleichen
+        </button>
+      </form>
+      <p class="muted" style="font-size: 0.82rem; margin: 8px 0 0;">
+        Legt Personen mit Medikamenten-Angabe an und zieht geänderte
+        Angaben nach. Beim PDF-Export passiert der Abgleich zusätzlich
+        automatisch. Lokal gepflegte Pläne bleiben unangetastet.
+      </p>
+    </div>
   {% endif %}
 </div>
 
