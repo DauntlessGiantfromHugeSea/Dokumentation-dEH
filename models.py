@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
     role            TEXT NOT NULL DEFAULT 'full',
     totp_secret     TEXT,
     totp_confirmed  INTEGER NOT NULL DEFAULT 0,
-    totp_required   INTEGER NOT NULL DEFAULT 1,
+    totp_required   INTEGER NOT NULL DEFAULT 0,
     perm_view_contact INTEGER NOT NULL DEFAULT 0,
     perm_export_pdf   INTEGER NOT NULL DEFAULT 0,
     perm_export_akte  INTEGER NOT NULL DEFAULT 0,
@@ -425,7 +425,23 @@ def init_db(db_path: Path) -> None:
         if "totp_required" not in cols:
             conn.execute(
                 "ALTER TABLE users ADD COLUMN totp_required "
-                "INTEGER NOT NULL DEFAULT 1"
+                "INTEGER NOT NULL DEFAULT 0"
+            )
+        # Einmalige Umstellung: 2FA ist ab jetzt opt-in (Admin schaltet
+        # pro User frei). Bestehende User, die 2FA noch NICHT
+        # eingerichtet haben, werden auf totp_required=0 gestellt —
+        # wer 2FA bereits aktiv nutzt (totp_confirmed=1), behält es.
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'totp_optin_migrated'"
+        ).fetchone()
+        if not row:
+            conn.execute(
+                "UPDATE users SET totp_required = 0 "
+                "WHERE totp_confirmed = 0"
+            )
+            conn.execute(
+                "INSERT INTO app_settings (key, value) "
+                "VALUES ('totp_optin_migrated', '1')"
             )
         if "admin_pin_hash" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN admin_pin_hash TEXT")
