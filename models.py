@@ -2751,6 +2751,47 @@ def list_patients_with_medications(conn) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def list_medication_stamm_values(conn) -> list[str]:
+    """Alle Stämme/Regionen, für die es aktive Medikationspläne gibt —
+    für das Export-Dropdown. Leerer Stamm wird als '' geführt."""
+    rows = conn.execute(
+        """
+        SELECT DISTINCT COALESCE(TRIM(p.stammnummer), '') AS stamm
+        FROM patients p
+        JOIN medications m ON m.patient_id = p.id AND m.active = 1
+        ORDER BY stamm COLLATE NOCASE
+        """
+    ).fetchall()
+    return [r["stamm"] for r in rows]
+
+
+def list_medications_by_stamm(conn, stamm: Optional[str] = None) -> list[sqlite3.Row]:
+    """Aktive Medikationen inkl. Patient — optional auf einen Stamm
+    gefiltert (stamm='' → Patienten ohne Stamm). None = alle, sortiert
+    nach Stamm → Name → Medikament (fürs gruppierte PDF)."""
+    where = ""
+    params: tuple = ()
+    if stamm is not None:
+        where = "WHERE COALESCE(TRIM(p.stammnummer), '') = ?"
+        params = (stamm.strip(),)
+    return conn.execute(
+        f"""
+        SELECT p.id AS patient_id, p.name, p.geburtsdatum,
+               COALESCE(TRIM(p.stammnummer), '') AS stamm,
+               m.name AS med_name, m.dosage,
+               m.morgens, m.mittags, m.abends, m.nachts, m.bei_bedarf,
+               m.lagerung, m.notes
+        FROM patients p
+        JOIN medications m ON m.patient_id = p.id AND m.active = 1
+        {where}
+        ORDER BY stamm COLLATE NOCASE,
+                 p.name COLLATE NOCASE,
+                 m.name COLLATE NOCASE
+        """,
+        params,
+    ).fetchall()
+
+
 # ---------- MANV (Massenanfall von Verletzten) ----------
 
 MANV_KATEGORIEN = ("I", "II", "III", "IV", "tot")

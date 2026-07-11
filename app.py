@@ -1994,7 +1994,35 @@ def create_app(test_config: dict | None = None) -> Flask:
             "medications_index.html",
             patients_with_meds=patients,
             all_patients=all_patients,
+            stamm_values=models.list_medication_stamm_values(db),
             format_dt=models.format_dt,
+        )
+
+    @app.route("/medications/stammschein.pdf")
+    @login_required
+    def medications_stamm_sheet():
+        """Medikamentenschein pro Stamm/Region: namentliche Liste mit
+        Medikament, Dosierung, Einnahme-Zeitpunkten, Lagerung, Hinweisen.
+        ?stamm=<wert> filtert auf einen Stamm ('' = ohne Stamm);
+        ohne Parameter: alle Stämme gruppiert, je Stamm eine Seite."""
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        stamm = request.args.get("stamm")  # None = alle
+        rows = models.list_medications_by_stamm(db, stamm=stamm)
+        from medication_plan_pdf import render_stamm_medication_sheet
+        pdf_bytes = render_stamm_medication_sheet(
+            [dict(r) for r in rows],
+            stamm_filter=stamm,
+            exporter_label=(current_user.full_name
+                            or current_user.username),
+        )
+        label = (stamm or "alle").replace("/", "-").replace(" ", "_") or "ohne"
+        from flask import Response
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     f'inline; filename="Medikamentenschein-{label}.pdf"'},
         )
 
     @app.route("/medications/patient/<int:patient_id>")

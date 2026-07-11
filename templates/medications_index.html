@@ -16,6 +16,39 @@
 </div>
 
 <div class="card">
+  <div class="card-header">Medikamentenschein pro Stamm / Region</div>
+  <p class="muted" style="font-size: 0.9rem; margin: 0 0 12px;">
+    Namentliche Übersicht aller Personen eines Stamms mit Medikament,
+    Dosierung, Einnahme-Zeitpunkten, Lagerung und Hinweisen — zum
+    Ausdrucken für die Stammes-/Regionsleitung.
+  </p>
+  <form method="get" action="{{ url_for('medications_stamm_sheet') }}"
+        target="_blank" class="row" style="grid-template-columns: 1fr auto; gap: 8px; align-items: end;">
+    <label class="field">
+      Stamm / Region
+      <select name="stamm">
+        <option value="" disabled {% if not stamm_values %}selected{% endif %}>
+          — bitte wählen —
+        </option>
+        {% for s in stamm_values %}
+          <option value="{{ s }}">{{ s if s else '— ohne Stamm-Zuordnung —' }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div class="btn-row horizontal" style="margin: 0;">
+      <button class="btn" type="submit">Schein exportieren</button>
+      <a class="btn secondary" href="{{ url_for('medications_stamm_sheet') }}"
+         target="_blank">Alle Stämme (gruppiert)</a>
+    </div>
+  </form>
+  {% if not stamm_values %}
+    <p class="muted" style="font-size: 0.85rem; margin: 10px 0 0;">
+      Noch keine aktiven Medikationspläne vorhanden.
+    </p>
+  {% endif %}
+</div>
+
+<div class="card">
   <div class="card-header">Person für Plan wählen</div>
   <form method="get" action="" id="goPatient" class="stack">
     <label class="field">

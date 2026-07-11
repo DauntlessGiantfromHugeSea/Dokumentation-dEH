@@ -717,11 +717,84 @@
     padding: 6px 10px;
     cursor:pointer;
   }
+  /* ===== Hamburger-Menü (Mobile) — gleiches Muster wie base.html ===== */
+  .spa-hamburger {
+    display: none;
+    appearance: none;
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 8px;
+    width: 42px; height: 42px;
+    padding: 0;
+    cursor: pointer;
+    align-items: center; justify-content: center;
+    flex-direction: column; gap: 5px;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+  .spa-hamburger:hover, .spa-hamburger.open { background: rgba(255,255,255,0.22); }
+  .spa-hamburger span {
+    display: block; width: 22px; height: 2.5px;
+    background: #fff; border-radius: 2px;
+    transition: transform 0.15s, opacity 0.15s;
+  }
+  .spa-hamburger.open span:nth-child(1) { transform: translateY(7.5px) rotate(45deg); }
+  .spa-hamburger.open span:nth-child(2) { opacity: 0; }
+  .spa-hamburger.open span:nth-child(3) { transform: translateY(-7.5px) rotate(-45deg); }
+
+  .spa-mobile-menu {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 90;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+    display: none;
+  }
+  .spa-mobile-menu.open { opacity: 1; pointer-events: auto; }
+  .spa-mobile-menu-inner {
+    position: absolute; top: 60px; left: 8px; right: 8px;
+    max-height: calc(100vh - 76px); overflow-y: auto;
+    background: #fff; color: var(--text, #1d1815);
+    border: 1px solid var(--border, #ece8e4);
+    border-radius: 14px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+    padding: 6px 0;
+    -webkit-overflow-scrolling: touch;
+  }
+  .spa-mobile-menu .mm-label {
+    padding: 10px 18px 4px;
+    font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.6px; color: #7a6f6a; font-weight: 600;
+  }
+  .spa-mobile-menu a.mm-item,
+  .spa-mobile-menu button.mm-item {
+    display: block; width: 100%; box-sizing: border-box;
+    text-align: left; background: transparent; border: 0;
+    padding: 13px 18px; font: inherit; font-size: 1rem;
+    color: var(--text, #1d1815); cursor: pointer;
+    text-decoration: none; min-height: 48px; line-height: 1.3;
+  }
+  .spa-mobile-menu a.mm-item:hover,
+  .spa-mobile-menu a.mm-item:active,
+  .spa-mobile-menu button.mm-item:active {
+    background: #fbf3f4; color: var(--primary-dark, #5a141d);
+  }
+  .spa-mobile-menu a.mm-item.danger { color: #b3261e; }
+  .spa-mobile-menu .mm-sep { height: 1px; background: #ece8e4; margin: 6px 0; }
+  .spa-mobile-menu form.mm-event { padding: 0 18px 10px; margin: 0; }
+  .spa-mobile-menu form.mm-event select {
+    width: 100%; padding: 10px; font: inherit; font-size: 1rem;
+    border: 1px solid #d9d3cd; border-radius: 8px;
+    background: #fff; color: var(--text, #1d1815);
+  }
+
   @media (max-width: 900px) {
-    .app-bar { padding: 10px 12px; gap: 10px; }
-    .app-bar .brand { position: sticky; left: 0; z-index: 2; }
-    .app-bar nav a { font-size: 0.86rem; padding: 6px 8px; }
-    .app-bar-user { font-size: 0.82rem; }
+    .app-bar { padding: 10px 12px; gap: 10px; overflow: visible; }
+    /* Inline-Nav + User-Leiste ausblenden — alles im Hamburger */
+    .app-bar nav, .app-bar-user { display: none; }
+    .spa-hamburger { display: inline-flex; }
+    .spa-mobile-menu { display: block; }
+    .app-bar .brand { flex: 1 1 auto; min-width: 0; }
     .app { max-width: none; width: 100%; }
     header.top h1 { font-size: 1.35rem; }
     .page { padding: 16px; }
@@ -757,6 +830,10 @@
 <body>
 <header class="app-bar">
   <a class="brand" href="{% if current_user.can_view_decentral %}/dashboard{% else %}/central{% endif %}">Erste Hilfe</a>
+  <button type="button" class="spa-hamburger" id="spaHamburger"
+          aria-label="Menü öffnen" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
   <nav>
     {% if current_user.can_view_decentral %}
       <a href="/dashboard">Dashboard</a>
@@ -795,6 +872,122 @@
     <a href="/logout">Abmelden</a>
   </span>
 </header>
+
+{# === Mobile Hamburger-Panel (SPA) — gleiche Punkte wie base.html === #}
+<div class="spa-mobile-menu" id="spaMobileMenu" hidden>
+  <div class="spa-mobile-menu-inner">
+    {% if current_event %}
+      <div class="mm-label">Aktives Event</div>
+      {% if available_events|length > 1 %}
+        <form method="post" action="{{ url_for('event_switch') }}" class="mm-event">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          <select name="event_id" onchange="this.form.submit()">
+            {% for e in available_events %}
+              <option value="{{ e.id }}" {% if e.id == current_event.id %}selected{% endif %}>
+                {{ e.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </form>
+      {% else %}
+        <div style="padding: 4px 18px 10px; font-weight: 600;">{{ current_event.name }}</div>
+      {% endif %}
+      <div class="mm-sep"></div>
+    {% endif %}
+    <div class="mm-label">Navigation</div>
+    {% if current_user.can_view_decentral %}
+      <a class="mm-item" href="/dashboard">Dashboard</a>
+      <a class="mm-item" href="/">Alle Berichte</a>
+      {% if can_create_in_current_event %}
+        <a class="mm-item" href="/protocols/new">+ Neuer Bericht</a>
+      {% endif %}
+      <a class="mm-item" href="/patients">Personen</a>
+      {% if can_create_in_current_event %}
+        <a class="mm-item" href="/export">Export</a>
+      {% endif %}
+    {% endif %}
+    <a class="mm-item" href="/triage">Triage</a>
+    <a class="mm-item" href="/central">Zentral</a>
+    <div class="mm-sep"></div>
+    <div class="mm-label">Konto</div>
+    <a class="mm-item" href="/account/password">Passwort &amp; 2FA</a>
+    <button type="button" class="mm-item" id="themeToggleSpaMobile">☀ Kontrast umschalten</button>
+    <a class="mm-item" href="/docs">Hilfe</a>
+    {% if current_user.is_admin %}
+      <div class="mm-sep"></div>
+      <div class="mm-label">Administration</div>
+      <a class="mm-item" href="/admin/users">⚙ Benutzer-Verwaltung</a>
+      <a class="mm-item" href="/account/pin">🔑 Admin-PIN (Datenfreigabe)</a>
+      <a class="mm-item" href="/admin/scan">📷 Scanner</a>
+    {% endif %}
+    <div class="mm-sep"></div>
+    <a class="mm-item danger" href="/logout">Abmelden</a>
+  </div>
+</div>
+
+<script>
+// Hamburger-Toggle (Mobile) — Muster wie base.html
+(function () {
+  var btn = document.getElementById('spaHamburger');
+  var menu = document.getElementById('spaMobileMenu');
+  if (!btn || !menu) return;
+  function setOpen(open) {
+    if (open) {
+      menu.hidden = false;
+      void menu.offsetWidth;
+      menu.classList.add('open');
+      btn.classList.add('open');
+      btn.setAttribute('aria-expanded', 'true');
+    } else {
+      menu.classList.remove('open');
+      btn.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      setTimeout(function () {
+        if (!menu.classList.contains('open')) menu.hidden = true;
+      }, 250);
+    }
+  }
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    setOpen(!menu.classList.contains('open'));
+  });
+  document.addEventListener('click', function (e) {
+    if (!menu.classList.contains('open')) return;
+    if (menu.querySelector('.spa-mobile-menu-inner').contains(e.target)) {
+      // Klick auf Menüpunkt (außer Theme-Toggle): schließen
+      if (e.target.closest('.mm-item') &&
+          e.target.id !== 'themeToggleSpaMobile') setOpen(false);
+      return;
+    }
+    if (btn.contains(e.target)) return;
+    setOpen(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') setOpen(false);
+  });
+  // Theme-Toggle im Mobile-Menü — nutzt dieselbe Logik wie der Topbar-Knopf
+  var mt = document.getElementById('themeToggleSpaMobile');
+  if (mt) {
+    function refreshM() {
+      var t = document.documentElement.getAttribute('data-theme');
+      mt.textContent = t === 'hc' ? '☾ Standard-Theme' : '☀ Kontrast umschalten';
+    }
+    refreshM();
+    mt.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var cur = document.documentElement.getAttribute('data-theme');
+      if (cur === 'hc') {
+        document.documentElement.removeAttribute('data-theme');
+        try { localStorage.setItem('theme', 'default'); } catch (_) {}
+      } else {
+        document.documentElement.setAttribute('data-theme', 'hc');
+        try { localStorage.setItem('theme', 'hc'); } catch (_) {}
+      }
+      refreshM();
+    });
+  }
+})();
+</script>
 <script>
 (function () {
   try {

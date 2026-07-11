@@ -297,3 +297,142 @@ def render_medication_plan_pdf(*, patient, medications, days,
 
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()
+
+
+# ============ Medikamentenschein pro Stamm/Region (A4 portrait) ============
+
+S_STAMM_TITLE = ParagraphStyle(
+    "StammTitle", fontName="Helvetica-Bold", fontSize=15, leading=18,
+    textColor=ACCENT_DARK)
+S_PATIENT = ParagraphStyle(
+    "PatientName", fontName="Helvetica-Bold", fontSize=10.5, leading=13,
+    textColor=ACCENT_DARK)
+S_CELL = ParagraphStyle("Cell", fontName="Helvetica", fontSize=8.5, leading=11)
+S_CELL_B = ParagraphStyle("CellB", fontName="Helvetica-Bold",
+                           fontSize=8.5, leading=11)
+S_CELL_HEAD = ParagraphStyle(
+    "CellHead", fontName="Helvetica-Bold", fontSize=8, leading=10,
+    textColor=colors.white)
+
+
+def _einnahme_text(row) -> str:
+    """Einnahme-Slots als Klartext: 'morgens, abends' + 'bei Bedarf'."""
+    parts = [SLOT_LONG[s].lower() for s in SLOTS_PLAN if row[s]]
+    if row["bei_bedarf"]:
+        parts.append("bei Bedarf")
+    return ", ".join(parts) if parts else "—"
+
+
+def _patient_med_table(meds, width):
+    """Tabelle: Medikament | Dosierung | Einnahme | Lagerung | Hinweise."""
+    header = [Paragraph(t, S_CELL_HEAD) for t in
+              ("Medikament", "Dosierung", "Einnahme", "Lagerung", "Hinweise")]
+    rows = [header]
+    for m in meds:
+        rows.append([
+            Paragraph(str(m["med_name"] or "—"), S_CELL_B),
+            Paragraph(str(m["dosage"] or "—"), S_CELL),
+            Paragraph(_einnahme_text(m), S_CELL),
+            Paragraph(str(m["lagerung"] or "—"), S_CELL),
+            Paragraph(str(m["notes"] or "—"), S_CELL),
+        ])
+    col_w = [width * f for f in (0.24, 0.16, 0.20, 0.18, 0.22)]
+    tbl = Table(rows, colWidths=col_w, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
+        ("BOX", (0, 0), (-1, -1), 0.6, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.3, BORDER_SOFT),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+         [colors.white, colors.HexColor("#FAF7F5")]),
+    ]))
+    return tbl
+
+
+def render_stamm_medication_sheet(rows, *, stamm_filter=None,
+                                    exporter_label=None):
+    """Medikamentenschein pro Stamm/Region.
+
+    `rows` = flache Liste aus list_medications_by_stamm() (Patient × Med).
+    Gruppiert nach Stamm → pro Stamm eine Sektion (neuer Stamm = neue
+    Seite), darin pro Patient namentlich eine Tabelle mit Medikament,
+    Dosierung, Einnahme-Zeitpunkten, Lagerung und Hinweisen.
+    """
+    from collections import OrderedDict
+    from xml.sax.saxutils import escape as _esc
+
+    # rows → {stamm: {patient_key: {"patient": ..., "meds": [...]}}}
+    grouped: "OrderedDict[str, OrderedDict]" = OrderedDict()
+    for r in rows:
+        stamm = (r["stamm"] or "").strip()
+        pat_key = (r["patient_id"])
+        grouped.setdefault(stamm, OrderedDict())
+        grouped[stamm].setdefault(pat_key, {"patient": r, "meds": []})
+        grouped[stamm][pat_key]["meds"].append(r)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=14 * mm, rightMargin=14 * mm,
+        topMargin=14 * mm, bottomMargin=16 * mm,
+        title="Medikamentenschein",
+    )
+    avail_w = A4[0] - 28 * mm
+    story = []
+    today = _date.today().strftime("%d.%m.%Y")
+
+    if not grouped:
+        story.append(Paragraph("Medikamentenschein", S_STAMM_TITLE))
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(
+            "Keine aktiven Medikationspläne"
+            + (f" für Stamm „{_esc(stamm_filter)}“" if stamm_filter else "")
+            + ".", S_TXT))
+    else:
+        first = True
+        for stamm, patients in grouped.items():
+            if not first:
+                story.append(PageBreak())
+            first = False
+            label = stamm if stamm else "ohne Stamm-Zuordnung"
+            story.append(Paragraph(
+                f"Medikamentenschein — Stamm/Region: {_esc(label)}",
+                S_STAMM_TITLE))
+            story.append(Paragraph(
+                f"Stand: {today}"
+                + (f" · erstellt von {_esc(exporter_label)}"
+                   if exporter_label else "")
+                + f" · {len(patients)} Person(en)", S_SMALL))
+            story.append(Spacer(1, 8))
+            for entry in patients.values():
+                p = entry["patient"]
+                geb = (p["geburtsdatum"] or "").strip()
+                if geb:
+                    try:
+                        geb = _date.fromisoformat(geb[:10]).strftime("%d.%m.%Y")
+                    except ValueError:
+                        pass
+                story.append(Paragraph(
+                    _esc(p["name"] or "—")
+                    + (f" · geb. {_esc(geb)}" if geb else ""),
+                    S_PATIENT))
+                story.append(Spacer(1, 3))
+                story.append(_patient_med_table(entry["meds"], avail_w))
+                story.append(Spacer(1, 10))
+
+    def _footer(canvas, doc_):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(MUTED)
+        canvas.drawString(14 * mm, 8 * mm,
+                          "Vertraulich — nur für das Sanitätsteam")
+        canvas.drawRightString(A4[0] - 14 * mm, 8 * mm,
+                                f"Seite {doc_.page}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    return buf.getvalue()
