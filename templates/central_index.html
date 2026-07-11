@@ -2247,22 +2247,56 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
 
     function prepareCanvas() {
       const rect = canvas.getBoundingClientRect();
+      // Unsichtbar (Seite nicht aktiv) → nicht vermessen, sonst
+      // kollabiert der Puffer auf 1×1 und das Pad reagiert nie.
+      if (rect.width < 10 || rect.height < 10) return false;
       const dpr = window.devicePixelRatio || 1;
-      cssW = Math.max(1, rect.width);
-      cssH = Math.max(1, rect.height);
-      const nextW = Math.round(cssW * dpr);
-      const nextH = Math.round(cssH * dpr);
+      const nextW = Math.round(rect.width * dpr);
+      const nextH = Math.round(rect.height * dpr);
       if (canvas.width !== nextW || canvas.height !== nextH) {
+        // Vorhandene Tinte über die Größenänderung retten
+        let snapshot = null;
+        if (hasInk) {
+          try { snapshot = canvas.toDataURL('image/png'); } catch (_) {}
+        }
         canvas.width = nextW;
         canvas.height = nextH;
+        if (snapshot) {
+          const img = new Image();
+          img.onload = () => {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          };
+          img.src = snapshot;
+        }
       }
+      cssW = rect.width;
+      cssH = rect.height;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.strokeStyle = '#18202b';
+      return true;
     }
     prepareCanvas();
+
+    // Sobald das Pad sichtbar wird (Seiten-Wechsel zur Abschluss-Seite),
+    // mit echten Maßen neu vermessen.
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(entries => {
+        entries.forEach(en => { if (en.isIntersecting) prepareCanvas(); });
+      }).observe(canvas);
+    }
+
+    function ensurePrepared() {
+      const rect = canvas.getBoundingClientRect();
+      if (Math.abs(rect.width - cssW) > 2 || Math.abs(rect.height - cssH) > 2
+          || canvas.width < 10) {
+        prepareCanvas();
+      }
+    }
 
     function getPos(e) {
       const rect = canvas.getBoundingClientRect();
@@ -2276,6 +2310,7 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
     }
     function start(e) {
       e.preventDefault();
+      ensurePrepared();
       drawing = true;
       const p = getPos(e);
       lastX = p.x; lastY = p.y;
@@ -2328,7 +2363,11 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
       n,
       canvas, ctx,
       clear() {
-        ctx.clearRect(0, 0, cssW, cssH);
+        // Ganzen Puffer leeren — unabhängig von Transform/CSS-Maßen
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
         hasInk = false;
         canvas.classList.remove('signed');
         const elSig = document.getElementById('signature_einsatzkraft' + n);
@@ -2345,8 +2384,11 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
         prepareCanvas();
         const img = new Image();
         img.onload = () => {
-          ctx.clearRect(0, 0, cssW, cssH);
-          ctx.drawImage(img, 0, 0, cssW, cssH);
+          ctx.save();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          ctx.restore();
           hasInk = true;
           canvas.classList.add('signed');
           const status = document.getElementById('sig-status-' + n);
