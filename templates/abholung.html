@@ -19,6 +19,7 @@
         <tr>
           <th>Name</th>
           <th>Einsatzstichwort</th>
+          <th>Triage</th>
           <th>Zeit</th>
           <th>Abholung</th>
         </tr>
@@ -28,6 +29,7 @@
         <tr>
           <td><strong>{{ e.name }}</strong></td>
           <td>{{ e.einsatzstichwort or '—' }}</td>
+          <td>{{ e.status or '—' }}</td>
           <td>{{ format_dt(e.when) if e.when else '—' }}</td>
           <td>
             {% if e.abgeholt %}

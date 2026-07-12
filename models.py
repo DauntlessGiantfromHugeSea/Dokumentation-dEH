@@ -1106,43 +1106,100 @@ def set_patient_abgeholt(conn: sqlite3.Connection, patient_id: int,
 
 
 def list_treated_overview(conn, event_id: Optional[int] = None) -> list:
-    """Übersicht „wer wurde behandelt" für die Rolle Abholung:
-    Name + Einsatzstichwort (aus dem zentralen Protokoll) + Abhol-Status.
-    Bewusst nur diese drei Angaben — keine Detaildaten."""
+    """Übersicht „wer wurde behandelt" für die Rolle Abholung — aus
+    zentralen Protokollen (liefern das Einsatzstichwort) UND Triage-
+    Einträgen (Sichtungskategorie/Status). Pro Person zusammengefasst
+    (dedupliziert über den Patienten). Bewusst nur Name, Stichwort,
+    Triage-Status, Zeit und Abhol-Status — keine Detaildaten."""
     import json
-    where = ""
-    params: tuple = ()
+
+    ev_where = ""
+    ev_params: tuple = ()
     if event_id is not None:
-        where = "WHERE cp.event_id = ?"
-        params = (event_id,)
-    rows = conn.execute(
+        ev_params = (event_id,)
+
+    merged: dict = {}
+
+    def _key(pid, name, geb):
+        if pid:
+            return f"p:{pid}"
+        return f"n:{(name or '').strip().lower()}|{(geb or '').strip()}"
+
+    def _entry(pid, name, geb):
+        k = _key(pid, name, geb)
+        e = merged.get(k)
+        if e is None:
+            e = {"name": (name or "—"), "geburtsdatum": (geb or ""),
+                 "einsatzstichwort": "", "status": "", "when": "",
+                 "abgeholt": False, "abgeholt_at": ""}
+            merged[k] = e
+        elif (not e["name"] or e["name"] == "—") and name:
+            e["name"] = name
+        return e
+
+    # 1) Zentrale Protokolle (Einsatzstichwort steckt im JSON `data`)
+    cp_where = "WHERE cp.event_id = ?" if event_id is not None else ""
+    for r in conn.execute(
         f"""
-        SELECT cp.id, cp.patient_id, cp.datum, cp.created_at,
-               cp.name_summary, cp.data,
-               p.name AS patient_name, p.geburtsdatum,
-               p.abgeholt, p.abgeholt_at
+        SELECT cp.patient_id, cp.datum, cp.created_at, cp.name_summary, cp.data,
+               p.name AS patient_name, p.geburtsdatum, p.abgeholt, p.abgeholt_at
         FROM central_protocols cp
         LEFT JOIN patients p ON p.id = cp.patient_id
-        {where}
+        {cp_where}
         ORDER BY cp.created_at DESC
         """,
-        params,
-    ).fetchall()
-    out = []
-    for r in rows:
+        ev_params,
+    ).fetchall():
         try:
             data = json.loads(r["data"] or "{}")
         except (ValueError, TypeError):
             data = {}
-        out.append({
-            "name": r["patient_name"] or r["name_summary"] or "—",
-            "geburtsdatum": r["geburtsdatum"] or "",
-            "einsatzstichwort": (data.get("einsatzstichwort") or "").strip(),
-            "when": r["datum"] or r["created_at"] or "",
-            "abgeholt": bool(r["abgeholt"]) if r["abgeholt"] is not None else False,
-            "abgeholt_at": r["abgeholt_at"] or "",
-        })
-    return out
+        e = _entry(r["patient_id"], r["patient_name"] or r["name_summary"],
+                   r["geburtsdatum"])
+        stich = (data.get("einsatzstichwort") or "").strip()
+        if stich and not e["einsatzstichwort"]:
+            e["einsatzstichwort"] = stich
+        when = r["datum"] or r["created_at"] or ""
+        if when > e["when"]:
+            e["when"] = when
+        if r["abgeholt"]:
+            e["abgeholt"] = True
+            e["abgeholt_at"] = r["abgeholt_at"] or ""
+
+    # 2) Triage-Einträge (Sichtungskategorie + Status)
+    STATUS_LABEL = {
+        "wartend": "wartend", "in_behandlung": "in Behandlung",
+        "abgeschlossen": "abgeschlossen", "abgebrochen": "abgebrochen",
+    }
+    t_where = "WHERE t.event_id = ?" if event_id is not None else ""
+    for r in conn.execute(
+        f"""
+        SELECT t.patient_id, t.name AS t_name, t.geburtsdatum AS t_geb,
+               t.category, t.status, t.arrival_at, t.treatment_started_at,
+               p.name AS patient_name, p.geburtsdatum AS p_geb,
+               p.abgeholt, p.abgeholt_at
+        FROM triage_entries t
+        LEFT JOIN patients p ON p.id = t.patient_id
+        {t_where}
+        ORDER BY t.arrival_at DESC
+        """,
+        ev_params,
+    ).fetchall():
+        e = _entry(r["patient_id"], r["patient_name"] or r["t_name"],
+                   r["p_geb"] or r["t_geb"])
+        cat = (r["category"] or "").strip()
+        stat = STATUS_LABEL.get(r["status"], (r["status"] or "").strip())
+        label = " · ".join(x for x in (cat, stat) if x)
+        if label and not e["status"]:
+            e["status"] = label
+        when = r["treatment_started_at"] or r["arrival_at"] or ""
+        if when > e["when"]:
+            e["when"] = when
+        if r["abgeholt"]:
+            e["abgeholt"] = True
+            e["abgeholt_at"] = r["abgeholt_at"] or ""
+
+    return sorted(merged.values(), key=lambda e: e["when"], reverse=True)
 
 
 # ---------------------------------------------------------------------------
