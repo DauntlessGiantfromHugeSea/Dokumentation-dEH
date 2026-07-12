@@ -24,7 +24,7 @@
 <body{% if request.args.get('embed') %} class="embed-mode"{% endif %}>
   {% if current_user.is_authenticated and not request.args.get('embed') %}
   <header class="topbar">
-    <a class="brand" href="{% if current_user.is_triage_intake %}{{ url_for('triage_new') }}{% elif current_user.can_view_decentral %}{{ url_for('dashboard') }}{% else %}{{ url_for('central_index') }}{% endif %}">Erste Hilfe</a>
+    <a class="brand" href="{% if current_user.is_triage_intake %}{{ url_for('triage_new') }}{% elif current_user.is_abholung %}{{ url_for('abholung_overview') }}{% elif current_user.can_view_decentral %}{{ url_for('dashboard') }}{% else %}{{ url_for('central_index') }}{% endif %}">Erste Hilfe</a>
 
     {# Hamburger-Button: nur auf Mobile sichtbar #}
     <button type="button" class="hamburger-btn" id="hamburgerBtn" aria-label="Menü öffnen" aria-expanded="false" aria-controls="mobileMenu">
@@ -49,6 +49,25 @@
             ☀ Kontrast umschalten
           </button>
           <a class="menu-item" href="{{ url_for('docs_index') }}">Hilfe</a>
+          <a class="menu-item danger" href="{{ url_for('logout') }}">Abmelden</a>
+        </div>
+      </div>
+    {% elif current_user.is_abholung %}
+      {# Abhol-Übersicht: nur die Liste + Konto #}
+      <nav class="topbar-nav">
+        <a href="{{ url_for('abholung_overview') }}">Übersicht</a>
+      </nav>
+      <div class="topbar-spacer"></div>
+      <div class="user-menu" data-menu>
+        <button type="button" class="user-menu-trigger" data-menu-trigger>
+          <span class="muted">Abholung</span> ▾
+        </button>
+        <div class="user-menu-panel" data-menu-panel>
+          <div class="menu-section-label">Konto</div>
+          <a class="menu-item" href="{{ url_for('account_password') }}">Passwort &amp; 2FA</a>
+          <button type="button" class="menu-item theme-toggle" id="themeToggle">
+            ☀ Kontrast umschalten
+          </button>
           <a class="menu-item danger" href="{{ url_for('logout') }}">Abmelden</a>
         </div>
       </div>
@@ -166,6 +185,18 @@
             ☀ Kontrast umschalten
           </button>
           <a class="mobile-menu-item" href="{{ url_for('docs_index') }}">Hilfe</a>
+          <a class="mobile-menu-item danger" href="{{ url_for('logout') }}">Abmelden</a>
+        </div>
+      {% elif current_user.is_abholung %}
+        <div class="mobile-menu-section">
+          <div class="mobile-menu-label">Abholung</div>
+          <a class="mobile-menu-item" href="{{ url_for('abholung_overview') }}">Übersicht</a>
+        </div>
+        <div class="mobile-menu-section">
+          <div class="mobile-menu-label">Konto</div>
+          <button type="button" class="mobile-menu-item theme-toggle" id="themeToggleMobileAbh">
+            ☀ Kontrast umschalten
+          </button>
           <a class="mobile-menu-item danger" href="{{ url_for('logout') }}">Abmelden</a>
         </div>
       {% else %}

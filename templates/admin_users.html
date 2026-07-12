@@ -200,6 +200,7 @@
               <option value="full">Voll (kann alles lesen + schreiben)</option>
               <option value="zentral_writer">Nur Zentrale Erste Hilfe schreiben</option>
               <option value="triage_intake">Nur Anmeldung (Triage-Kiosk)</option>
+              <option value="abholung">Abholung (nur Übersicht)</option>
             </select>
           </label>
           <label class="checkbox-row">
@@ -243,6 +244,8 @@
                 <span class="badge">Nur Zentral schreiben</span>
               {% elif u.role == 'triage_intake' %}
                 <span class="badge">Anmelde-Kiosk</span>
+              {% elif u.role == 'abholung' %}
+                <span class="badge">Abholung</span>
               {% else %}
                 <span class="badge type-d">Voll</span>
               {% endif %}
@@ -304,6 +307,7 @@
                     <option value="full" {% if u.role == 'full' %}selected{% endif %}>Voll (Lesen + Schreiben)</option>
                     <option value="zentral_writer" {% if u.role == 'zentral_writer' %}selected{% endif %}>Nur Zentral schreiben</option>
                     <option value="triage_intake" {% if u.role == 'triage_intake' %}selected{% endif %}>Anmelde-Kiosk</option>
+                    <option value="abholung" {% if u.role == 'abholung' %}selected{% endif %}>Abholung (nur Übersicht)</option>
                   </select>
                 </form>
                 <form method="post"

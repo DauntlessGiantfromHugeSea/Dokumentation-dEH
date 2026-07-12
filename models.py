@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS patients (
     has_medications            INTEGER,    -- NULL=unbekannt, 0=nein, 1=ja
     medications_text           TEXT,
     extras_notes               TEXT,
+    -- Abholung: einfacher Hinweis, ob die Person abgeholt wurde (Admin-Klick)
+    abgeholt                   INTEGER NOT NULL DEFAULT 0,
+    abgeholt_at                TEXT,
+    abgeholt_by                INTEGER,
     UNIQUE(name, geburtsdatum)
 );
 
@@ -487,6 +491,10 @@ def init_db(db_path: Path) -> None:
             ("extras_notes", "TEXT"),
             # Verknüpfung zur frodor-Anmeldung (registrations.uuid)
             ("frodor_registration_uuid", "TEXT"),
+            # Abholung: Hinweis, ob die Person abgeholt wurde (Admin-Klick)
+            ("abgeholt", "INTEGER NOT NULL DEFAULT 0"),
+            ("abgeholt_at", "TEXT"),
+            ("abgeholt_by", "INTEGER"),
         ]:
             if col not in pat_cols:
                 conn.execute(f"ALTER TABLE patients ADD COLUMN {col} {decl}")
@@ -895,13 +903,14 @@ def standalone_connection(db_path: Path) -> Iterator[sqlite3.Connection]:
 
 # ---------- Users ----------
 
-VALID_ROLES = ("full", "zentral_writer", "triage_intake")
+VALID_ROLES = ("full", "zentral_writer", "triage_intake", "abholung")
 
 
 ROLE_LABELS = {
     "full": "Voll (Lesen + Schreiben)",
     "zentral_writer": "Nur Zentrale Erste Hilfe schreiben",
     "triage_intake": "Nur Anmeldung (Triage-Kiosk)",
+    "abholung": "Abholung (nur Übersicht)",
 }
 
 
@@ -1075,6 +1084,65 @@ def upsert_patient(conn: sqlite3.Connection, name: str, geburtsdatum: str,
 
 def get_patient(conn: sqlite3.Connection, patient_id: int) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM patients WHERE id = ?", (patient_id,)).fetchone()
+
+
+def set_patient_abgeholt(conn: sqlite3.Connection, patient_id: int,
+                         value: bool, by_user_id: Optional[int] = None) -> None:
+    """Abhol-Hinweis an einer Patienten-Akte setzen/zurücknehmen
+    (einfacher Admin-Klick, kein Workflow)."""
+    if value:
+        conn.execute(
+            "UPDATE patients SET abgeholt = 1, "
+            "abgeholt_at = datetime('now', 'localtime'), abgeholt_by = ? "
+            "WHERE id = ?",
+            (by_user_id, patient_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE patients SET abgeholt = 0, abgeholt_at = NULL, "
+            "abgeholt_by = NULL WHERE id = ?",
+            (patient_id,),
+        )
+
+
+def list_treated_overview(conn, event_id: Optional[int] = None) -> list:
+    """Übersicht „wer wurde behandelt" für die Rolle Abholung:
+    Name + Einsatzstichwort (aus dem zentralen Protokoll) + Abhol-Status.
+    Bewusst nur diese drei Angaben — keine Detaildaten."""
+    import json
+    where = ""
+    params: tuple = ()
+    if event_id is not None:
+        where = "WHERE cp.event_id = ?"
+        params = (event_id,)
+    rows = conn.execute(
+        f"""
+        SELECT cp.id, cp.patient_id, cp.datum, cp.created_at,
+               cp.name_summary, cp.data,
+               p.name AS patient_name, p.geburtsdatum,
+               p.abgeholt, p.abgeholt_at
+        FROM central_protocols cp
+        LEFT JOIN patients p ON p.id = cp.patient_id
+        {where}
+        ORDER BY cp.created_at DESC
+        """,
+        params,
+    ).fetchall()
+    out = []
+    for r in rows:
+        try:
+            data = json.loads(r["data"] or "{}")
+        except (ValueError, TypeError):
+            data = {}
+        out.append({
+            "name": r["patient_name"] or r["name_summary"] or "—",
+            "geburtsdatum": r["geburtsdatum"] or "",
+            "einsatzstichwort": (data.get("einsatzstichwort") or "").strip(),
+            "when": r["datum"] or r["created_at"] or "",
+            "abgeholt": bool(r["abgeholt"]) if r["abgeholt"] is not None else False,
+            "abgeholt_at": r["abgeholt_at"] or "",
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------

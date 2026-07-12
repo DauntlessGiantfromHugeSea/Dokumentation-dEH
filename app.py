@@ -55,6 +55,8 @@ def _login_landing(user) -> str:
     """Where a user lands right after a successful (full) login."""
     if user.is_triage_intake:
         return url_for("triage_new")
+    if user.is_abholung:
+        return url_for("abholung_overview")
     if user.is_zentral_only:
         return url_for("central_index")
     return url_for("index")
@@ -120,6 +122,19 @@ TRIAGE_INTAKE_ALLOWED = (
 def _is_path_allowed_for_intake(path: str) -> bool:
     return any(path == p or path.startswith(p + "/") or path.startswith(p)
                for p in TRIAGE_INTAKE_ALLOWED)
+
+
+# Abholung-Rolle: darf nur die Übersicht (wer behandelt + Stichwort + Status).
+ABHOLUNG_ALLOWED = (
+    "/abholung", "/account/password",
+    "/login", "/logout", "/setup-totp", "/two-factor",
+    "/events/switch", "/static/",
+)
+
+
+def _is_path_allowed_for_abholung(path: str) -> bool:
+    return any(path == p or path.startswith(p + "/") or path.startswith(p)
+               for p in ABHOLUNG_ALLOWED)
 
 
 def admin_required(view):
@@ -203,6 +218,16 @@ def create_app(test_config: dict | None = None) -> Flask:
             return
         abort(403)
 
+    @app.before_request
+    def _restrict_abholung():
+        if not current_user.is_authenticated:
+            return  # login_required handles auth
+        if not getattr(current_user, "is_abholung", False):
+            return
+        if _is_path_allowed_for_abholung(request.path):
+            return
+        abort(403)
+
     @app.context_processor
     def _inject_events():
         if not current_user.is_authenticated:
@@ -249,6 +274,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         def is_triage_intake(self) -> bool:
             """Kiosk-Account: darf nur Patienten anmelden, sonst nichts."""
             return (not self.is_admin) and self.role == "triage_intake"
+
+        @property
+        def is_abholung(self) -> bool:
+            """Abhol-/Übersichts-Account: sieht nur, wer behandelt wurde
+            (Name + Einsatzstichwort + Abhol-Status). Kann nichts öffnen."""
+            return (not self.is_admin) and self.role == "abholung"
 
         @property
         def can_view_decentral(self) -> bool:
@@ -965,6 +996,36 @@ def create_app(test_config: dict | None = None) -> Flask:
             "stadt": reg.get("stadt") or "",
             "telefon": reg.get("telefon") or "",
         }
+
+    @app.route("/abholung")
+    @login_required
+    def abholung_overview():
+        """Übersicht für die Rolle 'Abholung': wer wurde behandelt +
+        Einsatzstichwort + Abhol-Status. Nur Lesen, kein Öffnen der
+        Berichte."""
+        db = models.get_db()
+        entries = models.list_treated_overview(db, event_id=_current_event_id())
+        return render_template("abholung.html", entries=entries,
+                               format_dt=models.format_dt)
+
+    @app.route("/patients/<int:patient_id>/abgeholt", methods=["POST"])
+    @login_required
+    def patient_toggle_abgeholt(patient_id: int):
+        """Abhol-Hinweis an der Akte umschalten — einfacher Admin-Klick."""
+        if not current_user.is_admin:
+            abort(403)
+        db = models.get_db()
+        patient = models.get_patient(db, patient_id)
+        if not patient:
+            abort(404)
+        keys = patient.keys() if hasattr(patient, "keys") else []
+        current = bool(patient["abgeholt"]) if "abgeholt" in keys else False
+        models.set_patient_abgeholt(db, patient_id, not current,
+                                    by_user_id=current_user.id)
+        db.commit()
+        flash("Als abgeholt markiert." if not current
+              else "Abhol-Markierung zurückgenommen.", "success")
+        return redirect(url_for("patient_detail", patient_id=patient_id))
 
     def _push_protocol_to_frodor(source_type: str, source_id: int) -> tuple[bool, str]:
         """PDF rendern und an die verknüpfte frodor-Anmeldung hängen.

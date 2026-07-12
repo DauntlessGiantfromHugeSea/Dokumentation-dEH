@@ -8,6 +8,14 @@
       Geburtsdatum: {{ format_dt(patient.geburtsdatum) }}
       · Stammnummer: {{ patient.stammnummer or '—' }}
     </p>
+    {% if patient.abgeholt %}
+      <p style="margin:6px 0 0;">
+        <span class="badge"
+              style="background:#e0f2e0;color:#2e7d32;border:1px solid #a5d6a7;">
+          ✓ Abgeholt{% if patient.abgeholt_at %} am {{ format_dt(patient.abgeholt_at) }}{% endif %}
+        </span>
+      </p>
+    {% endif %}
   </div>
   <div class="btn-row">
     {% if current_user.can_export_akte %}
@@ -34,6 +42,14 @@
        + Zentral
     </a>
     {% if current_user.is_admin %}
+      <form method="post"
+            action="{{ url_for('patient_toggle_abgeholt', patient_id=patient.id) }}"
+            class="inline-form" style="display:inline;">
+        <button class="btn small {% if not patient.abgeholt %}secondary{% endif %}"
+                type="submit">
+          {% if patient.abgeholt %}Abholung zurücknehmen{% else %}✓ Als abgeholt markieren{% endif %}
+        </button>
+      </form>
       <details class="inline-action">
         <summary class="btn small danger">Patient löschen</summary>
         <form method="post"

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Abholung – Übersicht{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Abholung – wer wurde behandelt</h1>
+    <p class="tagline">
+      Übersicht der behandelten Personen mit Einsatzstichwort und
+      Abhol-Status. Weitere Details sind hier bewusst nicht einsehbar.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Behandelte Personen ({{ entries|length }})</div>
+  {% if entries %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Einsatzstichwort</th>
+          <th>Zeit</th>
+          <th>Abholung</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+        <tr>
+          <td><strong>{{ e.name }}</strong></td>
+          <td>{{ e.einsatzstichwort or '—' }}</td>
+          <td>{{ format_dt(e.when) if e.when else '—' }}</td>
+          <td>
+            {% if e.abgeholt %}
+              <span class="badge"
+                    style="background:#e0f2e0;color:#2e7d32;border:1px solid #a5d6a7;">
+                ✓ abgeholt{% if e.abgeholt_at %} · {{ format_dt(e.abgeholt_at) }}{% endif %}
+              </span>
+            {% else %}
+              <span class="badge">offen</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Noch keine behandelten Personen.</p>
+  {% endif %}
+</div>
+{% endblock %}
