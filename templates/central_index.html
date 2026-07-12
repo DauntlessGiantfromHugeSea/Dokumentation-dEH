@@ -1864,6 +1864,25 @@ if ('serviceWorker' in navigator) {
     if (presetNachname) setIfEmpty('nachname', presetNachname);
     if (presetGeburtsdatum) setIfEmpty('geburtsdatum', presetGeburtsdatum);
 
+    // Beim Übernehmen über Triage zusätzlich Adresse/Telefon/Kostenträger
+    // aus der verknüpften Camp-Anmeldung (frodor) vorbefüllen — nur wenn
+    // der Patient dort verknüpft ist und der User Kontaktdaten sehen darf.
+    const presetTriageId = params.get('triage_id');
+    if (presetTriageId) {
+      fetch('/api/frodor/prefill?triage_id=' + encodeURIComponent(presetTriageId),
+            { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => {
+          if (!d || !d.available) return;
+          if (d.krankenkasse) setIfEmpty('krankenkasse', d.krankenkasse);
+          if (d.strasse) setIfEmpty('strasse', d.strasse);
+          if (d.plz) setIfEmpty('plz', d.plz);
+          if (d.stadt) setIfEmpty('stadt', d.stadt);
+          if (d.telefon) setIfEmpty('telefon', d.telefon);
+        })
+        .catch(() => {});
+    }
+
     // Einsatzkraft 1 = eingeloggter User (Auto-Vorbelegung). Label am
     // Unterschriften-Pad direkt nachziehen — bewusst OHNE input-Event,
     // sonst würde der Auto-Save ein leeres Protokoll anlegen.

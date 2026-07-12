@@ -927,6 +927,45 @@ def create_app(test_config: dict | None = None) -> Flask:
             resp["telefon"] = reg.get("telefon") or ""
         return resp
 
+    @app.route("/api/frodor/prefill")
+    @login_required
+    def frodor_prefill():
+        """Adresse/Telefon/Kostenträger aus der verknüpften Camp-Anmeldung
+        (frodor) für den Triage-/Patienten-Kontext — damit die SPA beim
+        Übernehmen über Triage die Kontaktfelder vorbefüllt (auf dem
+        manuellen Picker-Weg passiert das bereits über /api/frodor/adopt).
+        Nur für User mit Kontakt-Berechtigung; sonst leeres Ergebnis."""
+        if not frodor_client.is_configured() or not current_user.can_view_contact:
+            return {"available": False}
+        db = models.get_db()
+        patient_id = request.args.get("patient_id", type=int)
+        triage_id = request.args.get("triage_id", type=int)
+        if triage_id:
+            entry = models.get_triage_entry(db, triage_id)
+            if entry and entry.get("patient_id"):
+                patient_id = entry["patient_id"]
+        reg_uuid = None
+        if patient_id:
+            patient = models.get_patient(db, patient_id)
+            if patient:
+                reg_uuid = patient["frodor_registration_uuid"]
+        if not reg_uuid:
+            return {"available": False}
+        try:
+            reg = frodor_client.get_registration(reg_uuid)
+        except frodor_client.FrodorError:
+            return {"available": False}
+        if not reg:
+            return {"available": False}
+        return {
+            "available": True,
+            "krankenkasse": reg.get("insurance_provider") or "",
+            "strasse": reg.get("strasse") or "",
+            "plz": reg.get("plz") or "",
+            "stadt": reg.get("stadt") or "",
+            "telefon": reg.get("telefon") or "",
+        }
+
     def _push_protocol_to_frodor(source_type: str, source_id: int) -> tuple[bool, str]:
         """PDF rendern und an die verknüpfte frodor-Anmeldung hängen.
 
