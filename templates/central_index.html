@@ -2421,6 +2421,18 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
 // Speichert die Signatur als Data-URL in den hidden inputs, dazu Timestamp
 // und User-Label. applyData() lädt sie zurück, wenn ein Bericht geöffnet wird.
 (function () {
+  // Statuszeile einer Unterschrift: Zeitpunkt · Name der unterschreibenden
+  // Einsatzkraft (die ja tatsächlich unterschreibt) · ggf. wer sie erfasst hat.
+  function sigStatusText(n, atVal, byVal) {
+    const when = atVal ? new Date(atVal).toLocaleString('de-DE') : 'gespeichert';
+    const nameEl = document.querySelector('[name="einsatzkraft' + n + '"]');
+    const name = nameEl && nameEl.value ? String(nameEl.value).trim() : '';
+    let s = 'unterschrieben · ' + when;
+    if (name) s += ' · ' + name;
+    if (byVal && byVal !== name) s += ' · erfasst von ' + byVal;
+    return s;
+  }
+
   const pads = [1, 2].map(n => {
     const canvas = document.getElementById('sig-pad-' + n);
     if (!canvas) return null;
@@ -2528,8 +2540,7 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
       canvas.classList.add('signed');
       const status = document.getElementById('sig-status-' + n);
       if (status) {
-        status.textContent = 'unterschrieben · ' +
-          new Date(elAt.value).toLocaleString('de-DE');
+        status.textContent = sigStatusText(n, elAt.value, elBy && elBy.value);
         status.classList.add('ok');
       }
       // dirty-Flag triggern (im Haupt-SPA über das form-input-Event)
@@ -2578,9 +2589,7 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
           canvas.classList.add('signed');
           const status = document.getElementById('sig-status-' + n);
           if (status) {
-            const when = at ? new Date(at).toLocaleString('de-DE') : 'gespeichert';
-            const who = by ? ' · ' + by : '';
-            status.textContent = 'unterschrieben · ' + when + who;
+            status.textContent = sigStatusText(n, at, by);
             status.classList.add('ok');
           }
         };
