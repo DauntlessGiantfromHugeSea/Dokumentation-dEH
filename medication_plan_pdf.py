@@ -362,12 +362,14 @@ S_ANMELDUNG = ParagraphStyle(
 
 
 def render_stamm_medication_sheet(sheet_patients, *, stamm_filter=None,
+                                    region_filter=None, region_order=None,
                                     exporter_label=None):
-    """Medikamentenschein pro Stamm/Region.
+    """Medikamentenschein nach Region → Stamm.
 
     `sheet_patients` = Liste aus medication_sheet_patients(): pro Person
-    {name, geburtsdatum, stamm, meds: [...], anmeldung_text}. Pro Stamm
-    eine Sektion (neuer Stamm = neue Seite); je Person die strukturierte
+    {name, geburtsdatum, stamm, region, meds: [...], anmeldung_text}.
+    Gruppiert zuerst nach Region (Reihenfolge aus `region_order`), dann
+    nach Stamm; je Region eine neue Seite. Je Person die strukturierte
     Plan-Tabelle (Medikament/Dosierung/Einnahme/Lagerung/Hinweise) und —
     falls vorhanden — die Medikamenten-Angabe aus der Camp-Anmeldung
     (frodor, live abgeglichen) als gelber Block.
@@ -375,10 +377,22 @@ def render_stamm_medication_sheet(sheet_patients, *, stamm_filter=None,
     from collections import OrderedDict
     from xml.sax.saxutils import escape as _esc
 
-    grouped: "OrderedDict[str, list]" = OrderedDict()
+    UNASSIGNED = "Ohne Region"
+    # region -> (stamm -> [entries])
+    grouped: "OrderedDict[str, OrderedDict]" = OrderedDict()
     for entry in sheet_patients:
+        region = (entry.get("region") or UNASSIGNED).strip() or UNASSIGNED
         stamm = (entry.get("stamm") or "").strip()
-        grouped.setdefault(stamm, []).append(entry)
+        grouped.setdefault(region, OrderedDict()).setdefault(stamm, []).append(entry)
+
+    # Regions-Reihenfolge: konfigurierte Reihenfolge zuerst, dann übrige,
+    # "Ohne Region" ganz am Ende.
+    ordered = [r for r in (region_order or []) if r in grouped]
+    for r in grouped:
+        if r not in ordered and r != UNASSIGNED:
+            ordered.append(r)
+    if UNASSIGNED in grouped and UNASSIGNED not in ordered:
+        ordered.append(UNASSIGNED)
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -396,45 +410,52 @@ def render_stamm_medication_sheet(sheet_patients, *, stamm_filter=None,
         story.append(Spacer(1, 6))
         story.append(Paragraph(
             "Keine Medikamente erfasst"
+            + (f" für Region „{_esc(region_filter)}“" if region_filter else "")
             + (f" für Stamm „{_esc(stamm_filter)}“" if stamm_filter else "")
             + ".", S_TXT))
     else:
         first = True
-        for stamm, patients in grouped.items():
+        for region in ordered:
+            stamm_groups = grouped[region]
             if not first:
                 story.append(PageBreak())
             first = False
-            label = stamm if stamm else "ohne Stamm-Zuordnung"
+            n_people = sum(len(v) for v in stamm_groups.values())
             story.append(Paragraph(
-                f"Medikamentenschein — Stamm/Region: {_esc(label)}",
+                f"Medikamentenschein — Region: {_esc(region)}",
                 S_STAMM_TITLE))
             story.append(Paragraph(
                 f"Stand: {today}"
                 + (f" · erstellt von {_esc(exporter_label)}"
                    if exporter_label else "")
-                + f" · {len(patients)} Person(en)", S_SMALL))
+                + f" · {n_people} Person(en)", S_SMALL))
             story.append(Spacer(1, 8))
-            for entry in patients:
-                geb = (entry.get("geburtsdatum") or "").strip()
-                if geb:
-                    try:
-                        geb = _date.fromisoformat(geb[:10]).strftime("%d.%m.%Y")
-                    except ValueError:
-                        pass
+            for stamm, patients in stamm_groups.items():
+                stamm_label = stamm if stamm else "ohne Stamm-Zuordnung"
                 story.append(Paragraph(
-                    _esc(entry.get("name") or "—")
-                    + (f" · geb. {_esc(geb)}" if geb else ""),
-                    S_PATIENT))
-                story.append(Spacer(1, 3))
-                if entry.get("meds"):
-                    story.append(_patient_med_table(entry["meds"], avail_w))
-                    story.append(Spacer(1, 4))
-                if (entry.get("anmeldung_text") or "").strip():
+                    f"Stamm: {_esc(stamm_label)}", S_PATIENT))
+                story.append(Spacer(1, 4))
+                for entry in patients:
+                    geb = (entry.get("geburtsdatum") or "").strip()
+                    if geb:
+                        try:
+                            geb = _date.fromisoformat(geb[:10]).strftime("%d.%m.%Y")
+                        except ValueError:
+                            pass
                     story.append(Paragraph(
-                        "<b>Medikamente laut Camp-Anmeldung:</b> "
-                        + _esc(entry["anmeldung_text"].strip()),
-                        S_ANMELDUNG))
-                story.append(Spacer(1, 10))
+                        "<b>" + _esc(entry.get("name") or "—") + "</b>"
+                        + (f" · geb. {_esc(geb)}" if geb else ""),
+                        S_TXT))
+                    story.append(Spacer(1, 3))
+                    if entry.get("meds"):
+                        story.append(_patient_med_table(entry["meds"], avail_w))
+                        story.append(Spacer(1, 4))
+                    if (entry.get("anmeldung_text") or "").strip():
+                        story.append(Paragraph(
+                            "<b>Medikamente laut Camp-Anmeldung:</b> "
+                            + _esc(entry["anmeldung_text"].strip()),
+                            S_ANMELDUNG))
+                    story.append(Spacer(1, 10))
 
     def _footer(canvas, doc_):
         canvas.saveState()

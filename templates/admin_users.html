@@ -42,6 +42,13 @@
         </span>
         <em>⏱</em>
       </a>
+      <a class="settings-nav-link" href="#regionen" data-settings-link>
+        <span>
+          <strong>Regionen</strong>
+          <small>Stämme → O1–O6</small>
+        </span>
+        <em>🗺</em>
+      </a>
       <a class="settings-nav-link" href="#danger" data-settings-link>
         <span>
           <strong>Datenbank</strong>
@@ -479,6 +486,69 @@
           Versatz.
         </p>
       </div>
+    </section>
+
+    <section class="settings-panel" id="regionen" data-settings-panel hidden>
+      <div class="settings-panel-head">
+        <div>
+          <h2>Regionen &amp; Stämme</h2>
+          <p class="muted">
+            Ordne jeden Stamm einer Region zu (O1–O6). Die
+            Medikamentenliste und der Medikamentenschein werden danach
+            gruppiert. Jederzeit änderbar.
+          </p>
+        </div>
+      </div>
+
+      <form method="post" action="{{ url_for('admin_set_regions') }}" class="stack">
+        <div class="card">
+          <div class="card-header">Regionen (eine pro Zeile)</div>
+          <label class="field">
+            Regionsnamen
+            <textarea name="regions" rows="6" style="font-family: inherit;">{% for r in region_data.regions %}{{ r }}
+{% endfor %}</textarea>
+          </label>
+          <p class="muted" style="font-size: 0.85rem; margin: 8px 0 0;">
+            Reihenfolge bestimmt die Anzeige-Reihenfolge. Neue Region
+            hinzufügen: Zeile ergänzen und <strong>speichern</strong> —
+            danach steht sie in den Auswahlfeldern unten zur Verfügung.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">Zuordnung Stamm → Region</div>
+          {% if region_data.staemme %}
+            <table class="data">
+              <thead>
+                <tr><th>Stamm</th><th>Region</th></tr>
+              </thead>
+              <tbody>
+                {% for s in region_data.staemme %}
+                <tr>
+                  <td>{{ s }}</td>
+                  <td>
+                    <select name="region::{{ s }}">
+                      <option value="">— keine —</option>
+                      {% for r in region_data.regions %}
+                        <option value="{{ r }}"
+                          {% if region_data.region_map.get(s) == r %}selected{% endif %}>
+                          {{ r }}
+                        </option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="muted">Noch keine Stämme bekannt — sie erscheinen,
+              sobald Anmeldungen/Patienten mit Stammnummer vorhanden sind.</p>
+          {% endif %}
+        </div>
+
+        <div><button class="btn small" type="submit">Zuordnung speichern</button></div>
+      </form>
     </section>
 
     <section class="settings-panel" id="danger" data-settings-panel hidden>

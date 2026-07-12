@@ -25,22 +25,47 @@
   <form method="get" action="{{ url_for('medications_stamm_sheet') }}"
         target="_blank" class="row" style="grid-template-columns: 1fr auto; gap: 8px; align-items: end;">
     <label class="field">
-      Stamm / Region
-      <select name="stamm">
-        <option value="" disabled {% if not stamm_values %}selected{% endif %}>
-          — bitte wählen —
+      Region
+      <select name="region">
+        <option value="" disabled {% if not region_values %}selected{% endif %}>
+          — Region wählen —
         </option>
-        {% for s in stamm_values %}
-          <option value="{{ s }}">{{ s if s else '— ohne Stamm-Zuordnung —' }}</option>
+        {% for r in region_values %}
+          <option value="{{ r }}">{{ r }}</option>
         {% endfor %}
       </select>
     </label>
     <div class="btn-row horizontal" style="margin: 0;">
-      <button class="btn" type="submit">Schein exportieren</button>
+      <button class="btn" type="submit">Region-Schein exportieren</button>
       <a class="btn secondary" href="{{ url_for('medications_stamm_sheet') }}"
-         target="_blank">Alle Stämme (gruppiert)</a>
+         target="_blank">Alle Regionen (gruppiert)</a>
     </div>
   </form>
+  <details style="margin-top: 10px;">
+    <summary class="muted" style="cursor: pointer; font-size: 0.85rem;">
+      Einzelnen Stamm exportieren
+    </summary>
+    <form method="get" action="{{ url_for('medications_stamm_sheet') }}"
+          target="_blank" class="row"
+          style="grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-top: 8px;">
+      <label class="field">
+        Stamm
+        <select name="stamm">
+          <option value="" disabled selected>— Stamm wählen —</option>
+          {% for s in stamm_values %}
+            <option value="{{ s }}">{{ s if s else '— ohne Stamm-Zuordnung —' }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="btn-row horizontal" style="margin: 0;">
+        <button class="btn secondary" type="submit">Stamm-Schein exportieren</button>
+      </div>
+    </form>
+  </details>
+  <p class="muted" style="font-size: 0.82rem; margin: 10px 0 0;">
+    Die Zuordnung Stamm → Region pflegst du unter
+    <a href="{{ url_for('admin_users') }}#regionen">Einstellungen → Regionen</a>.
+  </p>
   {% if not stamm_values %}
     <p class="muted" style="font-size: 0.85rem; margin: 10px 0 0;">
       Noch keine Medikamente erfasst.
@@ -93,37 +118,43 @@
 <div class="card">
   <div class="card-header">Personen mit aktivem Medikamentenplan
     ({{ patients_with_meds|length }})</div>
-  {% if patients_with_meds %}
-    <table class="data">
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Geburtsdatum</th>
-          <th>Stamm-Nr.</th>
-          <th class="right">Medikamente</th>
-          <th>Zuletzt geändert</th>
-          <th class="right">Aktion</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for p in patients_with_meds %}
-        <tr>
-          <td><strong>{{ p.name }}</strong></td>
-          <td>{{ format_dt(p.geburtsdatum) }}</td>
-          <td>{{ p.stammnummer or '—' }}</td>
-          <td class="right">{{ p.med_count }}</td>
-          <td>{{ format_dt(p.last_added) }}</td>
-          <td class="right">
-            <a class="btn small secondary"
-               href="{{ url_for('medications_patient', patient_id=p.id) }}">Öffnen</a>
-            <a class="btn small"
-               href="{{ url_for('medications_plan_pdf', patient_id=p.id) }}"
-               target="_blank">PDF</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  {% if patients_by_region %}
+    {% for region, plist in patients_by_region %}
+      <h3 style="margin: 18px 0 6px; font-size: 1rem;">
+        {{ region }}
+        <span class="muted" style="font-weight: 400;">· {{ plist|length }} Person(en)</span>
+      </h3>
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Geburtsdatum</th>
+            <th>Stamm-Nr.</th>
+            <th class="right">Medikamente</th>
+            <th>Zuletzt geändert</th>
+            <th class="right">Aktion</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in plist %}
+          <tr>
+            <td><strong>{{ p.name }}</strong></td>
+            <td>{{ format_dt(p.geburtsdatum) }}</td>
+            <td>{{ p.stammnummer or '—' }}</td>
+            <td class="right">{{ p.med_count }}</td>
+            <td>{{ format_dt(p.last_added) }}</td>
+            <td class="right">
+              <a class="btn small secondary"
+                 href="{{ url_for('medications_patient', patient_id=p.id) }}">Öffnen</a>
+              <a class="btn small"
+                 href="{{ url_for('medications_plan_pdf', patient_id=p.id) }}"
+                 target="_blank">PDF</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endfor %}
   {% else %}
     <p class="muted">Noch keine Medikamentenpläne hinterlegt — wähle oben
       eine Person, um den ersten anzulegen.</p>

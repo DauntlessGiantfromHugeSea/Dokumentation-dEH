@@ -2086,9 +2086,25 @@ def create_app(test_config: dict | None = None) -> Flask:
         db = models.get_db()
         patients = models.list_patients_with_medications(db)
         all_patients = models.list_patients(db, event_id=None)
+        # Nach Region gruppieren (Reihenfolge wie in den Einstellungen),
+        # innerhalb der Region nach Stamm → Name.
+        region_map = models.get_region_map(db)
+        regions = models.get_regions(db)
+        groups = {r: [] for r in regions}
+        groups[models.REGION_UNASSIGNED] = []
+        for p in patients:
+            reg = (models.region_for_stamm(region_map, p["stammnummer"])
+                   or models.REGION_UNASSIGNED)
+            groups.setdefault(reg, []).append(p)
+        for plist in groups.values():
+            plist.sort(key=lambda p: ((p["stammnummer"] or "").lower(),
+                                      (p["name"] or "").lower()))
+        patients_by_region = [(r, pl) for r, pl in groups.items() if pl]
         return render_template(
             "medications_index.html",
             patients_with_meds=patients,
+            patients_by_region=patients_by_region,
+            region_values=[r for r, _ in patients_by_region],
             all_patients=all_patients,
             stamm_values=models.list_medication_stamm_values(db),
             format_dt=models.format_dt,
@@ -2159,16 +2175,30 @@ def create_app(test_config: dict | None = None) -> Flask:
                 db.commit()
             except frodor_client.FrodorError:
                 pass
-        stamm = request.args.get("stamm")  # None = alle
+        stamm = request.args.get("stamm")    # optionaler Einzel-Stamm
+        region = request.args.get("region")  # optionale Region ('' ignoriert)
+        region = region.strip() if region else None
+        region_map = models.get_region_map(db)
+        region_order = models.get_regions(db)
         sheet_patients = models.medication_sheet_patients(db, stamm=stamm)
+        # Jede Person mit ihrer Region annotieren; optional auf eine
+        # Region filtern.
+        for e in sheet_patients:
+            e["region"] = (models.region_for_stamm(region_map, e.get("stamm"))
+                           or models.REGION_UNASSIGNED)
+        if region:
+            sheet_patients = [e for e in sheet_patients
+                              if e["region"] == region]
         from medication_plan_pdf import render_stamm_medication_sheet
         pdf_bytes = render_stamm_medication_sheet(
             sheet_patients,
             stamm_filter=stamm,
+            region_filter=region,
+            region_order=region_order,
             exporter_label=(current_user.full_name
                             or current_user.username),
         )
-        label = (stamm or "alle").replace("/", "-").replace(" ", "_") or "ohne"
+        label = (region or stamm or "alle").replace("/", "-").replace(" ", "_") or "ohne"
         from flask import Response
         return Response(
             pdf_bytes, mimetype="application/pdf",
@@ -3233,6 +3263,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                                    for u in users
                                },
                                server_time=models.get_server_time_info(db),
+                               region_data=models.region_admin_data(db),
                                format_dt=models.format_dt)
 
     @app.route("/admin/timezone", methods=["POST"])
@@ -3249,6 +3280,30 @@ def create_app(test_config: dict | None = None) -> Flask:
         else:
             flash("Ungültige Zeitzone.", "error")
         return redirect(_admin_settings_url("system"))
+
+    @app.route("/admin/regions", methods=["POST"])
+    @admin_required
+    def admin_set_regions():
+        """Speichert die editierbare Region-Konfiguration: Regionsliste
+        (eine pro Zeile) + Zuordnung Stamm → Region (Felder 'region::<Stamm>')."""
+        db = models.get_db()
+        regions_raw = request.form.get("regions") or ""
+        regions = [ln.strip() for ln in regions_raw.splitlines() if ln.strip()]
+        if regions:
+            models.set_regions(db, regions)
+        allowed = set(regions) if regions else set(models.get_regions(db))
+        mapping = {}
+        for key, val in request.form.items():
+            if not key.startswith("region::"):
+                continue
+            stamm = key[len("region::"):].strip()
+            val = (val or "").strip()
+            if stamm and val and val in allowed:
+                mapping[stamm] = val
+        models.set_region_map(db, mapping)
+        db.commit()
+        flash("Regionen-Zuordnung gespeichert.", "success")
+        return redirect(_admin_settings_url("regionen"))
 
     @app.route("/admin/events/create", methods=["POST"])
     @admin_required
@@ -3741,7 +3796,7 @@ def _read_filters(args) -> dict:
 
 
 def _admin_settings_url(section: str = "events") -> str:
-    allowed = {"events", "new-user", "users", "danger"}
+    allowed = {"events", "new-user", "users", "system", "regionen", "danger"}
     target = section if section in allowed else "events"
     return url_for("admin_users") + f"#{target}"
 

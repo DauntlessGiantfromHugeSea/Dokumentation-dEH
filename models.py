@@ -1481,6 +1481,144 @@ def get_server_time_info(conn) -> dict:
     }
 
 
+# ---------- Regionen (editierbare Zuordnung Stamm → Region) ----------
+#
+# "Region" ist kein eigenes Datenfeld am Patienten, sondern eine
+# jederzeit änderbare Zuordnung Stamm(bezeichnung) → Region. Sie liegt
+# als JSON im app_settings-Store und wird über die Admin-Oberfläche
+# gepflegt. Solange nichts gespeichert wurde, gilt die Vorbelegung unten.
+
+REGION_DEFAULT_ORDER = ["O1", "O2", "O3", "O4", "O5", "O6"]
+REGION_UNASSIGNED = "Ohne Region"
+
+# Erst-Vorbelegung Stamm → Region (bekannte Aufstellung O1–O6).
+REGION_MAP_DEFAULT = {
+    # O1
+    "100 Berlin 1": "O1", "211 Cottbus": "O1", "260 Berlin 6": "O1",
+    "355 Potsdam": "O1", "461 Berlin 9": "O1", "565 Berlin 13": "O1",
+    "590 Berlin 14": "O1", "592 Berlin 15": "O1", "594 Brandenburg": "O1",
+    "619 Hennigsdorf": "O1", "622 Berlin 16": "O1", "Delegation": "O1",
+    # O2
+    "138 Chemnitz": "O2", "219 Zwickau": "O2", "244 Leipzig 2": "O2",
+    "266 Grimma": "O2", "359 Leipzig 3": "O2", "390 Lichtenstein": "O2",
+    "390 Lichtenstein-Neuplanitz": "O2", "420 Rodewisch": "O2",
+    "472 Plauen": "O2", "535 Freiberg": "O2", "543 Chemnitz 2": "O2",
+    "606 Reichenbach": "O2",
+    # O3
+    "117 Heiligenstadt": "O3", "264 Eisenach": "O3", "344 Schmalkalden": "O3",
+    "366 Gotha": "O3", "427 Ellrich-Sülzhayn": "O3", "458 Tanna": "O3",
+    "497 Ilmenau": "O3", "603 Jena": "O3", "609 Eisenberg": "O3",
+    "642 Erfurt 2": "O3",
+    # O4
+    "375 Rostock": "O4", "539 Barth": "O4", "546 Neustrelitz": "O4",
+    "556 Rostock 2": "O4", "561 Stralsund 2": "O4", "567 Greifswald": "O4",
+    "591 Schwerin 2": "O4", "591 Schwerin 2-Ludwigslust": "O4",
+    "591 Schwerin 2-Neu Kaliß": "O4", "608 Wismar": "O4",
+    # O5
+    "220 Wittenberg": "O5", "225 Magdeburg": "O5", "371 Halle": "O5",
+    "530 Naumburg": "O5", "566 Magdeburg 2": "O5", "573 Zeitz": "O5",
+    "605 Wernigerode": "O5",
+    # O6
+    "240 Dresden 1": "O6", "240 Dresden 1-Gorbitz": "O6",
+    "277 Großenhain": "O6", "280 Dresden 2": "O6", "351 Dohna": "O6",
+    "483 Herrnhut": "O6", "620 Dippoldiswalde": "O6", "637 Meißen": "O6",
+    "640 Pulsnitz": "O6",
+}
+
+
+def get_regions(conn) -> list:
+    """Geordnete Liste der Regionsnamen (editierbar). Fällt auf die
+    Standard-Reihenfolge zurück, solange nichts gespeichert wurde."""
+    import json
+    raw = get_app_setting(conn, "regions")
+    if raw:
+        try:
+            val = json.loads(raw)
+            if isinstance(val, list):
+                clean = [str(x).strip() for x in val if str(x).strip()]
+                if clean:
+                    return clean
+        except (ValueError, TypeError):
+            pass
+    return list(REGION_DEFAULT_ORDER)
+
+
+def set_regions(conn, regions) -> None:
+    import json
+    clean = [str(r).strip() for r in regions if str(r).strip()]
+    set_app_setting(conn, "regions", json.dumps(clean, ensure_ascii=False))
+
+
+def get_region_map(conn) -> dict:
+    """Zuordnung Stamm(bezeichnung) → Region. Solange nichts gespeichert
+    wurde, gilt die Vorbelegung REGION_MAP_DEFAULT."""
+    import json
+    raw = get_app_setting(conn, "region_map")
+    if raw:
+        try:
+            val = json.loads(raw)
+            if isinstance(val, dict):
+                return {str(k).strip(): str(v).strip()
+                        for k, v in val.items()
+                        if str(k).strip() and str(v).strip()}
+        except (ValueError, TypeError):
+            pass
+    return dict(REGION_MAP_DEFAULT)
+
+
+def set_region_map(conn, mapping) -> None:
+    import json
+    clean = {str(k).strip(): str(v).strip()
+             for k, v in mapping.items()
+             if str(k).strip() and str(v).strip()}
+    set_app_setting(conn, "region_map", json.dumps(clean, ensure_ascii=False))
+
+
+def region_for_stamm(region_map: dict, stamm) -> Optional[str]:
+    """Region zu einem Stamm-String; None, wenn nicht zugeordnet.
+    Tolerant gegenüber Groß/Klein und Mehrfach-Leerzeichen."""
+    if not stamm:
+        return None
+    s = stamm.strip()
+    if s in region_map:
+        return region_map[s]
+    low = " ".join(s.lower().split())
+    for k, v in region_map.items():
+        if " ".join(k.lower().split()) == low:
+            return v
+    return None
+
+
+def region_admin_data(conn) -> dict:
+    """Daten für die Admin-Oberfläche: Regionsliste, aktuelle Zuordnung
+    und alle bekannten Stämme (aus den Patientendaten + aus der
+    gespeicherten/vorbelegten Zuordnung), damit jeder Stamm einer Region
+    zugewiesen werden kann."""
+    regions = get_regions(conn)
+    region_map = get_region_map(conn)
+    known = set(region_map.keys())
+    rows = conn.execute(
+        "SELECT DISTINCT TRIM(stammnummer) AS s FROM patients "
+        "WHERE TRIM(COALESCE(stammnummer, '')) != ''"
+    ).fetchall()
+    for r in rows:
+        if r["s"]:
+            known.add(r["s"])
+
+    def _key(name: str):
+        head = name.split(None, 1)[0]
+        try:
+            return (0, int(head), name.lower())
+        except ValueError:
+            return (1, 0, name.lower())
+
+    return {
+        "regions": regions,
+        "region_map": region_map,
+        "staemme": sorted(known, key=_key),
+    }
+
+
 # ---------- Central protocols (Notfallprotokoll, größere Form) ----------
 
 import json as _json
