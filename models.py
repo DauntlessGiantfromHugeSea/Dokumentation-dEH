@@ -1550,20 +1550,34 @@ def set_regions(conn, regions) -> None:
 
 
 def get_region_map(conn) -> dict:
-    """Zuordnung Stamm(bezeichnung) → Region. Solange nichts gespeichert
-    wurde, gilt die Vorbelegung REGION_MAP_DEFAULT."""
+    """Zuordnung Stamm(bezeichnung) → Region. Nur eine NICHT-leere
+    gespeicherte Zuordnung überschreibt die Vorbelegung — eine leere
+    (bzw. fehlende/ungültige) fällt auf REGION_MAP_DEFAULT zurück."""
     import json
     raw = get_app_setting(conn, "region_map")
     if raw:
         try:
             val = json.loads(raw)
             if isinstance(val, dict):
-                return {str(k).strip(): str(v).strip()
-                        for k, v in val.items()
-                        if str(k).strip() and str(v).strip()}
+                clean = {str(k).strip(): str(v).strip()
+                         for k, v in val.items()
+                         if str(k).strip() and str(v).strip()}
+                if clean:
+                    return clean
         except (ValueError, TypeError):
             pass
     return dict(REGION_MAP_DEFAULT)
+
+
+def _normalize_stamm_key(s) -> str:
+    """Kanonische Form eines Stamm-Strings für den Vergleich —
+    unabhängig von Groß/Klein, Leerzeichen vs. Bindestrichen und
+    Umlaut-Schreibweise. '100 Berlin 1' und '100-berlin-1' → gleich."""
+    import re
+    s = str(s or "").strip().lower()
+    for a, b in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
+        s = s.replace(a, b)
+    return re.sub(r"[^a-z0-9]+", "-", s).strip("-")
 
 
 def set_region_map(conn, mapping) -> None:
@@ -1576,15 +1590,17 @@ def set_region_map(conn, mapping) -> None:
 
 def region_for_stamm(region_map: dict, stamm) -> Optional[str]:
     """Region zu einem Stamm-String; None, wenn nicht zugeordnet.
-    Tolerant gegenüber Groß/Klein und Mehrfach-Leerzeichen."""
+    Tolerant gegenüber Schreibweise (Leerzeichen/Bindestriche/Umlaute)."""
     if not stamm:
         return None
     s = stamm.strip()
     if s in region_map:
         return region_map[s]
-    low = " ".join(s.lower().split())
+    key = _normalize_stamm_key(s)
+    if not key:
+        return None
     for k, v in region_map.items():
-        if " ".join(k.lower().split()) == low:
+        if _normalize_stamm_key(k) == key:
             return v
     return None
 
@@ -1612,10 +1628,16 @@ def region_admin_data(conn) -> dict:
         except ValueError:
             return (1, 0, name.lower())
 
+    staemme = sorted(known, key=_key)
+    # Aktuell aufgelöste Region je Stamm (schreibweise-tolerant) — damit die
+    # Dropdowns korrekt vorausgewählt sind, auch wenn die gespeicherten
+    # Schlüssel anders geschrieben sind als die tatsächlichen Stammnamen.
+    resolved = {s: (region_for_stamm(region_map, s) or "") for s in staemme}
     return {
         "regions": regions,
         "region_map": region_map,
-        "staemme": sorted(known, key=_key),
+        "resolved": resolved,
+        "staemme": staemme,
     }
 
 

@@ -531,7 +531,7 @@
                       <option value="">— keine —</option>
                       {% for r in region_data.regions %}
                         <option value="{{ r }}"
-                          {% if region_data.region_map.get(s) == r %}selected{% endif %}>
+                          {% if region_data.resolved.get(s) == r %}selected{% endif %}>
                           {{ r }}
                         </option>
                       {% endfor %}
