@@ -12,7 +12,8 @@
   {% if connection %}
     <p style="margin: 0;">
       ✓ Verbunden mit <strong>{{ connection.event_slug }}</strong> —
-      {{ connection.registration_count }} Anmeldungen sichtbar.
+      {{ connection.registration_count }} Anmeldungen{% if connection.medication_count is not none %},
+      {{ connection.medication_count }} Medikamenten-Einträge{% endif %} sichtbar.
     </p>
   {% else %}
     <p style="margin: 0;" class="error-text">

@@ -491,6 +491,17 @@ def init_db(db_path: Path) -> None:
             if col not in pat_cols:
                 conn.execute(f"ALTER TABLE patients ADD COLUMN {col} {decl}")
 
+        # Migration: Verknüpfung zu frodor registration_medications.id —
+        # Upsert-Anker für den Abgleich der strukturierten Medikamente.
+        med_cols = {row[1] for row in conn.execute("PRAGMA table_info(medications)")}
+        if "frodor_medication_id" not in med_cols:
+            conn.execute(
+                "ALTER TABLE medications ADD COLUMN frodor_medication_id INTEGER")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_medications_frodor_id "
+            "ON medications(frodor_medication_id) "
+            "WHERE frodor_medication_id IS NOT NULL")
+
         # Migration: global_id columns for both protocol tables.
         proto_cols = {row[1] for row in conn.execute("PRAGMA table_info(protocols)")}
         if "event_id" not in proto_cols:
@@ -2902,6 +2913,95 @@ def sync_frodor_medications(conn, regs: list[dict]) -> dict:
             unchanged += 1
     return {"created": created, "updated": updated,
             "unchanged": unchanged, "skipped": skipped}
+
+
+def sync_frodor_structured_medications(conn, meds: list[dict],
+                                       regs: list[dict]) -> dict:
+    """Abgleich der strukturierten frodor-Medikamente
+    (registration_medications) mit der lokalen medications-Tabelle.
+
+    Upsert über medications.frodor_medication_id. frodor ist Quelle der
+    Wahrheit für Name/Dosierung/Lagerung/Hinweise; Einnahme-Slots
+    (morgens/mittags/…) und Start/Ende werden lokal gepflegt und nie
+    überschrieben. In frodor gelöschte Einträge werden lokal deaktiviert
+    (active=0), taucht ein Eintrag wieder auf, wird er reaktiviert."""
+    regs_by_uuid = {r["uuid"]: r for r in regs}
+    stats = {"created": 0, "updated": 0, "unchanged": 0,
+             "deactivated": 0, "skipped": 0}
+    seen_frodor_ids: set = set()
+    pid_by_reg: dict = {}
+
+    for med in meds:
+        reg_uuid = med["registration_uuid"]
+        seen_frodor_ids.add(med["frodor_id"])
+
+        pid = pid_by_reg.get(reg_uuid)
+        if pid is None:
+            row = conn.execute(
+                "SELECT id FROM patients WHERE frodor_registration_uuid = ?",
+                (reg_uuid,),
+            ).fetchone()
+            if row:
+                pid = row["id"]
+            else:
+                reg = regs_by_uuid.get(reg_uuid)
+                if not reg or not reg.get("name") or not reg.get("geburtsdatum"):
+                    stats["skipped"] += 1
+                    continue
+                pid = adopt_frodor_registration(conn, reg)
+            pid_by_reg[reg_uuid] = pid
+
+        existing = conn.execute(
+            "SELECT * FROM medications WHERE frodor_medication_id = ?",
+            (med["frodor_id"],),
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                """
+                INSERT INTO medications
+                  (patient_id, name, dosage, lagerung, notes, frodor_medication_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (pid, med["name"], med["dosage"] or None,
+                 med["lagerung"] or None, med["notes"] or None,
+                 med["frodor_id"]),
+            )
+            stats["created"] += 1
+        else:
+            same = (existing["name"] == med["name"]
+                    and (existing["dosage"] or "") == med["dosage"]
+                    and (existing["lagerung"] or "") == med["lagerung"]
+                    and (existing["notes"] or "") == med["notes"]
+                    and existing["patient_id"] == pid
+                    and existing["active"] == 1)
+            if same:
+                stats["unchanged"] += 1
+            else:
+                conn.execute(
+                    """
+                    UPDATE medications
+                    SET name = ?, dosage = ?, lagerung = ?, notes = ?,
+                        patient_id = ?, active = 1
+                    WHERE id = ?
+                    """,
+                    (med["name"], med["dosage"] or None,
+                     med["lagerung"] or None, med["notes"] or None,
+                     pid, existing["id"]),
+                )
+                stats["updated"] += 1
+
+    # In frodor entfernte Einträge deaktivieren (nicht löschen — lokale
+    # Slots/Vergabe-Historie bleiben erhalten)
+    for row in conn.execute(
+        "SELECT id, frodor_medication_id FROM medications "
+        "WHERE frodor_medication_id IS NOT NULL AND active = 1"
+    ).fetchall():
+        if row["frodor_medication_id"] not in seen_frodor_ids:
+            conn.execute("UPDATE medications SET active = 0 WHERE id = ?",
+                         (row["id"],))
+            stats["deactivated"] += 1
+
+    return stats
 
 
 def medication_sheet_patients(conn, stamm: Optional[str] = None) -> list[dict]:

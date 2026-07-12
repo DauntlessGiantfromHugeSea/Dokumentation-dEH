@@ -119,6 +119,10 @@
           <tr class="{% if not m.active %}inactive{% endif %}">
             <td class="med-cell">
               <strong>{{ m.name }}</strong>
+              {% if m.frodor_medication_id %}
+                <span class="badge muted-badge"
+                      title="Aus der frodor-Medikamenten-Tabelle — Name/Dosierung/Lagerung/Hinweise werden beim Abgleich von frodor übernommen; Einnahme-Zeiten werden hier gepflegt.">frodor</span>
+              {% endif %}
               {% if m.dosage %}<br><span class="muted">{{ m.dosage }}</span>{% endif %}
               {% if m.lagerung %}<br><small class="muted">Lagerung: {{ m.lagerung }}</small>{% endif %}
               {% if m.notes %}<br><small class="muted">{{ m.notes }}</small>{% endif %}

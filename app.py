@@ -2113,14 +2113,28 @@ def create_app(test_config: dict | None = None) -> Flask:
             return redirect(url_for("medications_index"))
         db = models.get_db()
         stats = models.sync_frodor_medications(db, regs)
-        db.commit()
         flash(
-            f"frodor-Abgleich: {stats['created']} neu angelegt, "
+            f"frodor-Abgleich (Anmeldungs-Angaben): {stats['created']} neu angelegt, "
             f"{stats['updated']} aktualisiert, "
             f"{stats['unchanged']} unverändert "
             f"({stats['skipped']} ohne Medikamenten-Angabe übersprungen).",
             "success",
         )
+        # Strukturierte Medikamente (frodor registration_medications) —
+        # braucht 'registration.medical.medication.view' beim Service-Account
+        try:
+            meds = frodor_client.list_event_medications()
+            med_stats = models.sync_frodor_structured_medications(db, meds, regs)
+            flash(
+                f"Medikamenten-Tabelle: {med_stats['created']} neu, "
+                f"{med_stats['updated']} aktualisiert, "
+                f"{med_stats['unchanged']} unverändert, "
+                f"{med_stats['deactivated']} deaktiviert.",
+                "success",
+            )
+        except frodor_client.FrodorError as e:
+            flash(f"Medikamenten-Tabelle nicht abgleichbar: {e}", "error")
+        db.commit()
         return redirect(url_for("medications_index"))
 
     @app.route("/medications/stammschein.pdf")
@@ -2140,6 +2154,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             try:
                 regs = frodor_client.list_registrations()
                 models.sync_frodor_medications(db, regs)
+                models.sync_frodor_structured_medications(
+                    db, frodor_client.list_event_medications(), regs)
                 db.commit()
             except frodor_client.FrodorError:
                 pass

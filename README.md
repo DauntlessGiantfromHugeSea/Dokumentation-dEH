@@ -83,7 +83,7 @@ docker compose -f deploy.compose.yaml up -d
 
 # Ersten User anlegen (wird automatisch Admin)
 docker compose -f deploy.compose.yaml exec app \
-  flask create-user admin --full-name "Camp-Leitung"
+  flask create-user admin --full-name "Camp-Erste-Hilfe"
 ```
 
 Update einspielen (bewusst manuell, Watchtower ist für diesen Container

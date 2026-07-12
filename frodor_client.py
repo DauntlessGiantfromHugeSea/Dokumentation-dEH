@@ -308,6 +308,41 @@ def get_registration(registration_uuid: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# Strukturierte Medikamente (registration_medications)
+# ---------------------------------------------------------------------------
+
+def list_event_medications() -> list[dict]:
+    """Alle strukturierten Medikamenten-Einträge der sichtbaren
+    Registrierungen (frodor-Tabelle registration_medications).
+
+    RLS filtert serverseitig: sichtbar sind nur Einträge von
+    Registrierungen des Events UND nur mit der Berechtigung
+    'registration.medical.medication.view' — ohne sie kommt schlicht
+    eine leere Liste zurück (kein Fehler)."""
+    status, raw = _api(
+        "GET",
+        "/rest/v1/registration_medications"
+        "?select=id,registration_uuid,name,dosage,storage_instructions,notes"
+        "&order=registration_uuid,name",
+    )
+    if status != 200:
+        raise FrodorError(
+            f"Medikamente laden fehlgeschlagen (HTTP {status}): {raw[:200]!r}")
+    return [
+        {
+            "frodor_id": m["id"],
+            "registration_uuid": m["registration_uuid"],
+            "name": (m.get("name") or "").strip(),
+            "dosage": (m.get("dosage") or "").strip(),
+            "lagerung": (m.get("storage_instructions") or "").strip(),
+            "notes": (m.get("notes") or "").strip(),
+        }
+        for m in json.loads(raw)
+        if (m.get("name") or "").strip()
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Protokoll-PDF hochladen
 # ---------------------------------------------------------------------------
 
@@ -357,8 +392,13 @@ def upload_file_content(path: str, pdf_bytes: bytes) -> None:
 def check_connection() -> dict:
     """Für die Status-Seite: Login + Event + Anzahl Registrierungen."""
     regs = list_registrations(force=True)
+    try:
+        medication_count = len(list_event_medications())
+    except FrodorError:
+        medication_count = None
     return {
         "event_slug": event_slug(),
         "event_uuid": _get_event_uuid(),
         "registration_count": len(regs),
+        "medication_count": medication_count,
     }
