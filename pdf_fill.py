@@ -1008,8 +1008,81 @@ def _draw_barcode(canvas, value, *, x_mm=12, y_mm=14, w_mm=28, h_mm=4):
         pass
 
 
+def _build_attachment_pages(attachments, protocol_uid=None):
+    """Anhang-Seiten: Bilder je auf eigener A4-Seite (eingepasst),
+    sonstige Dateien als Liste. Angehängte PDFs werden vom Aufrufer
+    seitenweise gemerged. Gibt PDF-Bytes oder None zurück."""
+    images = [a for a in attachments
+              if (a.get("mime") or "").startswith("image/")]
+    others = [a for a in attachments
+              if not (a.get("mime") or "").startswith("image/")
+              and (a.get("mime") or "") != "application/pdf"]
+    if not images and not others:
+        return None
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    def _header(title):
+        c.setFillColor(ACCENT)
+        c.rect(0, height - 14 * mm, width, 14 * mm, stroke=0, fill=1)
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(14 * mm, height - 9 * mm, "Anhang zum Notfallprotokoll"
+                     + (f" {protocol_uid}" if protocol_uid else ""))
+        c.setFont("Helvetica", 8)
+        c.drawRightString(width - 14 * mm, height - 9 * mm, title)
+
+    for i, a in enumerate(images, start=1):
+        _header(f"Foto {i} von {len(images)} — {a.get('filename', '')[:60]}")
+        try:
+            img = ImageReader(io.BytesIO(a["content"]))
+            iw, ih = img.getSize()
+            avail_w = width - 28 * mm
+            avail_h = height - 40 * mm
+            scale = min(avail_w / iw, avail_h / ih, 1.0)
+            dw, dh = iw * scale, ih * scale
+            c.drawImage(img, (width - dw) / 2,
+                        (height - 20 * mm - dh) - ((avail_h - dh) / 2),
+                        width=dw, height=dh,
+                        preserveAspectRatio=True, mask="auto")
+        except Exception:
+            c.setFillColor(colors.black)
+            c.setFont("Helvetica", 10)
+            c.drawString(14 * mm, height - 30 * mm,
+                         f"Bild konnte nicht gerendert werden: "
+                         f"{a.get('filename', '?')}")
+        c.showPage()
+
+    if others:
+        _header("Weitere Anhänge")
+        c.setFillColor(colors.black)
+        y = height - 26 * mm
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(14 * mm, y, "Nicht darstellbare Anhänge "
+                     "(digital im System hinterlegt):")
+        y -= 8 * mm
+        c.setFont("Helvetica", 9)
+        for a in others:
+            size_kb = (a.get("size_bytes") or 0) // 1024
+            c.drawString(16 * mm, y,
+                         f"• {a.get('filename', '?')} "
+                         f"({a.get('mime', '?')}, {size_kb} KB)")
+            y -= 6 * mm
+            if y < 20 * mm:
+                c.showPage()
+                _header("Weitere Anhänge (Fortsetzung)")
+                y = height - 26 * mm
+                c.setFillColor(colors.black)
+                c.setFont("Helvetica", 9)
+        c.showPage()
+
+    c.save()
+    return buf.getvalue()
+
+
 def render_pdf(data, exporter_label=None, medical_info=None,
-               protocol_uid=None):
+               protocol_uid=None, attachments=None):
     """Rendert das Notfallprotokoll auf 2 A4-Seiten + ggf. Unterschriften.
 
     Erwartet das `data`-Dict eines zentralen Berichts (so wie es in
@@ -1140,15 +1213,29 @@ def render_pdf(data, exporter_label=None, medical_info=None,
     sig_pdf = _build_signature_page(data, exporter_label=exporter_label,
                                      protocol_uid=protocol_uid,
                                      page_num=n_main + 1)
-    if not sig_pdf:
-        return main_pdf
 
-    sig_reader = PdfReader(io.BytesIO(sig_pdf))
     writer = PdfWriter()
     for page in main_reader.pages:
         writer.add_page(page)
-    for page in sig_reader.pages:
-        writer.add_page(page)
+    if sig_pdf:
+        for page in PdfReader(io.BytesIO(sig_pdf)).pages:
+            writer.add_page(page)
+
+    # Anhänge hinten dran: Bilder + Datei-Liste als gerenderte Seiten,
+    # angehängte PDFs werden seitenweise übernommen.
+    attachments = attachments or []
+    att_pdf = _build_attachment_pages(attachments, protocol_uid=protocol_uid)
+    if att_pdf:
+        for page in PdfReader(io.BytesIO(att_pdf)).pages:
+            writer.add_page(page)
+    for a in attachments:
+        if (a.get("mime") or "") == "application/pdf":
+            try:
+                for page in PdfReader(io.BytesIO(a["content"])).pages:
+                    writer.add_page(page)
+            except Exception:
+                pass  # defektes PDF — bleibt digital im System abrufbar
+
     out = io.BytesIO()
     writer.write(out)
     return out.getvalue()

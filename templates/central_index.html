@@ -1467,6 +1467,29 @@ if ('serviceWorker' in navigator) {
           </div>
 
           <div class="section">
+            <div class="label">Fotos &amp; Anhänge</div>
+            <p style="margin: 4px 0 10px; font-size: 0.88rem; color: var(--muted);">
+              Fotos (z. B. Verletzung, Unfallstelle) oder Dateien anhängen —
+              erscheinen hinten im Protokoll-PDF als Anhang.
+              Max. 20 Anhänge, je 15 MB.
+            </p>
+            <div class="btn-group" style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <label class="btn" style="cursor: pointer;">
+                📷 Foto aufnehmen
+                <input type="file" id="att-camera" accept="image/*"
+                       capture="environment" hidden>
+              </label>
+              <label class="btn" style="cursor: pointer;">
+                📎 Datei anhängen
+                <input type="file" id="att-file" hidden multiple>
+              </label>
+            </div>
+            <div id="att-status" style="margin-top: 8px; font-size: 0.85rem; color: var(--muted);"></div>
+            <ul id="att-list" style="list-style: none; margin: 10px 0 0; padding: 0;
+                                     display: grid; gap: 6px;"></ul>
+          </div>
+
+          <div class="section">
             <div class="label">Zusammenfassung</div>
             <div class="summary" id="summary"></div>
           </div>
@@ -1858,6 +1881,7 @@ if ('serviceWorker' in navigator) {
     goToPage(1); updateCompletion();
     await refreshList();
     await refreshFinishSection();
+    refreshAttachments();
   }
 
   async function loadProtocol(id) {
@@ -1873,6 +1897,7 @@ if ('serviceWorker' in navigator) {
       goToPage(1); updateCompletion();
       await refreshList();
       await refreshFinishSection();
+      refreshAttachments();
       if (window.innerWidth <= 900) document.getElementById('sidebar').classList.remove('open');
     } catch (e) { console.error(e); toast('Fehler beim Laden'); }
   }
@@ -2078,6 +2103,151 @@ if ('serviceWorker' in navigator) {
 
   if (btnFinish) btnFinish.addEventListener('click', finishTreatment);
   if (btnFinishTop) btnFinishTop.addEventListener('click', finishTreatment);
+
+  // ============ Fotos & Anhänge (Abschluss-Seite) ============
+  const attList = document.getElementById('att-list');
+  const attStatus = document.getElementById('att-status');
+
+  function attSetStatus(msg, isError) {
+    if (!attStatus) return;
+    attStatus.textContent = msg || '';
+    attStatus.style.color = isError ? 'var(--error, #b3261e)' : '';
+  }
+
+  async function refreshAttachments() {
+    if (!attList) return;
+    attList.innerHTML = '';
+    if (currentId == null) {
+      attSetStatus('Anhänge sind möglich, sobald das Protokoll gespeichert ist.');
+      return;
+    }
+    attSetStatus('');
+    try {
+      const res = await fetch('/api/central/protokolle/' + currentId + '/attachments',
+                              { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const data = await res.json();
+      (data.attachments || []).forEach(a => {
+        const li = document.createElement('li');
+        li.style.cssText = 'display:flex;align-items:center;gap:10px;'
+          + 'padding:8px 10px;border:1px solid var(--border,#ece8e4);'
+          + 'border-radius:8px;background:#fff;';
+        const isImg = (a.mime || '').indexOf('image/') === 0;
+        if (isImg) {
+          const img = document.createElement('img');
+          img.src = '/attachments/central/' + a.id;
+          img.style.cssText = 'width:56px;height:56px;object-fit:cover;'
+            + 'border-radius:6px;flex-shrink:0;';
+          img.loading = 'lazy';
+          li.appendChild(img);
+        } else {
+          const ic = document.createElement('span');
+          ic.textContent = '📄';
+          ic.style.fontSize = '1.6rem';
+          li.appendChild(ic);
+        }
+        const info = document.createElement('a');
+        info.href = '/attachments/central/' + a.id;
+        info.target = '_blank';
+        info.style.cssText = 'flex:1;min-width:0;overflow:hidden;'
+          + 'text-overflow:ellipsis;white-space:nowrap;';
+        info.textContent = a.filename + ' (' + Math.max(1, Math.round((a.size_bytes || 0) / 1024)) + ' KB)';
+        li.appendChild(info);
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '🗑';
+        del.title = 'Anhang löschen';
+        del.style.cssText = 'border:0;background:transparent;cursor:pointer;font-size:1.1rem;';
+        del.addEventListener('click', async () => {
+          if (!confirm('Anhang "' + a.filename + '" löschen?')) return;
+          await fetch('/api/central/protokolle/' + currentId + '/attachments/' + a.id,
+                      { method: 'DELETE', credentials: 'same-origin' });
+          refreshAttachments();
+        });
+        li.appendChild(del);
+        attList.appendChild(li);
+      });
+    } catch (_) { /* offline */ }
+  }
+
+  // Bilder clientseitig auf max. 1600px verkleinern + als JPEG neu
+  // kodieren — spart Upload-Volumen und macht HEIC & Co. PDF-tauglich.
+  function downscaleImage(file) {
+    return new Promise(resolve => {
+      if (!file.type || file.type.indexOf('image/') !== 0) {
+        resolve(file); return;
+      }
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1600;
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (w <= MAX && h <= MAX && file.type === 'image/jpeg') {
+          URL.revokeObjectURL(url); resolve(file); return;
+        }
+        const scale = Math.min(1, MAX / Math.max(w, h));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(w * scale);
+        cv.height = Math.round(h * scale);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        cv.toBlob(blob => {
+          URL.revokeObjectURL(url);
+          if (!blob) { resolve(file); return; }
+          resolve(new File([blob],
+            (file.name || 'foto').replace(/\.[^.]+$/, '') + '.jpg',
+            { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.85);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  }
+
+  async function uploadAttachment(file) {
+    // Protokoll muss existieren — sonst erst anlegen
+    if (currentId == null) {
+      const res = await apiCreate(collectData());
+      if (res && res.id) {
+        currentId = res.id;
+        dirty = false;
+        history.replaceState(null, '', '#' + currentId);
+        await refreshList();
+      } else {
+        attSetStatus('Protokoll konnte nicht gespeichert werden.', true);
+        return;
+      }
+    }
+    attSetStatus('Lädt hoch: ' + file.name + ' …');
+    const prepared = await downscaleImage(file);
+    const fd = new FormData();
+    fd.append('file', prepared, prepared.name);
+    try {
+      const res = await fetch('/api/central/protokolle/' + currentId + '/attachments',
+                              { method: 'POST', body: fd, credentials: 'same-origin' });
+      const data = await res.json();
+      if (!res.ok) {
+        attSetStatus('Fehler: ' + (data.error || res.status), true);
+        return;
+      }
+      attSetStatus('');
+      toast('Anhang gespeichert: ' + prepared.name);
+      refreshAttachments();
+    } catch (_) {
+      attSetStatus('Netzwerkfehler beim Hochladen.', true);
+    }
+  }
+
+  ['att-camera', 'att-file'].forEach(id => {
+    const input = document.getElementById(id);
+    if (!input) return;
+    input.addEventListener('change', async () => {
+      const files = Array.from(input.files || []);
+      for (const f of files) {
+        await uploadAttachment(f);
+      }
+      input.value = '';
+    });
+  });
 
   // ============ Summary ============
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }

@@ -1541,6 +1541,82 @@ def create_app(test_config: dict | None = None) -> Flask:
         db.commit()
         return {"ok": True, "triage_id": triage["id"]}
 
+    # ----- Anhänge (Fotos/Dateien) an zentralen Protokollen -----
+
+    def _attachment_edit_allowed(rec) -> bool:
+        """Anhängen/Löschen: gleiche Regel wie Protokoll-Bearbeitung —
+        zentral_writer nur bei eigenen Berichten."""
+        if current_user.is_zentral_only and rec.get("created_by") != current_user.id:
+            return False
+        return True
+
+    @app.route("/api/central/protokolle/<int:pid>/attachments",
+               methods=["GET", "POST"])
+    @login_required
+    def api_central_attachments(pid: int):
+        db = models.get_db()
+        rec = models.get_central_protocol(db, pid)
+        if not rec:
+            return {"error": "not found"}, 404
+        _require_event_view(rec.get("event_id"))
+        if request.method == "GET":
+            return {"attachments": [dict(a) for a in
+                                    models.list_central_attachments(db, pid)]}
+        # POST — Upload (multipart)
+        if not _attachment_edit_allowed(rec):
+            return {"error": "forbidden"}, 403
+        f = request.files.get("file")
+        if not f or not f.filename:
+            return {"error": "Keine Datei übergeben."}, 400
+        content = f.read()
+        if len(content) > models.ATTACHMENT_MAX_BYTES:
+            return {"error": "Datei zu groß (max. 15 MB)."}, 400
+        if models.count_central_attachments(db, pid) >= models.ATTACHMENT_MAX_COUNT:
+            return {"error": "Maximal 20 Anhänge pro Protokoll."}, 400
+        mime = f.mimetype or "application/octet-stream"
+        aid = models.add_central_attachment(
+            db, pid, filename=f.filename, mime=mime,
+            content=content, uploaded_by=current_user.id)
+        db.commit()
+        return {"id": aid, "filename": f.filename,
+                "mime": mime, "size_bytes": len(content)}, 201
+
+    @app.route("/api/central/protokolle/<int:pid>/attachments/<int:aid>",
+               methods=["DELETE"])
+    @login_required
+    def api_central_attachment_delete(pid: int, aid: int):
+        db = models.get_db()
+        rec = models.get_central_protocol(db, pid)
+        if not rec:
+            return {"error": "not found"}, 404
+        _require_event_view(rec.get("event_id"))
+        if not _attachment_edit_allowed(rec):
+            return {"error": "forbidden"}, 403
+        att = models.get_central_attachment(db, aid)
+        if not att or att["central_protocol_id"] != pid:
+            return {"error": "not found"}, 404
+        models.delete_central_attachment(db, aid)
+        db.commit()
+        return {"deleted": aid}
+
+    @app.route("/attachments/central/<int:aid>")
+    @login_required
+    def central_attachment_download(aid: int):
+        db = models.get_db()
+        att = models.get_central_attachment(db, aid)
+        if not att:
+            abort(404)
+        rec = models.get_central_protocol(db, att["central_protocol_id"])
+        if not rec:
+            abort(404)
+        _require_event_view(rec.get("event_id"))
+        from flask import Response
+        return Response(
+            att["content"], mimetype=att["mime"],
+            headers={"Content-Disposition":
+                     f'inline; filename="{att["filename"]}"'},
+        )
+
     # ----- Central first-aid (Notfallprotokoll) -----
 
     @app.route("/central/new", methods=["GET", "POST"])
@@ -1857,12 +1933,25 @@ def create_app(test_config: dict | None = None) -> Flask:
             # Stabile UID für den Barcode am Footer — Admin scant
             # diesen und landet direkt auf der Akte / dem Protokoll.
             uid = f"ZEH-{pid:06d}"
+            # Foto-/Datei-Anhänge fürs PDF laden (mit Inhalt)
+            att_rows = models.list_central_attachments(db, pid)
+            attachments = []
+            for meta in att_rows:
+                full = models.get_central_attachment(db, meta["id"])
+                if full:
+                    attachments.append({
+                        "filename": full["filename"],
+                        "mime": full["mime"],
+                        "size_bytes": full["size_bytes"],
+                        "content": full["content"],
+                    })
             pdf_bytes = render_central_pdf(
                 pdf_data,
                 exporter_label=(current_user.full_name
                                 or current_user.username),
                 medical_info=medical_info,
                 protocol_uid=uid,
+                attachments=attachments,
             )
         except FileNotFoundError as e:
             return {"error": str(e)}, 500

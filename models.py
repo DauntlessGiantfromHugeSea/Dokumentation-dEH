@@ -357,6 +357,22 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT
 );
 
+-- Foto-/Datei-Anhänge an zentralen Protokollen (BLOB in SQLite —
+-- bleibt im Single-File-Backup enthalten)
+CREATE TABLE IF NOT EXISTS central_attachments (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    central_protocol_id INTEGER NOT NULL REFERENCES central_protocols(id)
+                        ON DELETE CASCADE,
+    filename            TEXT NOT NULL,
+    mime                TEXT NOT NULL,
+    size_bytes          INTEGER NOT NULL,
+    content             BLOB NOT NULL,
+    uploaded_by         INTEGER REFERENCES users(id),
+    created_at          TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_central_attachments_protocol
+    ON central_attachments(central_protocol_id);
+
 -- Übertragungen von Protokoll-PDFs an frodor (Camp-Anmeldungs-Plattform).
 -- Zwei-Schritt-Upload: erst Datei-Eintrag in frodor ('row_created'), dann
 -- PDF in den Storage ('uploaded'). Bleibt ein Upload hängen (Camp-WLAN),
@@ -2765,6 +2781,62 @@ def list_patients_with_medications(conn) -> list[sqlite3.Row]:
         ORDER BY p.name COLLATE NOCASE
         """,
     ).fetchall()
+
+
+# ---------- Anhänge an zentralen Protokollen ----------
+
+ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024   # 15 MB pro Datei
+ATTACHMENT_MAX_COUNT = 20                 # pro Protokoll
+
+
+def add_central_attachment(conn, protocol_id: int, *, filename: str,
+                            mime: str, content: bytes,
+                            uploaded_by: Optional[int]) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO central_attachments
+          (central_protocol_id, filename, mime, size_bytes, content,
+           uploaded_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (protocol_id, filename[:200], mime[:100], len(content),
+         content, uploaded_by),
+    )
+    return cur.lastrowid
+
+
+def list_central_attachments(conn, protocol_id: int) -> list[sqlite3.Row]:
+    """Metadaten (ohne BLOB) — für Listen-Anzeigen."""
+    return conn.execute(
+        """
+        SELECT a.id, a.filename, a.mime, a.size_bytes, a.created_at,
+               u.full_name AS uploaded_by_name, u.username AS uploaded_by_username
+        FROM central_attachments a
+        LEFT JOIN users u ON u.id = a.uploaded_by
+        WHERE a.central_protocol_id = ?
+        ORDER BY a.id
+        """,
+        (protocol_id,),
+    ).fetchall()
+
+
+def get_central_attachment(conn, attachment_id: int) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM central_attachments WHERE id = ?", (attachment_id,)
+    ).fetchone()
+
+
+def delete_central_attachment(conn, attachment_id: int) -> bool:
+    cur = conn.execute(
+        "DELETE FROM central_attachments WHERE id = ?", (attachment_id,))
+    return cur.rowcount > 0
+
+
+def count_central_attachments(conn, protocol_id: int) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) AS n FROM central_attachments "
+        "WHERE central_protocol_id = ?", (protocol_id,)
+    ).fetchone()["n"]
 
 
 def list_medication_stamm_values(conn) -> list[str]:
