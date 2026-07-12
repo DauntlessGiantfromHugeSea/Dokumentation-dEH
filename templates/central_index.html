@@ -1142,10 +1142,7 @@ if ('serviceWorker' in navigator) {
                 <input type="time" id="einsatzbeginn" name="einsatzbeginn" />
                 <button type="button" class="now-btn" data-now="einsatzbeginn">Jetzt</button>
               </div>
-              <div class="field with-now"><label for="einsatzende">Ende</label>
-                <input type="time" id="einsatzende" name="einsatzende" />
-                <button type="button" class="now-btn" data-now="einsatzende">Jetzt</button>
-              </div>
+              <!-- Abschlusszeit (einsatzende) wurde auf die Abschluss-Seite verschoben -->
               <div class="field"><label for="einsatzort">Einsatzort</label><input type="text" id="einsatzort" name="einsatzort" placeholder="Adresse / Ort" /></div>
               <div class="field"><label for="einsatzstichwort">Stichwort</label><input type="text" id="einsatzstichwort" name="einsatzstichwort" /></div>
             </div>
@@ -1326,7 +1323,7 @@ if ('serviceWorker' in navigator) {
 
           <div class="section">
             <div class="label">Übergabe an</div>
-            <div class="chips" data-name="uebergabe_an" data-mode="single" data-options="Notarzt|RTW|Klinik – Notaufnahme|Klinik – Schockraum|Klinik – Station|Hausarzt|vor Ort belassen|zurück zur Veranstaltung|Abholung durch Eltern|verlässt Veranstaltung|Sonstige"></div>
+            <div class="chips" data-name="uebergabe_an" data-mode="single" data-options="Notarzt|RTW|Klinik – Notaufnahme|Klinik – Schockraum|Hausarzt|vor Ort belassen|zurück zur Veranstaltung|Abholung durch Eltern|verlässt Veranstaltung|Sonstige"></div>
           </div>
 
           <div class="grid cols-3">
@@ -1406,6 +1403,20 @@ if ('serviceWorker' in navigator) {
         <!-- 9. Abschluss -->
         <section class="page" data-page="9">
           <h2>Abschluss</h2>
+
+          <div class="section">
+            <div class="label">Abschlusszeit</div>
+            <div class="grid cols-3">
+              <div class="field with-now">
+                <label for="einsatzende">Uhrzeit <span style="color:#c0392b" aria-hidden="true">*</span></label>
+                <input type="time" id="einsatzende" name="einsatzende" required aria-required="true" />
+                <button type="button" class="now-btn" data-now="einsatzende">Jetzt</button>
+              </div>
+            </div>
+            <p style="font-size: 0.85rem; color: var(--muted); margin: 6px 0 0;">
+              Pflichtfeld – Zeitpunkt, zu dem der Einsatz abgeschlossen wurde.
+            </p>
+          </div>
 
           <div class="section">
             <div class="label">Material</div>
@@ -2041,6 +2052,15 @@ if ('serviceWorker' in navigator) {
         goToPage(9);
         const sigSection = document.getElementById('sig-pad-1');
         if (sigSection) sigSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      // Abschlusszeit (Einsatzende) ist Pflicht.
+      const endeEl = document.getElementById('einsatzende');
+      if (endeEl && !endeEl.value) {
+        toast('Abschluss nicht möglich: bitte Abschlusszeit angeben.');
+        goToPage(9);
+        endeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        try { endeEl.focus(); } catch (_) {}
         return;
       }
       if (currentId == null) {
