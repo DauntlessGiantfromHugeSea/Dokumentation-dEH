@@ -269,6 +269,20 @@
       c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
+  function formatWvDate(iso) {
+    if (!iso) return '';
+    var p = String(iso).split('-');
+    if (p.length !== 3) return iso;
+    var d = new Date(iso + 'T00:00:00');
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var diff = Math.round((d - today) / 86400000);
+    var nice = p[2] + '.' + p[1] + '.' + p[0];
+    if (diff === 0) return 'HEUTE (' + nice + ')';
+    if (diff === 1) return 'morgen (' + nice + ')';
+    if (diff < 0) return 'überfällig seit ' + nice;
+    return nice;
+  }
+
   function renderMatches(matches) {
     if (!matches.length) {
       hint.style.display = 'none'; hint.innerHTML = '';
@@ -291,6 +305,13 @@
                 + escapeHtml(m.stammnummer) + '</span>' : '')
             + ' <span class="muted">· ' + total + ' Vorbehandlung'
             + (total === 1 ? '' : 'en') + '</span>'
+            + (m.wiedervorstellung
+                ? '<span class="wv-badge">📅 Einbestellt zur Wiedervorstellung: '
+                  + escapeHtml(formatWvDate(m.wiedervorstellung.due_date))
+                  + (m.wiedervorstellung.due_time
+                      ? ' · ' + escapeHtml(m.wiedervorstellung.due_time) : '')
+                  + '</span>'
+                : '')
             + '</button></li>';
     }
     html += '</ul>';

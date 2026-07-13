@@ -786,7 +786,12 @@ def _section_7_uebergabe(d):
         ],
         [
             _label_value("7.6 EKG", d.get("ekg_2")),
-            "",
+            _label_value("7.9 Wiedervorstellung",
+                         (" · ".join(p for p in [
+                             _fmt_date(d.get("wiedervorstellung_datum")),
+                             _v(d.get("wiedervorstellung_zeit")),
+                         ] if p)
+                          if _v(d.get("wiedervorstellung_datum")) else "")),
         ],
     ], [93 * mm, 93 * mm], padding=4)
 

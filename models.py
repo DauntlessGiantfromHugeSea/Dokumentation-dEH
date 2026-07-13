@@ -361,6 +361,27 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT
 );
 
+-- Wiedervorstellungen: Patient wird zu einem Termin einbestellt.
+-- Wird aus dem zentralen Protokoll (Übergabe-Seite) gepflegt und bei
+-- der Triage-Anmeldung angezeigt; erledigt sich automatisch, wenn die
+-- Person erneut angemeldet wird.
+CREATE TABLE IF NOT EXISTS wiedervorstellungen (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_id          INTEGER NOT NULL REFERENCES patients(id)
+                        ON DELETE CASCADE,
+    central_protocol_id INTEGER REFERENCES central_protocols(id)
+                        ON DELETE SET NULL,
+    due_date            TEXT NOT NULL,     -- YYYY-MM-DD
+    due_time            TEXT,              -- 'morgens' | 'mittags' | ... | 'HH:MM'
+    status              TEXT NOT NULL DEFAULT 'offen',
+                        -- 'offen' | 'erledigt' | 'storniert'
+    created_by          INTEGER REFERENCES users(id),
+    created_at          TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    resolved_at         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wiedervorstellungen_patient
+    ON wiedervorstellungen(patient_id, status);
+
 -- Foto-/Datei-Anhänge an zentralen Protokollen (BLOB in SQLite —
 -- bleibt im Single-File-Backup enthalten)
 CREATE TABLE IF NOT EXISTS central_attachments (
@@ -2024,6 +2045,7 @@ def create_central_protocol(conn: sqlite3.Connection, data: dict,
     )
     # Audit-Log: ggf. mitgegebene Unterschriften gleich verbuchen
     _log_signature_changes(conn, patient_id, None, data, created_by)
+    sync_wiedervorstellung(conn, new_id, patient_id, data, created_by)
     return new_id
 
 
@@ -2059,6 +2081,7 @@ def update_central_protocol(conn: sqlite3.Connection, pid: int,
     )
     if cur.rowcount > 0:
         _log_signature_changes(conn, patient_id, old_data, data, changed_by)
+        sync_wiedervorstellung(conn, pid, patient_id, data, changed_by)
     return cur.rowcount > 0
 
 
@@ -2685,6 +2708,9 @@ def create_triage_entry(conn, *, name=None, geburtsdatum=None,
     patient_id = None
     if name and geburtsdatum:
         patient_id = upsert_patient(conn, name, geburtsdatum, None)
+        # Offene Wiedervorstellungen gelten mit der erneuten Anmeldung
+        # als wahrgenommen → erledigt
+        resolve_wiedervorstellungen(conn, patient_id)
     status = "abgeschlossen" if category == "TOT" else "wartend"
     cur = conn.execute(
         """
@@ -3098,6 +3124,67 @@ def list_patients_with_medications(conn) -> list[sqlite3.Row]:
         ORDER BY p.name COLLATE NOCASE
         """,
     ).fetchall()
+
+
+# ---------- Wiedervorstellungen ----------
+
+def sync_wiedervorstellung(conn, protocol_id: int,
+                            patient_id: Optional[int], data: dict,
+                            created_by: Optional[int]) -> None:
+    """Hält die Wiedervorstellung eines Protokolls synchron mit den
+    Formularfeldern (data.wiedervorstellung_datum / _zeit). Pro Protokoll
+    max. eine offene Zeile: Datum gesetzt → anlegen/aktualisieren,
+    Datum leer → offene Zeile stornieren."""
+    due_date = _scalar(data.get("wiedervorstellung_datum")) or None
+    due_time = _scalar(data.get("wiedervorstellung_zeit")) or None
+    row = conn.execute(
+        "SELECT id, status FROM wiedervorstellungen "
+        "WHERE central_protocol_id = ? ORDER BY id DESC LIMIT 1",
+        (protocol_id,),
+    ).fetchone()
+    if due_date and patient_id:
+        if row and row["status"] == "offen":
+            conn.execute(
+                "UPDATE wiedervorstellungen SET due_date = ?, due_time = ?, "
+                "patient_id = ? WHERE id = ?",
+                (due_date, due_time, patient_id, row["id"]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO wiedervorstellungen "
+                "(patient_id, central_protocol_id, due_date, due_time, "
+                " created_by) VALUES (?, ?, ?, ?, ?)",
+                (patient_id, protocol_id, due_date, due_time, created_by),
+            )
+    elif row and row["status"] == "offen":
+        conn.execute(
+            "UPDATE wiedervorstellungen SET status = 'storniert', "
+            "resolved_at = datetime('now', 'localtime') WHERE id = ?",
+            (row["id"],),
+        )
+
+
+def open_wiedervorstellung_for_patient(conn, patient_id: int
+                                        ) -> Optional[sqlite3.Row]:
+    """Nächste offene Wiedervorstellung eines Patienten (oder None)."""
+    return conn.execute(
+        "SELECT * FROM wiedervorstellungen "
+        "WHERE patient_id = ? AND status = 'offen' "
+        "ORDER BY due_date, id LIMIT 1",
+        (patient_id,),
+    ).fetchone()
+
+
+def resolve_wiedervorstellungen(conn, patient_id: int) -> int:
+    """Alle offenen Wiedervorstellungen eines Patienten auf 'erledigt'
+    setzen — wird bei erneuter Triage-Anmeldung aufgerufen."""
+    cur = conn.execute(
+        "UPDATE wiedervorstellungen SET status = 'erledigt', "
+        "resolved_at = datetime('now', 'localtime') "
+        "WHERE patient_id = ? AND status = 'offen'",
+        (patient_id,),
+    )
+    return cur.rowcount
 
 
 # ---------- Anhänge an zentralen Protokollen ----------

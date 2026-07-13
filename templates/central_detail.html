@@ -505,6 +505,12 @@
     {{ kv("Infektion", d.get("infektion")) }}
     {{ kv("Begleitung", d.get("begleitung")) }}
     {{ kv("Übergabezeit", d.get("uebergabezeit")) }}
+    {% if d.get("wiedervorstellung_datum") %}
+      {{ kv("📅 Wiedervorstellung",
+            format_dt(d.get("wiedervorstellung_datum"))
+            ~ (" · " ~ d.get("wiedervorstellung_zeit")
+               if d.get("wiedervorstellung_zeit") else "")) }}
+    {% endif %}
   </div>
   <div class="protocol-meta">
     {{ kv("Bewusstsein (Übergabe)", d.get("bewusstsein_2")) }}

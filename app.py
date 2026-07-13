@@ -1466,6 +1466,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                                                     event_id=_current_event_id())
             last = models.patient_last_treatment(db, r["id"],
                                                  event_id=_current_event_id())
+            wv = models.open_wiedervorstellung_for_patient(db, r["id"])
             matches.append({
                 "patient_id": r["id"],
                 "name": r["name"],
@@ -1474,6 +1475,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "previous_decentral": counts["decentral"],
                 "previous_central": counts["central"],
                 "last_treatment": last,
+                "wiedervorstellung": ({
+                    "due_date": wv["due_date"],
+                    "due_time": wv["due_time"] or "",
+                } if wv else None),
             })
         return {"matches": matches}
 

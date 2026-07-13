@@ -2899,3 +2899,16 @@ header.topbar nav a.nav-cta {
 header.topbar nav a.nav-cta:hover {
   background: rgba(255, 255, 255, 0.28);
 }
+
+/* --- Wiedervorstellungs-Badge in der Anmeldungs-Trefferliste --- */
+.wv-badge {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--warning-light);
+  border-left: 3px solid var(--warning);
+  color: #6b4d00;
+  font-weight: 600;
+  font-size: 0.85rem;
+}

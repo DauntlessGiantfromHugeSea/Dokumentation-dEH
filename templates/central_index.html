@@ -1350,6 +1350,33 @@ if ('serviceWorker' in navigator) {
           </div>
 
           <div class="section" style="margin-top:18px">
+            <div class="label">Wiedervorstellung <span class="hint">Patient einbestellen</span></div>
+            <p style="margin: 4px 0 10px; font-size: 0.86rem; color: var(--muted);">
+              Soll die Person zur Kontrolle wiederkommen? Termin wählen —
+              bei der nächsten Anmeldung wird prominent angezeigt, dass
+              sie einbestellt ist. Leeres Datum = keine Wiedervorstellung.
+            </p>
+            <div class="btn-group" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+              <button type="button" class="btn sm ghost" data-wv-quick="0">Heute</button>
+              <button type="button" class="btn sm ghost" data-wv-quick="1">Morgen</button>
+              <button type="button" class="btn sm ghost" data-wv-quick="2">Übermorgen</button>
+              <button type="button" class="btn sm ghost" data-wv-clear>✕ Keine</button>
+            </div>
+            <div class="grid cols-2">
+              <div class="field"><label for="wiedervorstellung_datum">Datum</label>
+                <input type="date" id="wiedervorstellung_datum" name="wiedervorstellung_datum" />
+              </div>
+              <div class="field"><label for="wiedervorstellung_zeit">Wann am Tag</label>
+                <select id="wiedervorstellung_zeit" name="wiedervorstellung_zeit">
+                  <option value="">–</option>
+                  <option>morgens</option><option>mittags</option>
+                  <option>abends</option><option>nach Programmende</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="section" style="margin-top:18px">
             <div class="label">
               Vitalwerte (Übergabe)
               <button type="button" class="btn sm ghost" id="btn-copy-vitals">↻ Erstwerte übernehmen</button>
@@ -2277,6 +2304,33 @@ if ('serviceWorker' in navigator) {
       input.value = '';
     });
   });
+
+  // ============ Wiedervorstellung: Schnell-Buttons ============
+  document.querySelectorAll('[data-wv-quick]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const days = Number(btn.dataset.wvQuick);
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      const iso = d.toISOString().slice(0, 10);
+      const input = document.getElementById('wiedervorstellung_datum');
+      if (input) {
+        input.value = iso;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+  });
+  const wvClear = document.querySelector('[data-wv-clear]');
+  if (wvClear) {
+    wvClear.addEventListener('click', () => {
+      ['wiedervorstellung_datum', 'wiedervorstellung_zeit'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.value = '';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      });
+    });
+  }
 
   // ============ Summary ============
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
