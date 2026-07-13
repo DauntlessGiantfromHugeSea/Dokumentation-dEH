@@ -2912,3 +2912,29 @@ header.topbar nav a.nav-cta:hover {
   font-weight: 600;
   font-size: 0.85rem;
 }
+
+/* --- Einbestellten-Liste auf der Anmelde-Seite --- */
+.wv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.wv-row.wv-overdue { border-left: 4px solid var(--error); background: var(--error-light); }
+.wv-row.wv-today   { border-left: 4px solid var(--warning); background: var(--warning-light); }
+.wv-row.wv-future  { border-left: 4px solid var(--border-strong); }
+.wv-row-info { flex: 1 1 260px; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.wv-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.wv-due { font-weight: 600; font-size: 0.85rem; }
+.wv-due-overdue { color: var(--error); }
+.wv-due-today   { color: #6b4d00; }
+.wv-due-future  { color: var(--muted); }
+@media (max-width: 640px) {
+  .wv-row-actions { width: 100%; }
+  .wv-row-actions .btn { flex: 1 1 auto; }
+}

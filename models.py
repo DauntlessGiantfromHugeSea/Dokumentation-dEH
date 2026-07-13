@@ -3138,7 +3138,7 @@ def sync_wiedervorstellung(conn, protocol_id: int,
     due_date = _scalar(data.get("wiedervorstellung_datum")) or None
     due_time = _scalar(data.get("wiedervorstellung_zeit")) or None
     row = conn.execute(
-        "SELECT id, status FROM wiedervorstellungen "
+        "SELECT id, status, due_date, due_time FROM wiedervorstellungen "
         "WHERE central_protocol_id = ? ORDER BY id DESC LIMIT 1",
         (protocol_id,),
     ).fetchone()
@@ -3149,6 +3149,12 @@ def sync_wiedervorstellung(conn, protocol_id: int,
                 "patient_id = ? WHERE id = ?",
                 (due_date, due_time, patient_id, row["id"]),
             )
+        elif (row and row["due_date"] == due_date
+                and (row["due_time"] or None) == due_time):
+            # Bereits erledigte/stornierte Einbestellung mit identischem
+            # Termin NICHT wiederbeleben — sonst würde jeder Auto-Save
+            # nach dem Antreten eine neue offene Zeile erzeugen.
+            pass
         else:
             conn.execute(
                 "INSERT INTO wiedervorstellungen "
@@ -3173,6 +3179,39 @@ def open_wiedervorstellung_for_patient(conn, patient_id: int
         "ORDER BY due_date, id LIMIT 1",
         (patient_id,),
     ).fetchone()
+
+
+def list_open_wiedervorstellungen(conn) -> list[sqlite3.Row]:
+    """Alle offenen Einbestellungen — für die Übersicht bei der
+    Anmeldung. Überfällige zuerst (Sortierung nach Datum)."""
+    return conn.execute(
+        """
+        SELECT w.*, p.name AS patient_name,
+               p.geburtsdatum AS patient_geburtsdatum,
+               cp.laufende_nr AS protocol_laufende_nr
+        FROM wiedervorstellungen w
+        JOIN patients p ON p.id = w.patient_id
+        LEFT JOIN central_protocols cp ON cp.id = w.central_protocol_id
+        WHERE w.status = 'offen'
+        ORDER BY w.due_date, p.name COLLATE NOCASE
+        """
+    ).fetchall()
+
+
+def get_wiedervorstellung(conn, wid: int) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM wiedervorstellungen WHERE id = ?", (wid,)
+    ).fetchone()
+
+
+def mark_wiedervorstellung_erledigt(conn, wid: int) -> bool:
+    cur = conn.execute(
+        "UPDATE wiedervorstellungen SET status = 'erledigt', "
+        "resolved_at = datetime('now', 'localtime') "
+        "WHERE id = ? AND status = 'offen'",
+        (wid,),
+    )
+    return cur.rowcount > 0
 
 
 def resolve_wiedervorstellungen(conn, patient_id: int) -> int:

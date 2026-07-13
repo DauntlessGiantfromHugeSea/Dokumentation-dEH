@@ -1360,6 +1360,49 @@ def create_app(test_config: dict | None = None) -> Flask:
             max_triage_id=max_triage_id,
         )
 
+    @app.route("/wiedervorstellung/<int:wid>/antreten", methods=["POST"])
+    @login_required
+    def wiedervorstellung_antreten(wid: int):
+        """Einbestellte Person ist da → Wiedervorstellung erledigt +
+        weiter zum URSPRÜNGLICHEN Protokoll (dort weiterschreiben).
+        Der Termin wird aus dem Protokoll entfernt, damit der Auto-Save
+        keine neue Einbestellung erzeugt — für eine weitere Kontrolle
+        einfach ein neues Datum setzen."""
+        db = models.get_db()
+        wv = models.get_wiedervorstellung(db, wid)
+        if not wv:
+            abort(404)
+        models.mark_wiedervorstellung_erledigt(db, wid)
+        pid = wv["central_protocol_id"]
+        if pid:
+            rec = models.get_central_protocol(db, pid)
+            if rec:
+                data = rec.get("data") or {}
+                data["wiedervorstellung_datum"] = ""
+                data["wiedervorstellung_zeit"] = ""
+                models.update_central_protocol(db, pid, data,
+                                               changed_by=current_user.id)
+        db.commit()
+        flash("Wiedervorstellung angetreten — Protokoll wird "
+              "weitergeführt.", "success")
+        if pid:
+            return redirect(url_for("central_index") + f"#{pid}")
+        return redirect(url_for("triage_new"))
+
+    @app.route("/wiedervorstellung/<int:wid>/abhaken", methods=["POST"])
+    @login_required
+    def wiedervorstellung_abhaken(wid: int):
+        """Einbestellung nur abhaken (erledigt) — ohne Protokoll zu
+        öffnen, z. B. wenn die Person anderweitig versorgt wurde."""
+        db = models.get_db()
+        wv = models.get_wiedervorstellung(db, wid)
+        if not wv:
+            abort(404)
+        models.mark_wiedervorstellung_erledigt(db, wid)
+        db.commit()
+        flash("Wiedervorstellung als erledigt markiert.", "success")
+        return redirect(url_for("triage_new"))
+
     @app.route("/triage/new", methods=["GET", "POST"])
     @login_required
     def triage_new():
@@ -1410,11 +1453,36 @@ def create_app(test_config: dict | None = None) -> Flask:
             if current_user.is_triage_intake:
                 return redirect(url_for("triage_new"))
             return redirect(url_for("triage_list"))
+        # Übersicht der Einbestellten mit Fälligkeits-Label
+        from datetime import date as _date
+        today = _date.today()
+        einbestellte = []
+        for w in models.list_open_wiedervorstellungen(db):
+            try:
+                due = _date.fromisoformat(w["due_date"])
+                diff = (due - today).days
+            except (TypeError, ValueError):
+                due, diff = None, None
+            nice = due.strftime("%d.%m.%Y") if due else (w["due_date"] or "?")
+            if diff is None:
+                label, urgency = nice, "future"
+            elif diff < 0:
+                label, urgency = f"überfällig seit {nice}", "overdue"
+            elif diff == 0:
+                label, urgency = f"HEUTE ({nice})", "today"
+            elif diff == 1:
+                label, urgency = f"morgen ({nice})", "future"
+            else:
+                label, urgency = nice, "future"
+            einbestellte.append({**dict(w), "due_label": label,
+                                 "urgency": urgency})
         return render_template(
             "triage_new.html",
             indicators=models.PRIOR_INDICATORS,
             mstart_questions=models.MSTART_QUESTIONS,
             mstart_labels=models.MSTART_CATEGORY_LABEL,
+            einbestellte=einbestellte,
+            format_dt=models.format_dt,
         )
 
     @app.route("/api/triage/recent")

@@ -14,6 +14,57 @@
   {% endif %}
 </div>
 
+{% if einbestellte %}
+<div class="card" style="border-left: 4px solid var(--warning); margin-bottom: 18px;">
+  <div class="card-header">
+    📅 Einbestellte Personen ({{ einbestellte|length }})
+  </div>
+  <p class="muted" style="font-size: 0.88rem; margin: 0 0 12px;">
+    Zur Wiedervorstellung einbestellt. Wenn die Person da ist:
+    <strong>„Protokoll weiterführen"</strong> öffnet die ursprüngliche
+    Behandlung — oder unten normal neu anmelden.
+  </p>
+  <ul style="list-style: none; margin: 0; padding: 0; display: grid; gap: 8px;">
+    {% for w in einbestellte %}
+    <li class="wv-row wv-{{ w.urgency }}">
+      <div class="wv-row-info">
+        <strong>{{ w.patient_name }}</strong>
+        {% if w.patient_geburtsdatum %}
+          <span class="muted">· geb. {{ format_dt(w.patient_geburtsdatum) }}</span>
+        {% endif %}
+        <span class="wv-due wv-due-{{ w.urgency }}">{{ w.due_label }}{% if w.due_time %} · {{ w.due_time }}{% endif %}</span>
+        {% if w.protocol_laufende_nr %}
+          <span class="badge">Protokoll {{ w.protocol_laufende_nr }}</span>
+        {% endif %}
+      </div>
+      <div class="wv-row-actions">
+        {% if not current_user.is_triage_intake and w.central_protocol_id %}
+          <form method="post" action="{{ url_for('wiedervorstellung_antreten', wid=w.id) }}"
+                style="display: inline-block;">
+            <button class="btn small" type="submit">
+              ✓ Ist da — Protokoll weiterführen
+            </button>
+          </form>
+        {% endif %}
+        <button class="btn small secondary" type="button"
+                data-wv-fill data-name="{{ w.patient_name }}"
+                data-dob="{{ w.patient_geburtsdatum or '' }}">
+          Neu anmelden
+        </button>
+        {% if not current_user.is_triage_intake %}
+          <form method="post" action="{{ url_for('wiedervorstellung_abhaken', wid=w.id) }}"
+                style="display: inline-block;"
+                onsubmit="return confirm('Einbestellung für {{ w.patient_name|e }} abhaken (ohne Behandlung)?');">
+            <button class="btn small secondary" type="submit" title="Nur abhaken">✓</button>
+          </form>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <form method="post" class="stack" id="triageForm">
 
   <!-- ============ mSTaRT-Interview ============ -->
@@ -355,6 +406,25 @@
   nameEl.addEventListener('input', debounced);
   dobEl.addEventListener('change', check);
   check();
+})();
+</script>
+
+<script>
+// „Neu anmelden" aus der Einbestellten-Liste: Name + Geburtsdatum
+// übernehmen und zum mSTaRT-Baum springen. Die Einbestellung wird
+// beim Abschicken der Anmeldung automatisch als erledigt markiert.
+(function () {
+  document.querySelectorAll('[data-wv-fill]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var nameEl = document.getElementById('triageName');
+      var dobEl = document.getElementById('triageDob');
+      if (nameEl) nameEl.value = btn.dataset.name || '';
+      if (dobEl) dobEl.value = btn.dataset.dob || '';
+      if (nameEl) nameEl.dispatchEvent(new Event('input', { bubbles: true }));
+      var form = document.getElementById('triageForm');
+      if (form) form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
 })();
 </script>
 
