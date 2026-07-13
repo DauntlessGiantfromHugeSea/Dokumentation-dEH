@@ -19,6 +19,14 @@
         if (t === 'hc') document.documentElement.setAttribute('data-theme', 'hc');
       } catch (_) {}
     })();
+    // Zurück-Pfeil nach Logout: Safari/Firefox stellen Seiten aus dem
+    // Back-Forward-Cache wieder her, OHNE den Server zu fragen — dann
+    // sieht man die alte (eingeloggte) Ansicht. Bei bfcache-Restore
+    // deshalb immer frisch laden; der Server leitet Abgemeldete zum
+    // Login um.
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted) window.location.reload();
+    });
   </script>
 </head>
 <body{% if request.args.get('embed') %} class="embed-mode"{% endif %}>

@@ -999,6 +999,10 @@
 })();
 </script>
 <script>
+// bfcache-Restore (Zurück-Pfeil nach Logout) → frisch laden
+window.addEventListener('pageshow', function (e) {
+  if (e.persisted) window.location.reload();
+});
 (function () {
   try {
     if (localStorage.getItem('theme') === 'hc') {

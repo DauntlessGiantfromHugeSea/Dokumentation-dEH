@@ -206,6 +206,19 @@ def create_app(test_config: dict | None = None) -> Flask:
         except Exception:
             pass
 
+    @app.after_request
+    def _no_store_for_app_pages(response):
+        """App-Seiten dürfen NICHT gecacht werden — sonst zeigt der
+        Zurück-Pfeil nach dem Abmelden die alte Seite samt
+        Patientendaten aus dem Browser-Cache (bfcache). Statische
+        Assets (/static/) bleiben cachebar."""
+        if not request.path.startswith("/static/"):
+            response.headers["Cache-Control"] = (
+                "no-store, no-cache, must-revalidate, max-age=0")
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
     # Triage-Kiosk-Schutz: 'triage_intake' Konten dürfen nur den
     # Anmelde-Flow nutzen — alle anderen URLs liefern 403.
     @app.before_request
