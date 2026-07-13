@@ -2854,12 +2854,14 @@ table.data td select { max-width: 100%; box-sizing: border-box; }
 }
 .user-action-form .btn { flex: 0 0 auto; }
 
-/* Datalist/Date-Inputs auf iOS: einheitliche Höhe */
+/* Date-Inputs: einheitliche Höhe. WICHTIG: kein -webkit-appearance:none
+   auf date/time/datetime-local — das entfernt auf iOS/iPadOS den
+   nativen Picker und macht die Felder unbenutzbar. */
 input[type="date"],
 input[type="time"],
 input[type="datetime-local"] {
   min-height: 42px;
-  -webkit-appearance: none;
+  font-size: 16px;
 }
 
 /* Toolbar-Felder dürfen schrumpfen */

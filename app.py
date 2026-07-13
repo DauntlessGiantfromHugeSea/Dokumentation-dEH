@@ -261,7 +261,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             self.role = (row["role"] or "full") if "role" in row.keys() else "full"
             # Per-User-Berechtigungen (additiv zu Rolle/Admin)
             keys = row.keys() if hasattr(row, "keys") else []
-            for perm in ("perm_view_contact", "perm_export_pdf",
+            for perm in ("perm_view_contact", "perm_export_pdf", "perm_write_decentral",
                          "perm_export_akte", "perm_edit_patient"):
                 setattr(self, perm,
                         bool(row[perm]) if perm in keys else False)
@@ -290,6 +290,14 @@ def create_app(test_config: dict | None = None) -> Flask:
             return not self.is_zentral_only
 
         # ---- Per-User-Berechtigungen (Admin hat immer alles) ----
+        @property
+        def can_write_decentral(self) -> bool:
+            """Dezentrale Berichte anlegen/bearbeiten — Admin immer,
+            sonst per-User-Flag (zentral_writer nie)."""
+            if self.is_admin:
+                return True
+            return self.can_view_decentral and bool(self.perm_write_decentral)
+
         @property
         def can_view_contact(self) -> bool:
             return self.is_admin or self.perm_view_contact
@@ -483,6 +491,10 @@ def create_app(test_config: dict | None = None) -> Flask:
     @decentral_view_required
     def protocol_new():
         _require_event_create()
+        if not current_user.can_write_decentral:
+            flash("Keine Berechtigung, dezentrale Berichte zu schreiben — "
+                  "bitte beim Admin freischalten lassen.", "error")
+            return redirect(url_for("index"))
         if request.method == "POST":
             return _save_protocol(None)
         prefill = {
@@ -527,6 +539,11 @@ def create_app(test_config: dict | None = None) -> Flask:
         if not protocol:
             abort(404)
         _require_event_view(protocol["event_id"])
+        if not current_user.can_write_decentral:
+            flash("Keine Berechtigung, dezentrale Berichte zu bearbeiten.",
+                  "error")
+            return redirect(url_for("protocol_detail",
+                                    protocol_id=protocol_id))
         if request.method == "POST":
             return _save_protocol(protocol_id)
         return render_template(

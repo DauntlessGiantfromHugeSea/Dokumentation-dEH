@@ -384,6 +384,11 @@
                                {% if u.perm_edit_patient %}checked{% endif %}>
                         Patientendaten bearbeiten
                       </label>
+                      <label class="perm-row">
+                        <input type="checkbox" name="perm_write_decentral"
+                               {% if u.perm_write_decentral %}checked{% endif %}>
+                        Dezentrale Berichte schreiben (dEH)
+                      </label>
                       <button class="btn small" type="submit">Speichern</button>
                       <p class="muted" style="margin: 6px 0 0; font-size: 0.78rem;">
                         Admins haben automatisch alle Berechtigungen.

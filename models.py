@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS users (
     perm_export_pdf   INTEGER NOT NULL DEFAULT 0,
     perm_export_akte  INTEGER NOT NULL DEFAULT 0,
     perm_edit_patient INTEGER NOT NULL DEFAULT 0,
+    perm_write_decentral INTEGER NOT NULL DEFAULT 1,
     created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
@@ -503,6 +504,13 @@ def init_db(db_path: Path) -> None:
                     f"ALTER TABLE users ADD COLUMN {perm} "
                     "INTEGER NOT NULL DEFAULT 0"
                 )
+        # Dezentrale Berichte schreiben: Default 1, damit bestehende
+        # User weiterschreiben können — Admin kann es pro User entziehen.
+        if "perm_write_decentral" not in cols:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN perm_write_decentral "
+                "INTEGER NOT NULL DEFAULT 1"
+            )
 
         _ensure_default_event(conn)
 
@@ -1009,6 +1017,7 @@ USER_PERMISSIONS = (
     "perm_export_pdf",     # Notfallprotokoll-PDF erzeugen
     "perm_export_akte",    # Akten-Export (PDF) erzeugen
     "perm_edit_patient",   # Patientenstammdaten + Notfallkontakt bearbeiten
+    "perm_write_decentral",  # dezentrale Berichte anlegen/bearbeiten
 )
 
 
