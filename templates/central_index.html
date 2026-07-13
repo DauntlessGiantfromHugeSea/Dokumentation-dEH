@@ -3021,7 +3021,7 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
       }</div>`;
     if (payload.locked) {
       html += `<button type="button" class="vh-unlock-btn" data-vh-action="unlock" data-pid="${patientId}">
-                 Entschlüsseln (Admin-PIN)
+                 Entschlüsseln (Admin-/Arzt-PIN)
                </button>`;
     } else {
       // Full view (admin or unlocked)

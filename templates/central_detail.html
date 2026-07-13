@@ -146,16 +146,16 @@
         <div class="kv">
           <div class="label">Anschrift &amp; Kontakt</div>
           <div class="value">
-            <span class="badge muted-badge">vertraulich · Admin-PIN zum Entschlüsseln</span>
+            <span class="badge muted-badge">vertraulich · Admin-/Arzt-PIN zum Entschlüsseln</span>
           </div>
         </div>
       </div>
       <p class="muted" style="font-size: 0.85rem; margin: 6px 0 8px;">
         Adresse, Krankenkasse und Telefonnummer dürfen nur von Admins
-        eingesehen werden — oder per Admin-PIN für eine Sitzung freigegeben.
+        eingesehen werden — oder per Admin-/Arzt-PIN für eine Sitzung freigegeben.
       </p>
       <button class="btn small" type="button" id="contactUnlockBtn">
-        Daten entschlüsseln (Admin-PIN)
+        Daten entschlüsseln (Admin-/Arzt-PIN)
       </button>
       <form id="contactUnlockForm" class="card stack"
             style="display:none; margin-top: 10px; padding: 14px;">
@@ -165,7 +165,7 @@
             <select id="contactAdminSel" required></select>
           </label>
           <label class="field">
-            Admin-PIN
+            PIN (Admin- oder Arzt-Anmelde-PIN)
             <input id="contactPin" type="password" inputmode="numeric"
                    autocomplete="off" required>
           </label>

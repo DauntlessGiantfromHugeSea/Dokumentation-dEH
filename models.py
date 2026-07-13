@@ -468,6 +468,13 @@ def init_db(db_path: Path) -> None:
         if "login_pin_hash" not in cols:
             # Anmelde-PIN als Alternative zum Passwort (z. B. Tablet im Feld)
             conn.execute("ALTER TABLE users ADD COLUMN login_pin_hash TEXT")
+        if "is_doctor" not in cols:
+            # Arzt-Flag: darf Datenfreigaben mit dem eigenen Anmelde-PIN
+            # bestätigen (wie Admin mit Admin-PIN)
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN is_doctor "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
         for perm in ("perm_view_contact", "perm_export_pdf",
                      "perm_export_akte", "perm_edit_patient"):
             if perm not in cols:
@@ -987,7 +994,7 @@ USER_PERMISSIONS = (
 def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     cols = ", ".join(USER_PERMISSIONS)
     return conn.execute(
-        f"SELECT id, username, full_name, is_admin, role, "
+        f"SELECT id, username, full_name, is_admin, is_doctor, role, "
         f"       totp_secret, totp_confirmed, totp_required, "
         f"       (login_pin_hash IS NOT NULL) AS has_login_pin, "
         f"       {cols}, created_at "
@@ -2488,12 +2495,21 @@ def merge_central_contact(incoming: dict, existing: dict) -> dict:
 
 
 def list_admin_users_with_pin(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Admin-User, die einen PIN gesetzt haben — für Dropdowns in Unlock-UI."""
+    """User, die eine Datenfreigabe bestätigen können — für die
+    Dropdowns in der Unlock-UI: Admins mit Admin-PIN sowie Ärzte
+    (is_doctor) mit gesetztem Anmelde-PIN."""
     return conn.execute(
         "SELECT id, username, full_name FROM users "
-        "WHERE is_admin = 1 AND admin_pin_hash IS NOT NULL "
+        "WHERE (is_admin = 1 AND admin_pin_hash IS NOT NULL) "
+        "   OR (is_doctor = 1 AND login_pin_hash IS NOT NULL) "
         "ORDER BY full_name COLLATE NOCASE, username COLLATE NOCASE"
     ).fetchall()
+
+
+def set_user_doctor(conn: sqlite3.Connection, user_id: int,
+                    is_doctor: bool) -> None:
+    conn.execute("UPDATE users SET is_doctor = ? WHERE id = ?",
+                 (1 if is_doctor else 0, user_id))
 
 
 def set_admin_pin(conn: sqlite3.Connection, user_id: int,
@@ -2511,19 +2527,24 @@ def set_admin_pin(conn: sqlite3.Connection, user_id: int,
 
 def verify_admin_pin(conn: sqlite3.Connection, username: str,
                      pin: str) -> Optional[sqlite3.Row]:
-    """Find an admin with that username and matching PIN.
-    Returns the user row (so the caller can log who approved) or None.
-    """
+    """Datenfreigabe-Verifikation: Admin mit Admin-PIN — ODER Arzt
+    (is_doctor) mit seinem Anmelde-PIN. Gibt die User-Zeile zurück
+    (fürs Audit-Log, wer freigegeben hat) oder None."""
     row = conn.execute(
-        "SELECT id, username, full_name, is_admin, admin_pin_hash "
+        "SELECT id, username, full_name, is_admin, is_doctor, "
+        "       admin_pin_hash, login_pin_hash "
         "FROM users WHERE username = ?",
         (username,),
     ).fetchone()
-    if not row or not row["is_admin"] or not row["admin_pin_hash"]:
+    if not row:
         return None
-    if not check_password_hash(row["admin_pin_hash"], pin):
-        return None
-    return row
+    if (row["is_admin"] and row["admin_pin_hash"]
+            and check_password_hash(row["admin_pin_hash"], pin)):
+        return row
+    if (row["is_doctor"] and row["login_pin_hash"]
+            and check_password_hash(row["login_pin_hash"], pin)):
+        return row
+    return None
 
 
 def log_emergency_unlock(conn: sqlite3.Connection, patient_id: int,

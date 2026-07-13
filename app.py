@@ -3591,6 +3591,27 @@ def create_app(test_config: dict | None = None) -> Flask:
             flash(f"Passwort für '{row['username']}' zurückgesetzt.", "success")
         return redirect(_admin_settings_url("users"))
 
+    @app.route("/admin/users/<int:user_id>/toggle-doctor", methods=["POST"])
+    @admin_required
+    def admin_user_toggle_doctor(user_id: int):
+        """Arzt-Flag umschalten: Ärzte dürfen Datenfreigaben mit ihrem
+        eigenen Anmelde-PIN bestätigen (wie Admins mit Admin-PIN)."""
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        new_state = not bool(row["is_doctor"])
+        models.set_user_doctor(db, user_id, new_state)
+        db.commit()
+        if new_state:
+            flash(f"'{row['username']}' ist jetzt als Arzt markiert und "
+                  "kann Datenfreigaben mit dem Anmelde-PIN bestätigen.",
+                  "success")
+        else:
+            flash(f"Arzt-Status für '{row['username']}' entfernt.",
+                  "success")
+        return redirect(_admin_settings_url("users"))
+
     @app.route("/admin/users/<int:user_id>/login-pin", methods=["POST"])
     @admin_required
     def admin_user_login_pin(user_id: int):

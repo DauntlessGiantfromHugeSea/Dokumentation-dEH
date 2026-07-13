@@ -249,6 +249,9 @@
               {% else %}
                 <span class="badge type-d">Voll</span>
               {% endif %}
+              {% if u.is_doctor %}
+                <span class="badge success">🩺 Arzt</span>
+              {% endif %}
               {% if not u.totp_required %}
                 <span class="badge totp-off">2FA aus</span>
               {% elif u.totp_confirmed %}
@@ -317,6 +320,20 @@
                     {% if u.is_admin %}↓ Admin entziehen{% else %}↑ Admin geben{% endif %}
                   </button>
                 </form>
+                <form method="post"
+                      action="{{ url_for('admin_user_toggle_doctor', user_id=u.id) }}"
+                      class="user-action-form"
+                      onsubmit="return confirm('{% if u.is_doctor %}Arzt-Status entfernen?{% else %}Als Arzt markieren? Kann dann Datenfreigaben (Medikamente/Notfallkontakt) mit dem eigenen Anmelde-PIN bestätigen.{% endif %}');">
+                  <button class="btn small secondary" type="submit">
+                    {% if u.is_doctor %}🩺 Arzt-Status entziehen{% else %}🩺 Als Arzt markieren{% endif %}
+                  </button>
+                </form>
+                {% if u.is_doctor and not u.has_login_pin %}
+                  <p class="muted" style="font-size: 0.78rem; margin: 4px 0 0;">
+                    ⚠ Arzt ohne Anmelde-PIN — kann erst freigeben, wenn
+                    ein PIN gesetzt ist (links).
+                  </p>
+                {% endif %}
               </div>
 
               {# Gruppe 3: 2FA #}
