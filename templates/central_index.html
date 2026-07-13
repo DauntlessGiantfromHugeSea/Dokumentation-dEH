@@ -802,6 +802,16 @@
     .vitals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .nav { bottom: 8px; }
   }
+  /* iOS/iPadOS: native Felder mit ≥16px Schrift — verhindert den
+     Auto-Zoom beim Fokussieren, der Select-Popups unbrauchbar macht */
+  @media (hover: none) and (pointer: coarse) {
+    .field input, .field select, .field textarea,
+    .vitals input, .vitals select {
+      font-size: 16px !important;
+      min-height: 44px;
+    }
+  }
+
   @media (max-width: 520px) {
     .layout { padding: 10px; }
     .grid.cols-2,
@@ -1326,23 +1336,21 @@ if ('serviceWorker' in navigator) {
             <div class="chips" data-name="uebergabe_an" data-mode="single" data-options="Notarzt|RTW|Klinik – Notaufnahme|Klinik – Schockraum|Hausarzt|vor Ort belassen|zurück zur Veranstaltung|Abholung durch Eltern|verlässt Veranstaltung|Sonstige"></div>
           </div>
 
+          <div class="section" style="margin-top:14px">
+            <div class="label">Ergebnis</div>
+            <div class="chips" data-name="ergebnis" data-mode="single" data-options="stabilisiert|verbessert|unverändert|verschlechtert|verstorben|Transport verweigert"></div>
+          </div>
+          <div class="pair-grid">
+            <div class="section">
+              <div class="label">Infektion</div>
+              <div class="chips" data-name="infektion" data-mode="single" data-options="nein|V.a.|bestätigt|unbekannt"></div>
+            </div>
+            <div class="section">
+              <div class="label">Begleitung RTM</div>
+              <div class="chips" data-name="begleitung" data-mode="single" data-options="keine|Angehörige|Notarzt|Polizei"></div>
+            </div>
+          </div>
           <div class="grid cols-3">
-            <div class="field"><label>Ergebnis</label>
-              <select name="ergebnis"><option value="">–</option>
-                <option>stabilisiert</option><option>verbessert</option><option>unverändert</option>
-                <option>verschlechtert</option><option>verstorben</option><option>Transport verweigert</option>
-              </select>
-            </div>
-            <div class="field"><label>Infektion</label>
-              <select name="infektion"><option value="">–</option>
-                <option>nein</option><option>V.a.</option><option>bestätigt</option><option>unbekannt</option>
-              </select>
-            </div>
-            <div class="field"><label>Begleitung RTM</label>
-              <select name="begleitung"><option value="">–</option>
-                <option>keine</option><option>Angehörige</option><option>Notarzt</option><option>Polizei</option>
-              </select>
-            </div>
             <div class="field with-now"><label for="uebergabezeit">Übergabezeit</label>
               <input type="time" id="uebergabezeit" name="uebergabezeit" />
               <button type="button" class="now-btn" data-now="uebergabezeit">Jetzt</button>
@@ -1366,12 +1374,8 @@ if ('serviceWorker' in navigator) {
               <div class="field"><label for="wiedervorstellung_datum">Datum</label>
                 <input type="date" id="wiedervorstellung_datum" name="wiedervorstellung_datum" />
               </div>
-              <div class="field"><label for="wiedervorstellung_zeit">Wann am Tag</label>
-                <select id="wiedervorstellung_zeit" name="wiedervorstellung_zeit">
-                  <option value="">–</option>
-                  <option>morgens</option><option>mittags</option>
-                  <option>abends</option><option>nach Programmende</option>
-                </select>
+              <div class="field"><label>Wann am Tag</label>
+                <div class="chips" data-name="wiedervorstellung_zeit" data-mode="single" data-options="morgens|mittags|abends|nach Programmende"></div>
               </div>
             </div>
           </div>
@@ -2322,13 +2326,16 @@ if ('serviceWorker' in navigator) {
   const wvClear = document.querySelector('[data-wv-clear]');
   if (wvClear) {
     wvClear.addEventListener('click', () => {
-      ['wiedervorstellung_datum', 'wiedervorstellung_zeit'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-          el.value = '';
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-      });
+      const dateEl = document.getElementById('wiedervorstellung_datum');
+      if (dateEl) {
+        dateEl.value = '';
+        dateEl.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      // Zeit-Chips (Radios) abwählen
+      document.querySelectorAll('input[name="wiedervorstellung_zeit"]')
+        .forEach(r => { r.checked = false; });
+      const anyRadio = document.querySelector('input[name="wiedervorstellung_zeit"]');
+      if (anyRadio) anyRadio.dispatchEvent(new Event('change', { bubbles: true }));
     });
   }
 
