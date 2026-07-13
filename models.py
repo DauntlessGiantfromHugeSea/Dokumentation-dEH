@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS patients (
     has_medications            INTEGER,    -- NULL=unbekannt, 0=nein, 1=ja
     medications_text           TEXT,
     extras_notes               TEXT,
+    tetanus                    TEXT,   -- letzte Tetanus-Impfung (aus Anmeldung)
     -- Abholung: einfacher Hinweis, ob die Person abgeholt wurde (Admin-Klick)
     abgeholt                   INTEGER NOT NULL DEFAULT 0,
     abgeholt_at                TEXT,
@@ -525,6 +526,7 @@ def init_db(db_path: Path) -> None:
             ("has_medications", "INTEGER"),
             ("medications_text", "TEXT"),
             ("extras_notes", "TEXT"),
+            ("tetanus", "TEXT"),
             # Verknüpfung zur frodor-Anmeldung (registrations.uuid)
             ("frodor_registration_uuid", "TEXT"),
             # Abholung: Hinweis, ob die Person abgeholt wurde (Admin-Klick)
@@ -1279,6 +1281,9 @@ def adopt_frodor_registration(conn: sqlite3.Connection, reg: dict) -> int:
 
     # Einschränkungen + interne EH-Notizen aus der Anmeldung → Sonstige
     # Hinweise (nur wenn lokal noch leer; lokale Eingaben gewinnen).
+    if not row["tetanus"] and (reg.get("tetanus") or "").strip():
+        updates["tetanus"] = str(reg["tetanus"]).strip()
+
     if not row["extras_notes"]:
         note_parts = []
         if (reg.get("restrictions") or "").strip():
@@ -2157,7 +2162,8 @@ def search_patients(conn: sqlite3.Connection, *,
     geburtsdatum = (geburtsdatum or "").strip()
     if not name_query and not geburtsdatum:
         return []
-    sql = ["SELECT id, name, geburtsdatum, stammnummer FROM patients WHERE 1=1"]
+    sql = ["SELECT id, name, geburtsdatum, stammnummer, tetanus "
+           "FROM patients WHERE 1=1"]
     params: list = []
     if name_query:
         sql.append("AND name LIKE ? COLLATE NOCASE")

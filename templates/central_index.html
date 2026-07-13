@@ -3024,6 +3024,7 @@ const CURRENT_USER_LABEL = {{ (current_user.full_name or current_user.username)|
         <div class="vh-meta">
           geb. ${escapeHtml(fmtDate(m.geburtsdatum))}
           ${m.stammnummer ? '<br>Stamm-Nr. <strong>' + escapeHtml(m.stammnummer) + '</strong>' : ''}
+          ${m.tetanus ? '<br>💉 Tetanus: <strong>' + escapeHtml(fmtDate(m.tetanus)) + '</strong>' : ''}
         </div>
         <div class="vh-badge-row">
           <span class="vh-badge d">${m.previous_decentral} dEH</span>

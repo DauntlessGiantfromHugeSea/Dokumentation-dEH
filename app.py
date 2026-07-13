@@ -2213,6 +2213,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "name": r["name"],
                 "geburtsdatum": r["geburtsdatum"],
                 "stammnummer": r["stammnummer"] or "",
+                "tetanus": (r["tetanus"] or "") if "tetanus" in r.keys() else "",
                 "previous_decentral": counts["decentral"],
                 "previous_central": counts["central"],
                 "last_treatment": last,
