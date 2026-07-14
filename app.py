@@ -296,7 +296,13 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         @property
         def can_view_decentral(self) -> bool:
-            return not self.is_zentral_only
+            """dEH-Bereich sichtbar. Auch zentrale Ersthelfer
+            (zentral_writer) bekommen ihn, wenn die Berechtigung
+            'Dezentrale Berichte schreiben' gesetzt ist — schreiben
+            ohne sehen geht nicht."""
+            if self.is_zentral_only:
+                return bool(self.perm_write_decentral)
+            return True
 
         @property
         def can_view_others_central(self) -> bool:
@@ -306,10 +312,12 @@ def create_app(test_config: dict | None = None) -> Flask:
         @property
         def can_write_decentral(self) -> bool:
             """Dezentrale Berichte anlegen/bearbeiten — Admin immer,
-            sonst per-User-Flag (zentral_writer nie)."""
+            sonst per-User-Flag (gilt auch für zentral_writer)."""
             if self.is_admin:
                 return True
-            return self.can_view_decentral and bool(self.perm_write_decentral)
+            if self.is_triage_intake or self.is_abholung:
+                return False
+            return bool(self.perm_write_decentral)
 
         @property
         def can_view_contact(self) -> bool:
@@ -490,8 +498,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             "geburtsdatum": request.args.get("geburtsdatum", ""),
             "stammnummer": request.args.get("stammnummer", ""),
         }
-        if current_user.is_zentral_only:
-            # Direkt zur zentralen Patientenprüfung
+        if current_user.is_zentral_only and not current_user.can_write_decentral:
+            # Ohne dEH-Schreibrecht gibt es nur die zentrale Option —
+            # direkt zur zentralen Patientenprüfung
             vorname = prefill["name"].split(" ")[0] if prefill["name"] else ""
             nachname = (prefill["name"].rsplit(" ", 1)[-1]
                         if prefill["name"] and " " in prefill["name"] else "")
