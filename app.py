@@ -871,6 +871,59 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     # ----- Admin-Barcode-Scanner -----
 
+    @app.route("/admin/cleanup")
+    @admin_required
+    def admin_cleanup():
+        """Leere Protokolle (nur Name/Meta, kein Inhalt) auflisten —
+        Kandidaten fürs Löschen, z. B. versehentlich angelegte."""
+        db = models.get_db()
+        return render_template(
+            "admin_cleanup.html",
+            empty_central=models.list_empty_central_protocols(db),
+            empty_decentral=models.list_empty_decentral_protocols(db),
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/admin/cleanup/delete", methods=["POST"])
+    @admin_required
+    def admin_cleanup_delete():
+        """Ausgewählte leere Protokolle löschen. Jeder Kandidat wird vor
+        dem Löschen erneut auf 'leer' geprüft — falls inzwischen jemand
+        Inhalt ergänzt hat, bleibt er stehen."""
+        db = models.get_db()
+        deleted_c = skipped_c = 0
+        for raw in request.form.getlist("central_id"):
+            try:
+                pid = int(raw)
+            except ValueError:
+                continue
+            if models.is_central_protocol_empty(db, pid):
+                if models.delete_central_protocol(db, pid):
+                    deleted_c += 1
+            else:
+                skipped_c += 1
+        deleted_d = skipped_d = 0
+        empty_deh_ids = {r["id"] for r in
+                         models.list_empty_decentral_protocols(db)}
+        for raw in request.form.getlist("decentral_id"):
+            try:
+                did = int(raw)
+            except ValueError:
+                continue
+            if did in empty_deh_ids:
+                if models.delete_protocol(db, did):
+                    deleted_d += 1
+            else:
+                skipped_d += 1
+        db.commit()
+        msg = (f"{deleted_c} zentrale und {deleted_d} dezentrale leere "
+               f"Protokolle gelöscht.")
+        skipped = skipped_c + skipped_d
+        if skipped:
+            msg += (f" {skipped} übersprungen (inzwischen mit Inhalt).")
+        flash(msg, "success")
+        return redirect(url_for("admin_cleanup"))
+
     @app.route("/admin/scan")
     @admin_required
     def admin_scan():

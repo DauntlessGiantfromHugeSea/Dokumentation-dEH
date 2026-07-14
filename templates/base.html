@@ -172,6 +172,7 @@
             <div class="menu-section-label">Administration</div>
             <a class="menu-item" href="{{ url_for('admin_users') }}">⚙ Benutzer-Verwaltung</a>
             <a class="menu-item" href="{{ url_for('account_pin') }}">🔑 Admin-PIN (Datenfreigabe)</a>
+            <a class="menu-item" href="{{ url_for('admin_cleanup') }}">🧹 Leere Protokolle</a>
             <a class="menu-item" href="{{ url_for('admin_scan') }}">📷 Scanner</a>
           {% endif %}
           <div class="menu-separator"></div>
@@ -269,6 +270,7 @@
             <a class="mobile-menu-item" href="{{ url_for('einsatzbefehle_index') }}">Einsatzbefehle</a>
             <a class="mobile-menu-item" href="{{ url_for('admin_users') }}">⚙ Benutzer-Verwaltung</a>
             <a class="mobile-menu-item" href="{{ url_for('account_pin') }}">🔑 Admin-PIN (Datenfreigabe)</a>
+            <a class="mobile-menu-item" href="{{ url_for('admin_cleanup') }}">🧹 Leere Protokolle</a>
             <a class="mobile-menu-item" href="{{ url_for('admin_scan') }}">📷 Scanner</a>
           </div>
         {% endif %}

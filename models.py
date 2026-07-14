@@ -3142,6 +3142,115 @@ def list_patients_with_medications(conn) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+# ---------- Aufräumen: leere Protokolle ----------
+
+# Felder, die NICHT als Inhalt zählen (Identität/Meta) — ein zentrales
+# Protokoll, das außer diesen nichts gefüllt hat, gilt als leer.
+CENTRAL_IDENTITY_KEYS = frozenset({
+    "vorname", "nachname", "geburtsdatum", "geschlecht",
+    "strasse", "plz", "stadt", "telefon", "krankenkasse",
+    "datum", "einsatzbeginn", "einsatzende", "einsatzort",
+    "einsatznummer", "einsatzstichwort", "einsatzkraft1", "einsatzkraft2",
+    "alarm_durch",
+})
+
+
+def _central_data_is_empty(data: dict) -> bool:
+    """True, wenn außer Identitäts-/Meta-Feldern nichts gefüllt ist."""
+    for k, v in (data or {}).items():
+        if k in CENTRAL_IDENTITY_KEYS:
+            continue
+        # NRS-Slider stehen default auf "0" — zählt nicht als Inhalt
+        if k in ("nrs_1", "nrs_2") and str(v).strip() in ("", "0"):
+            continue
+        if isinstance(v, list):
+            if any(str(x or "").strip() for x in v):
+                return False
+        elif str(v or "").strip():
+            return False
+    return True
+
+
+def list_empty_central_protocols(conn) -> list[dict]:
+    """Zentrale Protokolle ohne Inhalt (nur Name/Meta) — Kandidaten fürs
+    Löschen. Protokolle mit Anhängen oder Kommentaren gelten nie als
+    leer. Triage-Verknüpfung wird mitgeliefert (Warnhinweis im UI)."""
+    rows = conn.execute(
+        """
+        SELECT cp.id, cp.laufende_nr, cp.name_summary, cp.datum,
+               cp.created_at, cp.updated_at, cp.data,
+               u.full_name AS created_by_name,
+               u.username AS created_by_username,
+               (SELECT COUNT(*) FROM central_attachments a
+                WHERE a.central_protocol_id = cp.id) AS att_count,
+               (SELECT COUNT(*) FROM central_comments c
+                WHERE c.central_protocol_id = cp.id) AS comment_count,
+               (SELECT COUNT(*) FROM triage_entries t
+                WHERE t.treatment_protocol_id = cp.id) AS triage_count
+        FROM central_protocols cp
+        LEFT JOIN users u ON u.id = cp.created_by
+        ORDER BY cp.id DESC
+        """
+    ).fetchall()
+    out = []
+    for r in rows:
+        if r["att_count"] or r["comment_count"]:
+            continue
+        try:
+            data = _json.loads(r["data"] or "{}")
+        except Exception:
+            data = {}
+        if _central_data_is_empty(data):
+            d = dict(r)
+            d.pop("data", None)
+            out.append(d)
+    return out
+
+
+def list_empty_decentral_protocols(conn) -> list[sqlite3.Row]:
+    """Dezentrale Berichte, deren Inhaltsfelder alle leer sind."""
+    return conn.execute(
+        """
+        SELECT pr.id, pr.laufende_nr, pr.created_at, pr.name_ersthelfer,
+               p.name AS patient_name, p.geburtsdatum AS patient_geburtsdatum,
+               u.full_name AS created_by_name,
+               u.username AS created_by_username
+        FROM protocols pr
+        JOIN patients p ON p.id = pr.patient_id
+        LEFT JOIN users u ON u.id = pr.created_by
+        WHERE TRIM(COALESCE(pr.unfallort, '')) = ''
+          AND TRIM(COALESCE(pr.unfallhergang, '')) = ''
+          AND TRIM(COALESCE(pr.art_umfang_verletzung, '')) = ''
+          AND TRIM(COALESCE(pr.name_zeugen, '')) = ''
+          AND TRIM(COALESCE(pr.art_weise_massnahmen, '')) = ''
+          AND TRIM(COALESCE(pr.verbrauchtes_material, '')) = ''
+          AND NOT EXISTS (SELECT 1 FROM comments c
+                          WHERE c.protocol_id = pr.id)
+        ORDER BY pr.id DESC
+        """
+    ).fetchall()
+
+
+def is_central_protocol_empty(conn, pid: int) -> bool:
+    """Sicherheits-Recheck vor dem Löschen einzelner Kandidaten."""
+    row = conn.execute(
+        "SELECT data, "
+        "(SELECT COUNT(*) FROM central_attachments a "
+        " WHERE a.central_protocol_id = central_protocols.id) AS att_count, "
+        "(SELECT COUNT(*) FROM central_comments c "
+        " WHERE c.central_protocol_id = central_protocols.id) AS comment_count "
+        "FROM central_protocols WHERE id = ?",
+        (pid,),
+    ).fetchone()
+    if not row or row["att_count"] or row["comment_count"]:
+        return False
+    try:
+        data = _json.loads(row["data"] or "{}")
+    except Exception:
+        data = {}
+    return _central_data_is_empty(data)
+
+
 # ---------- Wiedervorstellungen ----------
 
 def sync_wiedervorstellung(conn, protocol_id: int,

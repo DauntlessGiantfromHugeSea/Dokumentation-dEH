@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Leere Protokolle aufräumen{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Leere Protokolle aufräumen</h1>
+    <p class="tagline">
+      Protokolle mit Namen, aber ohne Inhalt — z. B. versehentlich
+      angelegt oder abgebrochen. Auswählen und löschen.
+    </p>
+  </div>
+</div>
+
+<div class="info-banner" data-icon="ℹ️">
+  Als „leer" gilt: nur Personalia/Einsatzdaten gefüllt, kein Befund,
+  keine Maßnahmen, kein Verlauf, keine Unterschrift, keine Anhänge,
+  keine Kommentare. Vor dem Löschen wird jeder Eintrag erneut geprüft —
+  hat inzwischen jemand Inhalt ergänzt, bleibt er stehen.
+</div>
+
+<form method="post" action="{{ url_for('admin_cleanup_delete') }}"
+      onsubmit="return confirm('Ausgewählte leere Protokolle endgültig löschen?');">
+
+  <div class="card">
+    <div class="card-header">
+      Zentrale Protokolle ohne Inhalt ({{ empty_central|length }})
+      {% if empty_central %}
+        <label style="font-weight: 400; font-size: 0.85rem; cursor: pointer;">
+          <input type="checkbox" data-check-all="central_id"> alle
+        </label>
+      {% endif %}
+    </div>
+    {% if empty_central %}
+      <table class="data">
+        <thead>
+          <tr>
+            <th style="width: 32px;"></th>
+            <th>Nr.</th>
+            <th>Name</th>
+            <th>Datum</th>
+            <th>Angelegt</th>
+            <th>Von</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in empty_central %}
+          <tr>
+            <td><input type="checkbox" name="central_id" value="{{ p.id }}"></td>
+            <td>{{ p.laufende_nr or ('#' ~ p.id) }}</td>
+            <td>{{ p.name_summary or '— ohne Namen —' }}
+              {% if p.triage_count %}
+                <span class="badge warning" title="Mit Triage-Eintrag verknüpft — Löschung trennt die Verknüpfung">Triage-verknüpft</span>
+              {% endif %}
+            </td>
+            <td>{{ p.datum or '—' }}</td>
+            <td>{{ format_dt(p.created_at) }}</td>
+            <td>{{ p.created_by_name or p.created_by_username or '—' }}</td>
+            <td class="right">
+              <a class="btn small secondary"
+                 href="{{ url_for('central_detail', pid=p.id) }}"
+                 target="_blank">Ansehen</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">Keine leeren zentralen Protokolle — alles sauber. ✨</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      Dezentrale Berichte ohne Inhalt ({{ empty_decentral|length }})
+      {% if empty_decentral %}
+        <label style="font-weight: 400; font-size: 0.85rem; cursor: pointer;">
+          <input type="checkbox" data-check-all="decentral_id"> alle
+        </label>
+      {% endif %}
+    </div>
+    {% if empty_decentral %}
+      <table class="data">
+        <thead>
+          <tr>
+            <th style="width: 32px;"></th>
+            <th>Nr.</th>
+            <th>Patient</th>
+            <th>Ersthelfer</th>
+            <th>Angelegt</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in empty_decentral %}
+          <tr>
+            <td><input type="checkbox" name="decentral_id" value="{{ p.id }}"></td>
+            <td>{{ p.laufende_nr or ('#' ~ p.id) }}</td>
+            <td>{{ p.patient_name }}
+              <span class="muted">· geb. {{ format_dt(p.patient_geburtsdatum) }}</span>
+            </td>
+            <td>{{ p.name_ersthelfer or '—' }}</td>
+            <td>{{ format_dt(p.created_at) }}</td>
+            <td class="right">
+              <a class="btn small secondary"
+                 href="{{ url_for('protocol_detail', protocol_id=p.id) }}"
+                 target="_blank">Ansehen</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">Keine leeren dezentralen Berichte — alles sauber. ✨</p>
+    {% endif %}
+  </div>
+
+  {% if empty_central or empty_decentral %}
+    <div class="btn-row">
+      <button class="btn" type="submit"
+              style="background: var(--error); border-color: var(--error); color: #fff;">
+        🗑 Ausgewählte löschen
+      </button>
+      <a class="btn secondary" href="{{ url_for('admin_users') }}">Zurück</a>
+    </div>
+  {% endif %}
+</form>
+
+<script>
+// „alle"-Checkboxen
+document.querySelectorAll('[data-check-all]').forEach(function (master) {
+  master.addEventListener('change', function () {
+    document.querySelectorAll('input[name="' + master.dataset.checkAll + '"]')
+      .forEach(function (cb) { cb.checked = master.checked; });
+  });
+});
+</script>
+{% endblock %}
