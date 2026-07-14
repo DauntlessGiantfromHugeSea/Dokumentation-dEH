@@ -111,7 +111,9 @@
           <a href="{{ url_for('triage_new') }}" class="nav-cta">+ Anmelden</a>
         {% endif %}
         <a href="{{ url_for('triage_list') }}">Triage</a>
-        <a href="{{ url_for('central_index') }}">Zentral</a>
+        {% if not current_user.is_readonly %}
+          <a href="{{ url_for('central_index') }}">Zentral</a>
+        {% endif %}
 
         {# MANV-Dropdown #}
         <div class="nav-dropdown" data-menu>
@@ -247,7 +249,9 @@
             {% endif %}
           {% endif %}
           <a class="mobile-menu-item" href="{{ url_for('triage_list') }}">Triage</a>
-          <a class="mobile-menu-item" href="{{ url_for('central_index') }}">Zentral</a>
+          {% if not current_user.is_readonly %}
+            <a class="mobile-menu-item" href="{{ url_for('central_index') }}">Zentral</a>
+          {% endif %}
         </div>
 
         <div class="mobile-menu-section">

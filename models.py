@@ -941,7 +941,8 @@ def standalone_connection(db_path: Path) -> Iterator[sqlite3.Connection]:
 
 # ---------- Users ----------
 
-VALID_ROLES = ("full", "zentral_writer", "triage_intake", "abholung")
+VALID_ROLES = ("full", "zentral_writer", "triage_intake", "abholung",
+               "readonly")
 
 
 ROLE_LABELS = {

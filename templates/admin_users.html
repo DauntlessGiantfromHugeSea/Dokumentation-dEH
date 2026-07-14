@@ -201,6 +201,7 @@
               <option value="zentral_writer">Nur Zentrale Erste Hilfe schreiben</option>
               <option value="triage_intake">Nur Anmeldung (Triage-Kiosk)</option>
               <option value="abholung">Abholung (nur Übersicht)</option>
+              <option value="readonly">Nur Lesen (Berichte ansehen)</option>
             </select>
           </label>
           <label class="checkbox-row">
@@ -244,6 +245,8 @@
                 <span class="badge">Nur Zentral schreiben</span>
               {% elif u.role == 'triage_intake' %}
                 <span class="badge">Anmelde-Kiosk</span>
+              {% elif u.role == 'readonly' %}
+                <span class="badge">👁 Nur Lesen</span>
               {% elif u.role == 'abholung' %}
                 <span class="badge">Abholung</span>
               {% else %}
@@ -311,6 +314,7 @@
                     <option value="zentral_writer" {% if u.role == 'zentral_writer' %}selected{% endif %}>Nur Zentral schreiben</option>
                     <option value="triage_intake" {% if u.role == 'triage_intake' %}selected{% endif %}>Anmelde-Kiosk</option>
                     <option value="abholung" {% if u.role == 'abholung' %}selected{% endif %}>Abholung (nur Übersicht)</option>
+                    <option value="readonly" {% if u.role == 'readonly' %}selected{% endif %}>Nur Lesen (Berichte ansehen)</option>
                   </select>
                 </form>
                 <form method="post"

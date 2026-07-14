@@ -241,6 +241,27 @@ def create_app(test_config: dict | None = None) -> Flask:
             return
         abort(403)
 
+    # Nur-Lese-Rolle: sämtliche schreibenden Requests blocken —
+    # ein zentraler Riegel statt Checks in jeder Route (gilt damit
+    # automatisch auch für künftige Endpunkte). Eigene Konto-Pflege
+    # (Passwort/PIN/2FA) und Event-Wechsel bleiben erlaubt.
+    READONLY_WRITE_ALLOW = (
+        "/account/", "/events/switch", "/setup-totp", "/two-factor",
+        "/logout",
+    )
+
+    @app.before_request
+    def _restrict_readonly():
+        if not current_user.is_authenticated:
+            return
+        if not getattr(current_user, "is_readonly", False):
+            return
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return
+        if any(request.path.startswith(p) for p in READONLY_WRITE_ALLOW):
+            return
+        abort(403)
+
     @app.context_processor
     def _inject_events():
         if not current_user.is_authenticated:
@@ -256,7 +277,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 models.user_can_create_in_event(
                     db, current_user.id, event_id, current_user.is_admin
                 ) if event_id else False
-            ),
+            ) and not getattr(current_user, "is_readonly", False),
         }
 
     # ----- Auth -----
@@ -295,6 +316,12 @@ def create_app(test_config: dict | None = None) -> Flask:
             return (not self.is_admin) and self.role == "abholung"
 
         @property
+        def is_readonly(self) -> bool:
+            """Nur-Lese-Account: darf Berichte/Listen ansehen, aber
+            nichts anlegen, bearbeiten oder löschen."""
+            return (not self.is_admin) and self.role == "readonly"
+
+        @property
         def can_view_decentral(self) -> bool:
             """dEH-Bereich sichtbar. Auch zentrale Ersthelfer
             (zentral_writer) bekommen ihn, wenn die Berechtigung
@@ -315,7 +342,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             sonst per-User-Flag (gilt auch für zentral_writer)."""
             if self.is_admin:
                 return True
-            if self.is_triage_intake or self.is_abholung:
+            if self.is_triage_intake or self.is_abholung or self.is_readonly:
                 return False
             return bool(self.perm_write_decentral)
 
