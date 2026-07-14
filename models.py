@@ -1274,11 +1274,19 @@ def adopt_frodor_registration(conn: sqlite3.Connection, reg: dict) -> int:
         if allergies and not row["allergies_text"]:
             updates["allergies_text"] = allergies
 
-    if row["has_medications"] is None and reg.get("has_medications") is not None:
-        updates["has_medications"] = 1 if reg["has_medications"] else 0
-        medications = (reg.get("medications") or "").strip()
-        if medications and not row["medications_text"]:
-            updates["medications_text"] = medications
+    # Medikamente: "Ja" sobald die Anmeldung Medikamente nennt — auch wenn
+    # das Häkchen (hasMedications) dort nicht gesetzt wurde. Ein lokales
+    # "Nein" wird dabei bewusst hochgestuft (sicherheitsrelevant); nur ein
+    # bestätigtes "Ja" bleibt immer stehen.
+    medications = (reg.get("medications") or "").strip()
+    frodor_says_meds = bool(reg.get("has_medications")) or bool(medications)
+    if frodor_says_meds:
+        if row["has_medications"] != 1:
+            updates["has_medications"] = 1
+    elif row["has_medications"] is None and reg.get("has_medications") is not None:
+        updates["has_medications"] = 0
+    if medications and not row["medications_text"]:
+        updates["medications_text"] = medications
 
     # Einschränkungen + interne EH-Notizen aus der Anmeldung → Sonstige
     # Hinweise (nur wenn lokal noch leer; lokale Eingaben gewinnen).
@@ -3507,6 +3515,13 @@ def sync_frodor_structured_medications(conn, meds: list[dict],
                     continue
                 pid = adopt_frodor_registration(conn, reg)
             pid_by_reg[reg_uuid] = pid
+            # Strukturierte Medikamente vorhanden → "Nimmt Medikamente: Ja",
+            # auch wenn das Häkchen in der Anmeldung nicht gesetzt ist.
+            conn.execute(
+                "UPDATE patients SET has_medications = 1 "
+                "WHERE id = ? AND COALESCE(has_medications, 0) = 0",
+                (pid,),
+            )
 
         existing = conn.execute(
             "SELECT * FROM medications WHERE frodor_medication_id = ?",
