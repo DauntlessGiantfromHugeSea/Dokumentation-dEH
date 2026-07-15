@@ -2559,6 +2559,12 @@ def set_user_doctor(conn: sqlite3.Connection, user_id: int,
                  (1 if is_doctor else 0, user_id))
 
 
+def set_user_full_name(conn: sqlite3.Connection, user_id: int,
+                       full_name: Optional[str]) -> None:
+    conn.execute("UPDATE users SET full_name = ? WHERE id = ?",
+                 ((full_name or "").strip() or None, user_id))
+
+
 def set_admin_pin(conn: sqlite3.Connection, user_id: int,
                   pin: Optional[str]) -> None:
     """Hasht PIN (Werkzeug). pin=None löscht die PIN."""

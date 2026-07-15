@@ -271,9 +271,18 @@
           {# ===== Aktionen-Grid: 4 logische Gruppen ===== #}
           <div class="user-card-actions">
 
-            {# Gruppe 1: Passwort + Anmelde-PIN #}
+            {# Gruppe 1: Name + Passwort + Anmelde-PIN #}
             <div class="user-action-group">
-              <div class="user-action-label">Passwort</div>
+              <div class="user-action-label">Vollständiger Name</div>
+              <form method="post"
+                    action="{{ url_for('admin_user_set_name', user_id=u.id) }}"
+                    class="user-action-form">
+                <input name="full_name" type="text"
+                       value="{{ u.full_name or '' }}"
+                       placeholder="z. B. Lisa Musterfrau">
+                <button class="btn small" type="submit">Speichern</button>
+              </form>
+              <div class="user-action-label" style="margin-top: 8px;">Passwort</div>
               <form method="post"
                     action="{{ url_for('admin_user_reset_password', user_id=u.id) }}"
                     class="user-action-form">

@@ -3827,6 +3827,21 @@ def create_app(test_config: dict | None = None) -> Flask:
             flash(f"Passwort für '{row['username']}' zurückgesetzt.", "success")
         return redirect(_admin_settings_url("users"))
 
+    @app.route("/admin/users/<int:user_id>/name", methods=["POST"])
+    @admin_required
+    def admin_user_set_name(user_id: int):
+        """Vollständigen Namen eines Users ändern — erscheint überall
+        (Topbar, Einsatzkraft-Auswahl, Unterschriften, Audit)."""
+        db = models.get_db()
+        row = models.get_user_by_id(db, user_id)
+        if not row:
+            abort(404)
+        full_name = (request.form.get("full_name") or "").strip()
+        models.set_user_full_name(db, user_id, full_name)
+        db.commit()
+        flash(f"Name für '{row['username']}' aktualisiert.", "success")
+        return redirect(_admin_settings_url("users"))
+
     @app.route("/admin/users/<int:user_id>/toggle-doctor", methods=["POST"])
     @admin_required
     def admin_user_toggle_doctor(user_id: int):
