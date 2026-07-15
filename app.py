@@ -2016,9 +2016,24 @@ def create_app(test_config: dict | None = None) -> Flask:
         in and so we can pass the current user to a small wrapping banner.
         """
         _require_event_view()
+        # Einsatzkraft-Vorschläge: alle Behandler-Accounts mit vollem
+        # Namen (Kiosk/Abholung/Nur-Lesen ausgenommen) — als datalist,
+        # Freitext für externe Helfer bleibt möglich.
+        db = models.get_db()
+        seen = set()
+        einsatzkraft_options = []
+        for u in models.list_users(db):
+            if u["role"] in ("triage_intake", "abholung", "readonly"):
+                continue
+            label = (u["full_name"] or u["username"] or "").strip()
+            if label and label.lower() not in seen:
+                seen.add(label.lower())
+                einsatzkraft_options.append(label)
+        einsatzkraft_options.sort(key=str.lower)
         return render_template(
             "central_index.html",
             current_user_label=current_user.full_name or current_user.username,
+            einsatzkraft_options=einsatzkraft_options,
         )
 
     @app.route("/central/<int:pid>")
