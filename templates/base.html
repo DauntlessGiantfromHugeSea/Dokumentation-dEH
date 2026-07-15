@@ -166,6 +166,7 @@
           <button type="button" class="menu-item theme-toggle" id="themeToggle">
             ☀ Kontrast umschalten
           </button>
+          <a class="menu-item" href="{{ url_for('vorlagen') }}">📄 Blanko-Formulare</a>
           <a class="menu-item" href="{{ url_for('docs_index') }}">Hilfe</a>
           {% if current_user.is_admin %}
             <div class="menu-separator"></div>
@@ -195,6 +196,7 @@
           <button type="button" class="mobile-menu-item theme-toggle" id="themeToggleMobile">
             ☀ Kontrast umschalten
           </button>
+          <a class="mobile-menu-item" href="{{ url_for('vorlagen') }}">📄 Blanko-Formulare</a>
           <a class="mobile-menu-item" href="{{ url_for('docs_index') }}">Hilfe</a>
           <a class="mobile-menu-item danger" href="{{ url_for('logout') }}">Abmelden</a>
         </div>

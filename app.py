@@ -871,6 +871,34 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     # ----- Admin-Barcode-Scanner -----
 
+    # ----- Blanko-Formulare (Papier-Fallback) -----
+
+    @app.route("/vorlagen")
+    @login_required
+    def vorlagen():
+        """Zentraler Download-Punkt für alle Blanko-PDFs."""
+        return render_template("vorlagen.html")
+
+    @app.route("/vorlagen/zeh-blanko.pdf")
+    @login_required
+    def vorlagen_zeh():
+        from blanko_pdf import render_blanko_zeh
+        from flask import Response
+        return Response(
+            render_blanko_zeh(), mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     'inline; filename="zEH-Blanko-Protokoll.pdf"'})
+
+    @app.route("/vorlagen/deh-blanko.pdf")
+    @login_required
+    def vorlagen_deh():
+        from blanko_pdf import render_blanko_deh
+        from flask import Response
+        return Response(
+            render_blanko_deh(), mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     'inline; filename="dEH-Blanko-Bericht.pdf"'})
+
     @app.route("/admin/cleanup")
     @admin_required
     def admin_cleanup():

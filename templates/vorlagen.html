@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Blanko-Formulare{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Blanko-Formulare</h1>
+    <p class="tagline">
+      Papier-Fallback: ausdrucken und bereitlegen — falls das System
+      einmal nicht erreichbar ist, wird handschriftlich dokumentiert
+      und später nachgetragen.
+    </p>
+  </div>
+</div>
+
+<div class="quick-links" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px;">
+
+  <a class="card linkable" href="{{ url_for('vorlagen_zeh') }}" target="_blank"
+     style="text-decoration: none; color: inherit;">
+    <div class="card-header">📄 Notfallprotokoll (zEH)</div>
+    <p style="margin: 0 0 6px;">
+      4 Seiten A4 mit Ankreuzfeldern — Patient, mSTaRT-nahe Befunde,
+      Vitalwerte, Maßnahmen, Übergabe, Wiedervorstellung,
+      Unterschriften.
+    </p>
+    <p class="muted" style="margin: 0; font-size: 0.85rem;">PDF öffnen →</p>
+  </a>
+
+  <a class="card linkable" href="{{ url_for('vorlagen_deh') }}" target="_blank"
+     style="text-decoration: none; color: inherit;">
+    <div class="card-header">📄 Einsatzbericht (dEH)</div>
+    <p style="margin: 0 0 6px;">
+      Dezentraler Bericht mit leeren Feldern — Unfallhergang,
+      Verletzung, Maßnahmen, Material.
+    </p>
+    <p class="muted" style="margin: 0; font-size: 0.85rem;">PDF öffnen →</p>
+  </a>
+
+  <a class="card linkable" target="_blank"
+     href="{{ url_for('static', filename='anhaengekarte_blanko.pdf') }}"
+     style="text-decoration: none; color: inherit;">
+    <div class="card-header">🏷 MANV-Umhängekarte</div>
+    <p style="margin: 0 0 6px;">
+      Blanko-Anhängekarte für Verletzte/Kranke — zum Bekleben mit den
+      Patienten-Nr.-Stickern aus dem MANV-Vorrat.
+    </p>
+    <p class="muted" style="margin: 0; font-size: 0.85rem;">PDF öffnen →</p>
+  </a>
+
+  {% if current_user.is_admin %}
+  <a class="card linkable" href="{{ url_for('medications_blanko_pdf') }}"
+     target="_blank" style="text-decoration: none; color: inherit;">
+    <div class="card-header">💊 Medikamentenplan</div>
+    <p style="margin: 0 0 6px;">
+      Blanko-Vergabeprotokoll (7 Tage × 4 Slots) für handschriftliche
+      Medikamenten-Dokumentation.
+    </p>
+    <p class="muted" style="margin: 0; font-size: 0.85rem;">PDF öffnen →</p>
+  </a>
+  {% endif %}
+
+</div>
+
+<p class="muted" style="margin-top: 18px; font-size: 0.88rem;">
+  💡 Tipp: Ein kleiner Vorrat ausgedruckter Formulare gehört in jede
+  Sanitäts-Tasche — nach der Behandlung die Papier-Doku zeitnah ins
+  System übertragen.
+</p>
+{% endblock %}
