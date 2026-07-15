@@ -1320,6 +1320,12 @@ if ('serviceWorker' in navigator) {
             </div>
           </div>
 
+          <div class="section">
+            <div class="label">Verdachtsdiagnose(n)</div>
+            <textarea id="verdachtsdiagnose" name="verdachtsdiagnose" rows="3"
+                      placeholder="z. B. V. a. Distorsion OSG rechts, V. a. Commotio …"></textarea>
+          </div>
+
         </section>
 
         <!-- 7. Verlauf -->
@@ -2371,7 +2377,7 @@ if ('serviceWorker' in navigator) {
       ]},
       { title: 'Versorgung', rows: [
         ['Maßnahmen', vList(d.massnahme)],
-        ['Diagnose', d.erstdiagnose],
+        ['Verdachtsdiagnose', d.verdachtsdiagnose || d.erstdiagnose],
       ]},
       { title: 'Übergabe', rows: [
         ['An', d.uebergabe_an],

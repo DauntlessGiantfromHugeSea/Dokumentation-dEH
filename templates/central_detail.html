@@ -472,8 +472,8 @@
 <div class="card">
   <div class="card-header">Diagnose &amp; Maßnahmen</div>
   <div class="kv">
-    <div class="label">Erstdiagnose</div>
-    <div class="value">{{ v(d.get("erstdiagnose")) }}</div>
+    <div class="label">Verdachtsdiagnose(n)</div>
+    <div class="value">{{ v(d.get("verdachtsdiagnose") or d.get("erstdiagnose")) }}</div>
   </div>
   <div class="kv">
     <div class="label">Maßnahmen</div>

@@ -658,8 +658,11 @@ def _section_3_erstbefund(d):
 
 
 def _section_4_erstdiagnose(d):
+    # Neues Feld 'verdachtsdiagnose'; alte Protokolle haben noch
+    # 'erstdiagnose' — Fallback, damit nichts verloren geht.
+    value = _v(d.get("verdachtsdiagnose")) or _v(d.get("erstdiagnose"))
     return _bordered_table(
-        [[_label_value("4. Erstdiagnose", d.get("erstdiagnose"),
+        [[_label_value("4. Verdachtsdiagnose(n)", value,
                        min_h=14 * mm)]],
         [186 * mm], padding=4,
     )
@@ -1172,9 +1175,9 @@ def render_pdf(data, exporter_label=None, medical_info=None,
     # Page break
     story.append(PageBreak())
 
-    # 4. Erstdiagnose
+    # 4. Verdachtsdiagnose
     story.append(KeepTogether([
-        _section_bar("4. Erstdiagnose"),
+        _section_bar("4. Verdachtsdiagnose(n)"),
         _section_4_erstdiagnose(data),
         Spacer(1, 6),
     ]))
