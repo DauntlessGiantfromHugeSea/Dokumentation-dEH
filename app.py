@@ -938,6 +938,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         models.update_outbreak_entry(
             db, entry_id,
             temperatur=request.form.get("temperatur"),
+            messzeit=request.form.get("messzeit"),
             bemerkung=request.form.get("bemerkung"))
         db.commit()
         flash("Eintrag gespeichert.", "success")

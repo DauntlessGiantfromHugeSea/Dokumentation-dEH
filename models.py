@@ -382,6 +382,7 @@ CREATE TABLE IF NOT EXISTS outbreak_entries (
     geburtsdatum TEXT,
     stamm        TEXT,
     temperatur   TEXT,
+    messzeit     TEXT,                  -- Uhrzeit der Messung (HH:MM)
     bemerkung    TEXT,
     created_by   INTEGER REFERENCES users(id),
     created_at   TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
@@ -539,6 +540,16 @@ def init_db(db_path: Path) -> None:
                 "ALTER TABLE users ADD COLUMN perm_write_decentral "
                 "INTEGER NOT NULL DEFAULT 1"
             )
+
+        # Migration: outbreak_entries.messzeit (Uhrzeit der Messung)
+        try:
+            ob_cols = {row[1] for row in
+                       conn.execute("PRAGMA table_info(outbreak_entries)")}
+            if ob_cols and "messzeit" not in ob_cols:
+                conn.execute(
+                    "ALTER TABLE outbreak_entries ADD COLUMN messzeit TEXT")
+        except Exception:
+            pass
 
         _ensure_default_event(conn)
 
@@ -3247,15 +3258,17 @@ def add_outbreak_entry(conn, list_id: int, *, name: str,
 
 def update_outbreak_entry(conn, entry_id: int, *,
                           temperatur: Optional[str],
-                          bemerkung: Optional[str]) -> bool:
+                          bemerkung: Optional[str],
+                          messzeit: Optional[str] = None) -> bool:
     cur = conn.execute(
         """
         UPDATE outbreak_entries
-           SET temperatur = ?, bemerkung = ?,
+           SET temperatur = ?, messzeit = ?, bemerkung = ?,
                updated_at = datetime('now', 'localtime')
          WHERE id = ?
         """,
         ((temperatur or "").strip() or None,
+         (messzeit or "").strip() or None,
          (bemerkung or "").strip() or None, entry_id),
     )
     return cur.rowcount > 0

@@ -68,6 +68,15 @@
           <input name="temperatur" value="{{ e.temperatur or '' }}"
                  placeholder="z. B. 38,4 °C" inputmode="decimal">
         </label>
+        <label class="field" style="max-width: 150px;">
+          Uhrzeit
+          <span style="display: flex; gap: 4px;">
+            <input name="messzeit" type="time" value="{{ e.messzeit or '' }}"
+                   style="flex: 1;">
+            <button class="btn small secondary" type="button"
+                    data-now-time title="Jetzt">⏱</button>
+          </span>
+        </label>
         <label class="field" style="flex: 1;">
           Bemerkung
           <input name="bemerkung" value="{{ e.bemerkung or '' }}"
@@ -103,6 +112,19 @@
   </form>
 </div>
 {% endif %}
+
+<script>
+// ⏱-Button: aktuelle Uhrzeit ins Zeitfeld der Zeile
+document.querySelectorAll('[data-now-time]').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var input = btn.parentElement.querySelector('input[name="messzeit"]');
+    if (!input) return;
+    var d = new Date();
+    input.value = String(d.getHours()).padStart(2, '0') + ':'
+                + String(d.getMinutes()).padStart(2, '0');
+  });
+});
+</script>
 
 {% if frodor_available %}
 <script src="{{ url_for('static', filename='frodor_picker.js') }}"></script>

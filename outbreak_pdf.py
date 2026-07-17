@@ -66,7 +66,8 @@ def render_outbreak_pdf(outbreak, entries, exporter_label=None) -> bytes:
     story.append(Spacer(1, 10))
 
     header = [Paragraph(t, S_HEAD) for t in
-              ("Name", "Geburtsdatum", "Stamm", "Temp.", "Bemerkung")]
+              ("Name", "Geburtsdatum", "Stamm", "Temp.", "Zeit",
+               "Bemerkung")]
     rows = [header]
     for e in entries:
         rows.append([
@@ -74,12 +75,13 @@ def render_outbreak_pdf(outbreak, entries, exporter_label=None) -> bytes:
             Paragraph(escape(_fmt_date(e["geburtsdatum"])), S_CELL),
             Paragraph(escape(e["stamm"] or "—"), S_CELL),
             Paragraph(escape(e["temperatur"] or ""), S_CELL),
+            Paragraph(escape(e.get("messzeit") or ""), S_CELL),
             Paragraph(escape(e["bemerkung"] or ""), S_CELL),
         ])
     for _ in range(EXTRA_BLANK_ROWS):
-        rows.append([Paragraph("", S_CELL)] * 5)
+        rows.append([Paragraph("", S_CELL)] * 6)
 
-    col_w = [avail_w * f for f in (0.26, 0.14, 0.16, 0.10, 0.34)]
+    col_w = [avail_w * f for f in (0.24, 0.13, 0.14, 0.09, 0.08, 0.32)]
     row_heights = [None] * (len(entries) + 1) + [9 * mm] * EXTRA_BLANK_ROWS
     tbl = Table(rows, colWidths=col_w, repeatRows=1,
                 rowHeights=row_heights)
