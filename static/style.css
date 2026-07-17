@@ -2940,3 +2940,28 @@ header.topbar nav a.nav-cta:hover {
   .wv-row-actions { width: 100%; }
   .wv-row-actions .btn { flex: 1 1 auto; }
 }
+
+/* --- Krankheits-Listen (Ausbruch) --- */
+.ab-entry {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--surface);
+}
+.ab-entry-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.ab-entry-fields {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+@media (max-width: 640px) {
+  .ab-entry-fields { flex-direction: column; align-items: stretch; }
+  .ab-entry-fields .field { max-width: none !important; }
+}

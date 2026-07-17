@@ -363,6 +363,33 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT
 );
 
+-- Krankheits-Ausbruch-Listen (z. B. Hand-Fuß-Mund): Teilnehmer aus
+-- frodor/lokal zusammensuchen, Temperatur + Bemerkung dokumentieren.
+CREATE TABLE IF NOT EXISTS outbreak_lists (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,          -- z. B. "Hand-Fuß-Mund Juli 2026"
+    status      TEXT NOT NULL DEFAULT 'offen',  -- 'offen' | 'geschlossen'
+    created_by  INTEGER REFERENCES users(id),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS outbreak_entries (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    list_id      INTEGER NOT NULL REFERENCES outbreak_lists(id)
+                 ON DELETE CASCADE,
+    patient_id   INTEGER REFERENCES patients(id) ON DELETE SET NULL,
+    name         TEXT NOT NULL,
+    geburtsdatum TEXT,
+    stamm        TEXT,
+    temperatur   TEXT,
+    bemerkung    TEXT,
+    created_by   INTEGER REFERENCES users(id),
+    created_at   TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_outbreak_entries_list
+    ON outbreak_entries(list_id);
+
 -- Wiedervorstellungen: Patient wird zu einem Termin einbestellt.
 -- Wird aus dem zentralen Protokoll (Übergabe-Seite) gepflegt und bei
 -- der Triage-Anmeldung angezeigt; erledigt sich automatisch, wenn die
@@ -3154,6 +3181,96 @@ def list_patients_with_medications(conn) -> list[sqlite3.Row]:
         ORDER BY p.name COLLATE NOCASE
         """,
     ).fetchall()
+
+
+# ---------- Krankheits-Ausbruch-Listen ----------
+
+def create_outbreak_list(conn, name: str,
+                         created_by: Optional[int]) -> int:
+    cur = conn.execute(
+        "INSERT INTO outbreak_lists (name, created_by) VALUES (?, ?)",
+        (name.strip(), created_by))
+    return cur.lastrowid
+
+
+def list_outbreak_lists(conn) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT ol.*, u.full_name AS created_by_name,
+               u.username AS created_by_username,
+               (SELECT COUNT(*) FROM outbreak_entries e
+                WHERE e.list_id = ol.id) AS entry_count
+        FROM outbreak_lists ol
+        LEFT JOIN users u ON u.id = ol.created_by
+        ORDER BY ol.status = 'geschlossen', ol.id DESC
+        """
+    ).fetchall()
+
+
+def get_outbreak_list(conn, list_id: int) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM outbreak_lists WHERE id = ?", (list_id,)
+    ).fetchone()
+
+
+def list_outbreak_entries(conn, list_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT e.*, u.full_name AS created_by_name,
+               u.username AS created_by_username
+        FROM outbreak_entries e
+        LEFT JOIN users u ON u.id = e.created_by
+        WHERE e.list_id = ?
+        ORDER BY e.name COLLATE NOCASE
+        """,
+        (list_id,),
+    ).fetchall()
+
+
+def add_outbreak_entry(conn, list_id: int, *, name: str,
+                       geburtsdatum: Optional[str] = None,
+                       stamm: Optional[str] = None,
+                       patient_id: Optional[int] = None,
+                       created_by: Optional[int] = None) -> int:
+    cur = conn.execute(
+        """
+        INSERT INTO outbreak_entries
+          (list_id, patient_id, name, geburtsdatum, stamm, created_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (list_id, patient_id, name.strip(),
+         (geburtsdatum or "").strip() or None,
+         (stamm or "").strip() or None, created_by),
+    )
+    return cur.lastrowid
+
+
+def update_outbreak_entry(conn, entry_id: int, *,
+                          temperatur: Optional[str],
+                          bemerkung: Optional[str]) -> bool:
+    cur = conn.execute(
+        """
+        UPDATE outbreak_entries
+           SET temperatur = ?, bemerkung = ?,
+               updated_at = datetime('now', 'localtime')
+         WHERE id = ?
+        """,
+        ((temperatur or "").strip() or None,
+         (bemerkung or "").strip() or None, entry_id),
+    )
+    return cur.rowcount > 0
+
+
+def delete_outbreak_entry(conn, entry_id: int) -> bool:
+    cur = conn.execute(
+        "DELETE FROM outbreak_entries WHERE id = ?", (entry_id,))
+    return cur.rowcount > 0
+
+
+def delete_outbreak_list(conn, list_id: int) -> bool:
+    cur = conn.execute(
+        "DELETE FROM outbreak_lists WHERE id = ?", (list_id,))
+    return cur.rowcount > 0
 
 
 # ---------- Aufräumen: leere Protokolle ----------

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Krankheits-Listen{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Krankheits-Listen</h1>
+    <p class="tagline">
+      Bei einem Ausbruch (z. B. Hand-Fuß-Mund) betroffene Teilnehmer
+      sammeln, Temperatur und Bemerkungen dokumentieren, als A4-Liste
+      drucken.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">Neue Liste anlegen</div>
+  <form method="post" class="row" style="grid-template-columns: 1fr auto; gap: 8px; align-items: end;">
+    <label class="field">
+      Name der Liste
+      <input name="name" required placeholder="z. B. Hand-Fuß-Mund Juli 2026">
+    </label>
+    <div><button class="btn" type="submit">+ Anlegen</button></div>
+  </form>
+</div>
+
+{% if lists %}
+<div class="card">
+  <div class="card-header">Bestehende Listen ({{ lists|length }})</div>
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th class="right">Personen</th>
+        <th>Angelegt</th>
+        <th>Von</th>
+        <th class="right"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in lists %}
+      <tr>
+        <td>
+          <a href="{{ url_for('ausbruch_detail', list_id=l.id) }}">{{ l.name }}</a>
+          {% if l.status == 'geschlossen' %}
+            <span class="badge">geschlossen</span>
+          {% endif %}
+        </td>
+        <td class="right"><span class="badge accent">{{ l.entry_count }}</span></td>
+        <td>{{ format_dt(l.created_at) }}</td>
+        <td>{{ l.created_by_name or l.created_by_username or '—' }}</td>
+        <td class="right">
+          <a class="btn small secondary"
+             href="{{ url_for('ausbruch_pdf', list_id=l.id) }}"
+             target="_blank">🖨 PDF</a>
+          <a class="btn small" href="{{ url_for('ausbruch_detail', list_id=l.id) }}">Öffnen</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty" data-icon="🦠">Noch keine Krankheits-Listen angelegt.</div>
+{% endif %}
+{% endblock %}

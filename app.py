@@ -871,6 +871,118 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     # ----- Admin-Barcode-Scanner -----
 
+    # ----- Krankheits-Ausbruch-Listen (z. B. Hand-Fuß-Mund) -----
+
+    @app.route("/ausbruch", methods=["GET", "POST"])
+    @decentral_view_required
+    def ausbruch_index():
+        db = models.get_db()
+        if request.method == "POST":
+            name = (request.form.get("name") or "").strip()
+            if not name:
+                flash("Bitte einen Namen für die Liste angeben.", "error")
+            else:
+                lid = models.create_outbreak_list(db, name, current_user.id)
+                db.commit()
+                flash(f"Liste „{name}“ angelegt.", "success")
+                return redirect(url_for("ausbruch_detail", list_id=lid))
+        return render_template(
+            "ausbruch_index.html",
+            lists=models.list_outbreak_lists(db),
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/ausbruch/<int:list_id>")
+    @decentral_view_required
+    def ausbruch_detail(list_id: int):
+        db = models.get_db()
+        outbreak = models.get_outbreak_list(db, list_id)
+        if not outbreak:
+            abort(404)
+        return render_template(
+            "ausbruch_detail.html",
+            outbreak=outbreak,
+            entries=models.list_outbreak_entries(db, list_id),
+            format_dt=models.format_dt,
+        )
+
+    @app.route("/ausbruch/<int:list_id>/add", methods=["POST"])
+    @decentral_view_required
+    def ausbruch_add(list_id: int):
+        db = models.get_db()
+        if not models.get_outbreak_list(db, list_id):
+            abort(404)
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            flash("Name fehlt.", "error")
+            return redirect(url_for("ausbruch_detail", list_id=list_id))
+        patient_id = None
+        try:
+            patient_id = int(request.form.get("patient_id") or 0) or None
+        except ValueError:
+            pass
+        models.add_outbreak_entry(
+            db, list_id, name=name,
+            geburtsdatum=request.form.get("geburtsdatum"),
+            stamm=request.form.get("stamm"),
+            patient_id=patient_id, created_by=current_user.id)
+        db.commit()
+        flash(f"{name} zur Liste hinzugefügt.", "success")
+        return redirect(url_for("ausbruch_detail", list_id=list_id))
+
+    @app.route("/ausbruch/entry/<int:entry_id>/update", methods=["POST"])
+    @decentral_view_required
+    def ausbruch_entry_update(entry_id: int):
+        db = models.get_db()
+        list_id = request.form.get("list_id", "0")
+        models.update_outbreak_entry(
+            db, entry_id,
+            temperatur=request.form.get("temperatur"),
+            bemerkung=request.form.get("bemerkung"))
+        db.commit()
+        flash("Eintrag gespeichert.", "success")
+        return redirect(url_for("ausbruch_detail", list_id=int(list_id)))
+
+    @app.route("/ausbruch/entry/<int:entry_id>/delete", methods=["POST"])
+    @decentral_view_required
+    def ausbruch_entry_delete(entry_id: int):
+        db = models.get_db()
+        list_id = request.form.get("list_id", "0")
+        models.delete_outbreak_entry(db, entry_id)
+        db.commit()
+        flash("Eintrag entfernt.", "success")
+        return redirect(url_for("ausbruch_detail", list_id=int(list_id)))
+
+    @app.route("/ausbruch/<int:list_id>/delete", methods=["POST"])
+    @admin_required
+    def ausbruch_delete(list_id: int):
+        db = models.get_db()
+        models.delete_outbreak_list(db, list_id)
+        db.commit()
+        flash("Liste gelöscht.", "success")
+        return redirect(url_for("ausbruch_index"))
+
+    @app.route("/ausbruch/<int:list_id>/pdf")
+    @decentral_view_required
+    def ausbruch_pdf(list_id: int):
+        db = models.get_db()
+        outbreak = models.get_outbreak_list(db, list_id)
+        if not outbreak:
+            abort(404)
+        from outbreak_pdf import render_outbreak_pdf
+        pdf_bytes = render_outbreak_pdf(
+            dict(outbreak),
+            [dict(e) for e in models.list_outbreak_entries(db, list_id)],
+            exporter_label=(current_user.full_name
+                            or current_user.username))
+        from flask import Response
+        safe = "".join(ch if ch.isalnum() else "-"
+                       for ch in outbreak["name"])[:40]
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     f'inline; filename="Krankheitsliste-{safe}.pdf"'})
+
     # ----- Blanko-Formulare (Papier-Fallback) -----
 
     @app.route("/vorlagen")
