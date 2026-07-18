@@ -1727,6 +1727,102 @@ def create_app(test_config: dict | None = None) -> Flask:
             },
         )
 
+    @app.route("/export/central-csv")
+    @decentral_view_required
+    def export_central_csv():
+        """Statistik-Export der zentralen Protokolle: eine Zeile pro
+        Protokoll, jedes Formularfeld in seiner eigenen Spalte
+        (Stichwort, Notfallart, Verlauf, Maßnahmen, Übergabe, …).
+        Sensible Kontaktfelder (Adresse/Telefon/Krankenkasse) sind
+        bewusst NICHT enthalten."""
+        event_id = _require_event_view()
+        date_from = (request.args.get("date_from") or "").strip()
+        date_to = (request.args.get("date_to") or "").strip()
+        db = models.get_db()
+        rows = models.list_central_protocols(db, event_id=event_id)
+
+        def _j(v):
+            """Feldwert → CSV-Zelle: Listen (Mehrfach-Chips) kommasepariert."""
+            if isinstance(v, list):
+                return ", ".join(str(x) for x in v if str(x).strip())
+            return str(v).strip() if v is not None else ""
+
+        columns = [
+            ("Lfd. Nr.", lambda rec, d: rec.get("laufende_nr") or ""),
+            ("ID", lambda rec, d: rec.get("id")),
+            ("Datum", lambda rec, d: _j(d.get("datum"))),
+            ("Einsatzbeginn", lambda rec, d: _j(d.get("einsatzbeginn"))),
+            ("Einsatzende", lambda rec, d: _j(d.get("einsatzende"))),
+            ("Einsatzort", lambda rec, d: _j(d.get("einsatzort"))),
+            ("Stichwort", lambda rec, d: _j(d.get("einsatzstichwort"))),
+            ("Alarm durch", lambda rec, d: _j(d.get("alarm_durch"))),
+            ("Patient", lambda rec, d: " ".join(
+                p for p in (_j(d.get("vorname")), _j(d.get("nachname"))) if p)),
+            ("Geburtsdatum", lambda rec, d: _j(d.get("geburtsdatum"))),
+            ("Geschlecht", lambda rec, d: _j(d.get("geschlecht"))),
+            ("Notfallart", lambda rec, d: _j(d.get("notfallart"))),
+            ("Notfallart Sonstiges", lambda rec, d: _j(d.get("notfallart_sonstige"))),
+            ("Situation", lambda rec, d: _j(d.get("notfallsituation"))),
+            ("Verletzung/Erkrankung", lambda rec, d: _j(d.get("verletzung"))),
+            ("Bewusstsein", lambda rec, d: _j(d.get("bewusstsein_1"))),
+            ("Atmung", lambda rec, d: _j(d.get("atmung_1"))),
+            ("Kreislauf", lambda rec, d: _j(d.get("kreislauf_1"))),
+            ("EKG", lambda rec, d: _j(d.get("ekg_1"))),
+            ("GCS", lambda rec, d: _j(d.get("gcs_1"))),
+            ("NRS", lambda rec, d: _j(d.get("nrs_1"))),
+            ("Haut", lambda rec, d: _j(d.get("haut"))),
+            ("Psyche", lambda rec, d: _j(d.get("psyche"))),
+            ("Weiterer Befund", lambda rec, d: _j(d.get("erstbefund_sonstiges"))),
+            ("RR sys", lambda rec, d: _j(d.get("rr_sys_1"))),
+            ("RR dia", lambda rec, d: _j(d.get("rr_dia_1"))),
+            ("Puls", lambda rec, d: _j(d.get("puls_1"))),
+            ("AF", lambda rec, d: _j(d.get("af_1"))),
+            ("SpO2", lambda rec, d: _j(d.get("spo2_1"))),
+            ("BZ", lambda rec, d: _j(d.get("bz_1"))),
+            ("Temp", lambda rec, d: _j(d.get("temp_1"))),
+            ("Maßnahmen", lambda rec, d: _j(d.get("massnahme"))),
+            ("Maßnahmen Sonstiges", lambda rec, d: _j(d.get("massnahmen_sonstiges"))),
+            ("Verdachtsdiagnose", lambda rec, d: _j(
+                d.get("verdachtsdiagnose") or d.get("erstdiagnose"))),
+            ("Verlauf", lambda rec, d: _j(d.get("verlauf"))),
+            ("Übergabe an", lambda rec, d: _j(d.get("uebergabe_an"))),
+            ("Ergebnis", lambda rec, d: _j(d.get("ergebnis"))),
+            ("Infektion", lambda rec, d: _j(d.get("infektion"))),
+            ("Begleitung", lambda rec, d: _j(d.get("begleitung"))),
+            ("Übergabezeit", lambda rec, d: _j(d.get("uebergabezeit"))),
+            ("Wiedervorstellung", lambda rec, d: " ".join(p for p in (
+                _j(d.get("wiedervorstellung_datum")),
+                _j(d.get("wiedervorstellung_zeit"))) if p)),
+            ("Einsatzkraft 1", lambda rec, d: _j(d.get("einsatzkraft1"))),
+            ("Einsatzkraft 2", lambda rec, d: _j(d.get("einsatzkraft2"))),
+            ("Material", lambda rec, d: _j(d.get("material"))),
+            ("Erstellt am", lambda rec, d: rec.get("created_at") or ""),
+        ]
+
+        buf = io.StringIO()
+        writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+        writer.writerow([c[0] for c in columns])
+        for r in rows:
+            rec = models.get_central_protocol(db, r["id"])
+            if not rec:
+                continue
+            d = rec.get("data") or {}
+            day = (_j(d.get("datum"))
+                   or (rec.get("created_at") or "")[:10])
+            if date_from and day and day < date_from:
+                continue
+            if date_to and day and day > date_to:
+                continue
+            writer.writerow([fn(rec, d) for _, fn in columns])
+
+        data = "﻿" + buf.getvalue()
+        return Response(
+            data.encode("utf-8"),
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition":
+                     "attachment; filename=notfallprotokolle-statistik.csv"},
+        )
+
     @app.route("/events/report", methods=["GET", "POST"])
     @decentral_view_required
     def event_report():

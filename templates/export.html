@@ -35,4 +35,28 @@
     direkt aus der Detailansicht als PDF heruntergeladen werden.
   </p>
 </form>
+
+<form method="get" action="{{ url_for('export_central_csv') }}" class="card stack">
+  <div class="card-header">Statistik — Zentrale Notfallprotokolle (CSV)</div>
+  <p class="muted" style="font-size: 0.9rem; margin: 0;">
+    Eine Zeile pro Protokoll, jedes Feld in seiner eigenen Spalte:
+    Stichwort, Alarm, Notfallart, Befunde, Vitalwerte, Maßnahmen,
+    Verdachtsdiagnose, Verlauf, Übergabe, Einsatzkräfte u.&nbsp;a. —
+    Excel-kompatibel, ideal für Auswertungen. Adresse/Telefon/
+    Krankenkasse sind bewusst nicht enthalten.
+  </p>
+  <div class="row">
+    <label class="field">
+      Datum von
+      <input name="date_from" type="date">
+    </label>
+    <label class="field">
+      Datum bis
+      <input name="date_to" type="date">
+    </label>
+  </div>
+  <div class="btn-row">
+    <button class="btn" type="submit">Statistik-CSV herunterladen</button>
+  </div>
+</form>
 {% endblock %}
