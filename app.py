@@ -206,6 +206,93 @@ def create_app(test_config: dict | None = None) -> Flask:
         except Exception:
             pass
 
+    # ----- Fehler-Sichtbarkeit: 500er mit Traceback für Admins -----
+    # Tracebacks landen zusätzlich in <daten-volume>/error.log, damit
+    # sie einen Container-Neustart überleben.
+    _error_ring: list = []
+
+    def _log_error(tb: str) -> str:
+        import datetime as _dt
+        stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        entry = f"=== {stamp} · {request.method} {request.path} ===\n{tb}\n"
+        _error_ring.append(entry)
+        del _error_ring[:-20]  # letzte 20 behalten
+        try:
+            log_path = Path(app.config["DB_PATH"]).parent / "error.log"
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(entry)
+        except OSError:
+            pass
+        return stamp
+
+    @app.errorhandler(Exception)
+    def _internal_error(e):
+        # HTTP-Fehler (404, 403, …) normal durchreichen
+        from werkzeug.exceptions import HTTPException
+        if isinstance(e, HTTPException):
+            return e
+        import traceback
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        stamp = _log_error(tb)
+        is_admin = (current_user.is_authenticated
+                    and getattr(current_user, "is_admin", False))
+        detail = ""
+        if is_admin:
+            from markupsafe import escape as _esc
+            detail = (f"<h2 style='margin-top:24px;'>Traceback (nur für "
+                      f"Admins sichtbar)</h2>"
+                      f"<pre style='background:#f5f5f5;padding:14px;"
+                      f"border-radius:8px;overflow-x:auto;font-size:12px;"
+                      f"line-height:1.4;'>{_esc(tb)}</pre>"
+                      f"<p><a href='/admin/errors'>Alle letzten Fehler "
+                      f"ansehen →</a></p>")
+        return (
+            f"<!doctype html><html lang='de'><head><meta charset='utf-8'>"
+            f"<meta name='viewport' content='width=device-width, "
+            f"initial-scale=1'><title>Fehler</title></head>"
+            f"<body style='font-family:system-ui,sans-serif;max-width:900px;"
+            f"margin:40px auto;padding:0 20px;'>"
+            f"<h1 style='color:#7a1f2b;'>Interner Fehler</h1>"
+            f"<p>Der Fehler wurde protokolliert ({stamp}). "
+            f"Bitte dem Admin melden.</p>"
+            f"<p><a href='/'>← Zur Startseite</a></p>"
+            f"{detail}</body></html>",
+            500,
+        )
+
+    @app.route("/admin/errors")
+    def admin_errors():
+        """Letzte Server-Fehler (Traceback) — nur Admins. Bewusst ohne
+        admin_required-Decorator-Abhängigkeiten, damit die Seite auch
+        funktioniert, wenn andere Teile der App gerade kaputt sind."""
+        if not (current_user.is_authenticated
+                and getattr(current_user, "is_admin", False)):
+            abort(403)
+        from markupsafe import escape as _esc
+        parts = ["<!doctype html><html lang='de'><head>"
+                 "<meta charset='utf-8'><title>Server-Fehler</title>"
+                 "</head><body style='font-family:system-ui,sans-serif;"
+                 "max-width:1000px;margin:30px auto;padding:0 20px;'>"
+                 "<h1 style='color:#7a1f2b;'>Letzte Server-Fehler</h1>"
+                 "<p><a href='/'>← zurück</a></p>"]
+        entries = list(_error_ring)
+        if not entries:
+            try:
+                log_path = Path(app.config["DB_PATH"]).parent / "error.log"
+                text = log_path.read_text(encoding="utf-8")
+                entries = ["\n".join(text.splitlines()[-200:])]
+            except OSError:
+                entries = []
+        if not entries:
+            parts.append("<p>Keine Fehler aufgezeichnet. 🎉</p>")
+        for entry in reversed(entries):
+            parts.append(
+                f"<pre style='background:#f5f5f5;padding:14px;"
+                f"border-radius:8px;overflow-x:auto;font-size:12px;"
+                f"line-height:1.4;'>{_esc(entry)}</pre>")
+        parts.append("</body></html>")
+        return "".join(parts)
+
     @app.after_request
     def _no_store_for_app_pages(response):
         """App-Seiten dürfen NICHT gecacht werden — sonst zeigt der
