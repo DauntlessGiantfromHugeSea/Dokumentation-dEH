@@ -22,6 +22,29 @@
   {% endif %}
 </div>
 
+{% if current_user.is_admin %}
+<div class="card" style="margin-bottom: 1rem;">
+  <div class="card-header">Sammel-Export</div>
+  <p style="margin: 0 0 12px; font-size: 0.92rem;">
+    Überträgt <strong>alle Protokolle</strong> (dezentral + zentral)
+    und pro verknüpfter Person die <strong>aktuelle Patientenakte</strong>
+    nach frodor. Bereits übertragene Protokolle werden übersprungen;
+    Akten werden immer mit dem aktuellen Stand hochgeladen. Kann bei
+    vielen Berichten ein paar Minuten dauern.
+  </p>
+  <form method="post" action="{{ url_for('frodor_export_all') }}"
+        onsubmit="if (!confirm('Alle Protokolle + Akten jetzt nach frodor übertragen?')) return false;
+                  var b = this.querySelector('button');
+                  setTimeout(function () { b.disabled = true;
+                    b.textContent = 'Überträgt … bitte warten'; }, 0);
+                  return true;">
+    <button class="btn" type="submit">
+      ⇪ Alles nach frodor exportieren
+    </button>
+  </form>
+</div>
+{% endif %}
+
 {% if uploads %}
 <div class="card">
   <table class="table">

@@ -1385,6 +1385,128 @@ def create_app(test_config: dict | None = None) -> Flask:
             db.commit()
             return False, f"Übertragung fehlgeschlagen: {e}"
 
+    def _push_akte_to_frodor(patient_id: int) -> tuple[bool, str]:
+        """Patientenakte (Archiv-Kopie, vollständig, alle Events) an die
+        verknüpfte frodor-Anmeldung hängen. Wird bei jedem Sammel-Export
+        neu hochgeladen (Akte wächst mit) — frodor versioniert über den
+        Timestamp-Pfad."""
+        db = models.get_db()
+        patient = models.get_patient(db, patient_id)
+        if not patient:
+            return False, "Patient nicht gefunden."
+        reg_uuid = patient["frodor_registration_uuid"]
+        if not reg_uuid:
+            return False, "nicht verknüpft"
+        decentral = []
+        for p in models.list_patient_protocols(db, patient_id,
+                                                event_id=None):
+            full = dict(models.get_protocol(db, p["id"]))
+            full["comments"] = [dict(c) for c in
+                                models.list_comments(db, p["id"])]
+            decentral.append(full)
+        central = []
+        for c0 in models.list_central_protocols(db, patient_id=patient_id,
+                                                event_id=None):
+            rec = models.get_central_protocol(db, c0["id"])
+            rec["comments"] = [dict(cm) for cm in
+                               models.list_central_comments(db, c0["id"])]
+            rec["triage"] = models.get_triage_for_protocol(db, c0["id"])
+            if rec.get("created_by"):
+                u = models.get_user_by_id(db, rec["created_by"])
+                if u:
+                    rec["author_full_name"] = u["full_name"]
+                    rec["author_username"] = u["username"]
+            central.append(rec)
+        change_log = [dict(r) for r in
+                      models.list_patient_changes(db, patient_id)]
+        from akte_export import render_patient_akte_pdf
+        pdf_bytes = render_patient_akte_pdf(
+            patient=dict(patient), decentral=decentral, central=central,
+            change_log=change_log, include_sensitive=True,
+            exporter_label=(current_user.full_name
+                            or current_user.username),
+            field_label=models.PATIENT_FIELD_LABELS,
+            sensitive_fields=set(models.SENSITIVE_PATIENT_FIELDS),
+        )
+        display_name = f"Patientenakte {patient['name']}.pdf"[:100]
+        upload = models.start_frodor_upload(db, "akte", patient_id,
+                                            reg_uuid, current_user.id)
+        db.commit()
+        try:
+            path = frodor_client.build_protocol_path(reg_uuid)
+            frodor_client.create_file_entry(reg_uuid, path, display_name)
+            models.set_frodor_upload_state(db, upload["id"], "row_created",
+                                           path=path)
+            db.commit()
+            frodor_client.upload_file_content(path, pdf_bytes)
+            models.set_frodor_upload_state(db, upload["id"], "uploaded",
+                                           path=path, error=None)
+            db.commit()
+            return True, "Akte übertragen."
+        except frodor_client.FrodorError as e:
+            models.set_frodor_upload_state(db, upload["id"], "failed",
+                                           error=str(e))
+            db.commit()
+            return False, str(e)
+
+    @app.route("/frodor/export-all", methods=["POST"])
+    @admin_required
+    def frodor_export_all():
+        """Sammel-Export: alle Protokolle (dezentral + zentral) und pro
+        verknüpfter Person die aktuelle Akte nach frodor übertragen.
+        Bereits übertragene Protokolle werden übersprungen; Akten werden
+        immer frisch hochgeladen (aktueller Stand)."""
+        if not frodor_client.is_configured():
+            flash("frodor ist nicht konfiguriert.", "error")
+            return redirect(url_for("frodor_uploads_overview"))
+        db = models.get_db()
+        stats = {"up": 0, "done": 0, "unlinked": 0, "fail": 0,
+                 "akte_up": 0, "akte_fail": 0}
+        for source_type, table in (("decentral", "protocols"),
+                                   ("central", "central_protocols")):
+            ids = [r["id"] for r in
+                   db.execute(f"SELECT id FROM {table} ORDER BY id")]
+            for sid in ids:
+                up = models.get_frodor_upload(db, source_type, sid)
+                if up and up["status"] == "uploaded":
+                    stats["done"] += 1
+                    continue
+                try:
+                    ok, msg = _push_protocol_to_frodor(source_type, sid)
+                except Exception:
+                    stats["fail"] += 1
+                    continue
+                if ok:
+                    stats["up"] += 1
+                elif ("verknüpft" in msg
+                      or "keinen zugeordneten" in msg):
+                    stats["unlinked"] += 1
+                else:
+                    stats["fail"] += 1
+        rows = db.execute(
+            "SELECT id FROM patients "
+            "WHERE frodor_registration_uuid IS NOT NULL ORDER BY id"
+        ).fetchall()
+        for p in rows:
+            try:
+                ok, _msg = _push_akte_to_frodor(p["id"])
+            except Exception:
+                ok = False
+            stats["akte_up" if ok else "akte_fail"] += 1
+        flash(
+            f"Sammel-Export: {stats['up']} Protokolle übertragen, "
+            f"{stats['done']} waren schon drüben, "
+            f"{stats['unlinked']} ohne frodor-Verknüpfung, "
+            f"{stats['fail']} fehlgeschlagen · "
+            f"Akten: {stats['akte_up']} übertragen"
+            + (f", {stats['akte_fail']} fehlgeschlagen"
+               if stats["akte_fail"] else "")
+            + ".",
+            "success" if not (stats["fail"] or stats["akte_fail"])
+            else "info",
+        )
+        return redirect(url_for("frodor_uploads_overview"))
+
     @app.route("/protocols/<int:protocol_id>/frodor", methods=["POST"])
     @login_required
     def protocol_frodor_push(protocol_id: int):
