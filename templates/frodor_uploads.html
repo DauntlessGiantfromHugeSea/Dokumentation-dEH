@@ -24,24 +24,47 @@
 
 {% if current_user.is_admin %}
 <div class="card" style="margin-bottom: 1rem;">
-  <div class="card-header">Sammel-Export</div>
+  <div class="card-header">Sammel-Export — tageweise (empfohlen)</div>
   <p style="margin: 0 0 12px; font-size: 0.92rem;">
-    Überträgt <strong>alle Protokolle</strong> (dezentral + zentral)
-    und pro verknüpfter Person die <strong>aktuelle Patientenakte</strong>
-    nach frodor. Bereits übertragene Protokolle werden übersprungen;
-    Akten werden immer mit dem aktuellen Stand hochgeladen. Kann bei
-    vielen Berichten ein paar Minuten dauern.
+    Überträgt die Protokolle <strong>eines Behandlungs-Tages</strong>
+    (dezentral + zentral) und die Akten der an dem Tag behandelten,
+    verknüpften Personen nach frodor. Bereits Übertragenes wird
+    übersprungen — den Export also einfach jeden Abend für den Tag
+    anstoßen.
   </p>
   <form method="post" action="{{ url_for('frodor_export_all') }}"
-        onsubmit="if (!confirm('Alle Protokolle + Akten jetzt nach frodor übertragen?')) return false;
-                  var b = this.querySelector('button');
+        style="display: flex; gap: 8px; flex-wrap: wrap; align-items: end;"
+        onsubmit="if (!confirm('Protokolle + Akten dieses Tages nach frodor übertragen?')) return false;
+                  var b = this.querySelector('button[type=submit]');
                   setTimeout(function () { b.disabled = true;
                     b.textContent = 'Überträgt … bitte warten'; }, 0);
                   return true;">
-    <button class="btn" type="submit">
-      ⇪ Alles nach frodor exportieren
-    </button>
+    <label class="field" style="max-width: 200px;">
+      Behandlungs-Tag
+      <input type="date" name="datum" required id="frodor-export-datum">
+    </label>
+    <button class="btn" type="submit">⇪ Tag exportieren</button>
   </form>
+  <script>
+    document.getElementById('frodor-export-datum').value =
+      new Date().toISOString().slice(0, 10);
+  </script>
+  <details style="margin-top: 12px;">
+    <summary style="cursor: pointer; font-size: 0.88rem; color: var(--muted);">
+      Stattdessen alles auf einmal exportieren …
+    </summary>
+    <form method="post" action="{{ url_for('frodor_export_all') }}"
+          style="margin-top: 8px;"
+          onsubmit="if (!confirm('Wirklich ALLE Protokolle + Akten nach frodor übertragen? Kann lange dauern.')) return false;
+                    var b = this.querySelector('button');
+                    setTimeout(function () { b.disabled = true;
+                      b.textContent = 'Überträgt … bitte warten'; }, 0);
+                    return true;">
+      <button class="btn secondary" type="submit">
+        ⇪ Alles exportieren (alle Tage)
+      </button>
+    </form>
+  </details>
 </div>
 {% endif %}
 

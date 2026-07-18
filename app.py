@@ -1539,21 +1539,46 @@ def create_app(test_config: dict | None = None) -> Flask:
     @app.route("/frodor/export-all", methods=["POST"])
     @admin_required
     def frodor_export_all():
-        """Sammel-Export: alle Protokolle (dezentral + zentral) und pro
-        verknüpfter Person die aktuelle Akte nach frodor übertragen.
+        """Sammel-Export nach frodor — tageweise (empfohlen) oder alles.
+
+        Mit `datum` (YYYY-MM-DD): nur die Protokolle dieses Behandlungs-
+        Tages plus die Akten der an dem Tag behandelten, verknüpften
+        Personen. Ohne Datum: alle Protokolle + alle verknüpften Akten.
         Bereits übertragene Protokolle werden übersprungen; Akten werden
         immer frisch hochgeladen (aktueller Stand)."""
         if not frodor_client.is_configured():
             flash("frodor ist nicht konfiguriert.", "error")
             return redirect(url_for("frodor_uploads_overview"))
         db = models.get_db()
+        datum = (request.form.get("datum") or "").strip() or None
+
+        # Kandidaten einsammeln (+ Patient je Protokoll für die Akten)
+        if datum:
+            deh_rows = db.execute(
+                "SELECT id, patient_id FROM protocols "
+                "WHERE COALESCE(date(eh_datum_uhrzeit), date(created_at)) = ? "
+                "ORDER BY id", (datum,)).fetchall()
+            zeh_rows = db.execute(
+                "SELECT id, patient_id FROM central_protocols "
+                "WHERE COALESCE(date(datum), date(created_at)) = ? "
+                "ORDER BY id", (datum,)).fetchall()
+        else:
+            deh_rows = db.execute(
+                "SELECT id, patient_id FROM protocols ORDER BY id"
+            ).fetchall()
+            zeh_rows = db.execute(
+                "SELECT id, patient_id FROM central_protocols ORDER BY id"
+            ).fetchall()
+
         stats = {"up": 0, "done": 0, "unlinked": 0, "fail": 0,
                  "akte_up": 0, "akte_fail": 0}
-        for source_type, table in (("decentral", "protocols"),
-                                   ("central", "central_protocols")):
-            ids = [r["id"] for r in
-                   db.execute(f"SELECT id FROM {table} ORDER BY id")]
-            for sid in ids:
+        akte_patient_ids = set()
+        for source_type, rows in (("decentral", deh_rows),
+                                  ("central", zeh_rows)):
+            for row in rows:
+                sid = row["id"]
+                if row["patient_id"]:
+                    akte_patient_ids.add(row["patient_id"])
                 up = models.get_frodor_upload(db, source_type, sid)
                 if up and up["status"] == "uploaded":
                     stats["done"] += 1
@@ -1570,18 +1595,34 @@ def create_app(test_config: dict | None = None) -> Flask:
                     stats["unlinked"] += 1
                 else:
                     stats["fail"] += 1
-        rows = db.execute(
-            "SELECT id FROM patients "
-            "WHERE frodor_registration_uuid IS NOT NULL ORDER BY id"
-        ).fetchall()
-        for p in rows:
+
+        # Akten: tageweise nur die an dem Tag behandelten Personen,
+        # sonst alle verknüpften
+        if datum:
+            if akte_patient_ids:
+                placeholders = ",".join("?" for _ in akte_patient_ids)
+                patient_rows = db.execute(
+                    f"SELECT id FROM patients "
+                    f"WHERE frodor_registration_uuid IS NOT NULL "
+                    f"AND id IN ({placeholders}) ORDER BY id",
+                    tuple(akte_patient_ids)).fetchall()
+            else:
+                patient_rows = []
+        else:
+            patient_rows = db.execute(
+                "SELECT id FROM patients "
+                "WHERE frodor_registration_uuid IS NOT NULL ORDER BY id"
+            ).fetchall()
+        for p in patient_rows:
             try:
                 ok, _msg = _push_akte_to_frodor(p["id"])
             except Exception:
                 ok = False
             stats["akte_up" if ok else "akte_fail"] += 1
+
+        scope = (f"Tag {datum}" if datum else "alle Tage")
         flash(
-            f"Sammel-Export: {stats['up']} Protokolle übertragen, "
+            f"frodor-Export ({scope}): {stats['up']} Protokolle übertragen, "
             f"{stats['done']} waren schon drüben, "
             f"{stats['unlinked']} ohne frodor-Verknüpfung, "
             f"{stats['fail']} fehlgeschlagen · "
