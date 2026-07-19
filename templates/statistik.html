@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Statistik{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>📊 Statistik</h1>
+    <p class="tagline">
+      Auswertungen über alle Behandlungen des aktiven Events
+      {% if date_from or date_to %}
+        — Zeitraum {{ date_from or '…' }} bis {{ date_to or '…' }}
+      {% endif %}
+    </p>
+  </div>
+  <div class="btn-row">
+    <a class="btn small secondary" href="{{ url_for('export_form') }}">CSV-Export →</a>
+  </div>
+</div>
+
+<form method="get" class="card" style="margin-bottom: 18px;">
+  <div class="row" style="grid-template-columns: 1fr 1fr auto auto; gap: 8px; align-items: end;">
+    <label class="field">Datum von <input name="date_from" type="date" value="{{ date_from }}"></label>
+    <label class="field">Datum bis <input name="date_to" type="date" value="{{ date_to }}"></label>
+    <button class="btn" type="submit">Filtern</button>
+    <a class="btn secondary" href="{{ url_for('statistik') }}">Zurücksetzen</a>
+  </div>
+</form>
+
+<div class="dash-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px;">
+  <div class="dash-stat card" style="text-align: center;">
+    <div class="dash-stat-value" style="font-size: 1.8rem; font-weight: 700; color: var(--accent-dark);">{{ zeh_count }}</div>
+    <div class="dash-stat-label muted">Zentrale Protokolle</div>
+  </div>
+  <div class="dash-stat card" style="text-align: center;">
+    <div class="dash-stat-value" style="font-size: 1.8rem; font-weight: 700; color: var(--accent-dark);">{{ deh_count }}</div>
+    <div class="dash-stat-label muted">Dezentrale Berichte</div>
+  </div>
+  <div class="dash-stat card" style="text-align: center;">
+    <div class="dash-stat-value" style="font-size: 1.8rem; font-weight: 700; color: var(--accent-dark);">{{ triage_count }}</div>
+    <div class="dash-stat-label muted">Triage-Anmeldungen</div>
+  </div>
+  <div class="dash-stat card" style="text-align: center;">
+    <div class="dash-stat-value" style="font-size: 1.8rem; font-weight: 700; color: {{ 'var(--error)' if rettungs_quote > 20 else 'var(--accent-dark)' }};">{{ rettungs_quote }} %</div>
+    <div class="dash-stat-label muted">Quote Rettung / Klinik</div>
+  </div>
+</div>
+
+{% macro barchart(title, items, sub=None) %}
+  <div class="card">
+    <div class="card-header">{{ title }}</div>
+    {% if sub %}<p class="muted" style="font-size: 0.85rem; margin: 0 0 10px;">{{ sub }}</p>{% endif %}
+    {% if items %}
+      <div class="stat-bars">
+        {% for label, n, pct in items %}
+          <div class="stat-bar-row">
+            <div class="stat-bar-label">{{ label }}</div>
+            <div class="stat-bar-track">
+              <div class="stat-bar-fill" style="width: {{ pct }}%;"></div>
+            </div>
+            <div class="stat-bar-value">{{ n }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">Keine Daten im Zeitraum.</p>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; align-items: start;">
+  {{ barchart('Übergabe — Gruppen', uebergabe_gruppe,
+              'Rettungsdienst/Klinik vs. vor Ort versorgt') }}
+  {{ barchart('Übergabe an (im Detail)', uebergabe) }}
+  {{ barchart('Triage-Kategorien (mSTaRT)', triage_kat) }}
+  {{ barchart('Triage-Status', triage_status) }}
+  {{ barchart('Notfallarten', notfallart, 'Mehrfachnennung möglich') }}
+  {{ barchart('Ergebnis der Behandlung', ergebnis) }}
+  {{ barchart('Alarmierung durch', alarm) }}
+  {{ barchart('Maßnahmen (Top 15)', massnahmen, 'Mehrfachnennung möglich') }}
+  {{ barchart('Behandlungen pro Tag', tage, 'dezentral + zentral') }}
+  {{ barchart('Einsatzbeginn nach Uhrzeit', stunden) }}
+  {{ barchart('Behandlungen je Einsatzkraft (Top 15)', einsatzkraefte,
+              'EK 1 + EK 2 aus den zentralen Protokollen') }}
+  {{ barchart('Häufigste Verdachtsdiagnosen (Top 15)', verdacht) }}
+  {{ barchart('Wiedervorstellungen', wv) }}
+</div>
+{% endblock %}

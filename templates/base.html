@@ -100,6 +100,7 @@
               {% if can_create_in_current_event %}
                 <a class="menu-item" href="{{ url_for('export_form') }}">Export</a>
               {% endif %}
+              <a class="menu-item" href="{{ url_for('statistik') }}">📊 Statistik</a>
               <a class="menu-item" href="{{ url_for('ausbruch_index') }}">🦠 Krankheits-Listen</a>
               {% if frodor_available %}
                 <a class="menu-item" href="{{ url_for('frodor_uploads_overview') }}">frodor-Übertragungen</a>
@@ -248,6 +249,7 @@
               <a class="mobile-menu-item" href="{{ url_for('protocol_new_chooser') }}">+ Neuer Bericht</a>
             {% endif %}
             <a class="mobile-menu-item" href="{{ url_for('patient_list') }}">Personen</a>
+            <a class="mobile-menu-item" href="{{ url_for('statistik') }}">📊 Statistik</a>
             <a class="mobile-menu-item" href="{{ url_for('ausbruch_index') }}">🦠 Krankheits-Listen</a>
             {% if can_create_in_current_event %}
               <a class="mobile-menu-item" href="{{ url_for('export_form') }}">Export</a>

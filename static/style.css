@@ -2965,3 +2965,36 @@ header.topbar nav a.nav-cta:hover {
   .ab-entry-fields { flex-direction: column; align-items: stretch; }
   .ab-entry-fields .field { max-width: none !important; }
 }
+
+/* --- Statistik-Balken --- */
+.stat-bars { display: grid; gap: 7px; }
+.stat-bar-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 38%) 1fr 34px;
+  gap: 8px;
+  align-items: center;
+}
+.stat-bar-label {
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stat-bar-track {
+  height: 14px;
+  background: var(--border-soft);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.stat-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-dark) 100%);
+  border-radius: 999px;
+  min-width: 3px;
+}
+.stat-bar-value {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

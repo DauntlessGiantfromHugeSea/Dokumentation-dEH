@@ -1727,6 +1727,151 @@ def create_app(test_config: dict | None = None) -> Flask:
             },
         )
 
+    @app.route("/statistik")
+    @decentral_view_required
+    def statistik():
+        """Auswertungs-Dashboard: Übergabe (Rettung/Krankenhaus vs. vor
+        Ort), Notfallarten, Triage-Kategorien, Maßnahmen, Tages- und
+        Stunden-Verteilung u. a. — optional auf einen Zeitraum gefiltert."""
+        from collections import Counter
+        event_id = _require_event_view()
+        date_from = (request.args.get("date_from") or "").strip()
+        date_to = (request.args.get("date_to") or "").strip()
+        db = models.get_db()
+
+        def in_range(day):
+            if not day:
+                return True
+            if date_from and day < date_from:
+                return False
+            if date_to and day > date_to:
+                return False
+            return True
+
+        def as_list(v):
+            if v is None:
+                return []
+            if isinstance(v, list):
+                return [str(x).strip() for x in v if str(x).strip()]
+            s = str(v).strip()
+            return [s] if s else []
+
+        uebergabe = Counter()
+        uebergabe_gruppe = Counter()
+        notfallart = Counter()
+        ergebnis = Counter()
+        alarm = Counter()
+        massnahmen = Counter()
+        stunden = Counter()
+        tage = Counter()
+        einsatzkraefte = Counter()
+        verdacht = Counter()
+        RETTUNG = {"Notarzt", "RTW", "Klinik – Notaufnahme",
+                   "Klinik – Schockraum", "Klinik – Station", "Hausarzt"}
+        VOR_ORT = {"vor Ort belassen", "zurück zur Veranstaltung",
+                   "Abholung durch Eltern", "verlässt Veranstaltung"}
+
+        zeh_count = 0
+        for r in models.list_central_protocols(db, event_id=event_id):
+            rec = models.get_central_protocol(db, r["id"])
+            if not rec:
+                continue
+            d = rec.get("data") or {}
+            day = (str(d.get("datum") or "").strip()
+                   or (rec.get("created_at") or "")[:10])
+            if not in_range(day):
+                continue
+            zeh_count += 1
+            tage[day] += 1
+            for v in as_list(d.get("uebergabe_an")):
+                uebergabe[v] += 1
+                if v in RETTUNG:
+                    uebergabe_gruppe["Rettungsdienst / Arzt / Klinik"] += 1
+                elif v in VOR_ORT:
+                    uebergabe_gruppe["vor Ort versorgt / Veranstaltung"] += 1
+                else:
+                    uebergabe_gruppe["Sonstige"] += 1
+            for v in as_list(d.get("notfallart")):
+                notfallart[v] += 1
+            for v in as_list(d.get("ergebnis")):
+                ergebnis[v] += 1
+            for v in as_list(d.get("alarm_durch")):
+                alarm[v] += 1
+            for v in as_list(d.get("massnahme")):
+                massnahmen[v] += 1
+            beginn = str(d.get("einsatzbeginn") or "").strip()
+            if len(beginn) >= 2 and beginn[:2].isdigit():
+                stunden[f"{int(beginn[:2]):02d} Uhr"] += 1
+            for key in ("einsatzkraft1", "einsatzkraft2"):
+                for v in as_list(d.get(key)):
+                    einsatzkraefte[v] += 1
+            vd = str(d.get("verdachtsdiagnose")
+                     or d.get("erstdiagnose") or "").strip()
+            if vd:
+                verdacht[vd[:60]] += 1
+
+        deh_count = 0
+        for r in models.list_protocols(db, event_id=event_id):
+            full = models.get_protocol(db, r["id"])
+            day = ((full["eh_datum_uhrzeit"] or full["created_at"]
+                    or "")[:10])
+            if not in_range(day):
+                continue
+            deh_count += 1
+            tage[day] += 1
+
+        triage_kat = Counter()
+        triage_status = Counter()
+        triage_count = 0
+        for t in db.execute(
+                "SELECT category, status, "
+                "       COALESCE(date(arrival_at), date(created_at)) AS day "
+                "FROM triage_entries WHERE (? IS NULL OR event_id = ?)",
+                (event_id, event_id)).fetchall():
+            if not in_range(t["day"] or ""):
+                continue
+            triage_count += 1
+            triage_kat[t["category"]] += 1
+            triage_status[t["status"]] += 1
+
+        wv = Counter()
+        for w in db.execute(
+                "SELECT status FROM wiedervorstellungen").fetchall():
+            wv[w["status"]] += 1
+
+        def bars(counter, limit=None, sort_by_label=False):
+            items = (sorted(counter.items())
+                     if sort_by_label
+                     else counter.most_common(limit))
+            mx = max((n for _, n in items), default=1)
+            return [(label, n, round(n / mx * 100)) for label, n in items]
+
+        kat_labels = {"SK1": "SK I · rot", "SK2": "SK II · gelb",
+                      "SK3": "SK III · grün", "TOT": "schwarz"}
+        return render_template(
+            "statistik.html",
+            date_from=date_from, date_to=date_to,
+            zeh_count=zeh_count, deh_count=deh_count,
+            triage_count=triage_count,
+            rettungs_quote=(round(
+                uebergabe_gruppe["Rettungsdienst / Arzt / Klinik"]
+                / zeh_count * 100) if zeh_count else 0),
+            uebergabe_gruppe=bars(uebergabe_gruppe),
+            uebergabe=bars(uebergabe),
+            notfallart=bars(notfallart),
+            triage_kat=[(kat_labels.get(k, k), n, p)
+                        for k, n, p in bars(triage_kat)],
+            triage_status=bars(triage_status),
+            ergebnis=bars(ergebnis),
+            alarm=bars(alarm),
+            massnahmen=bars(massnahmen, limit=15),
+            stunden=bars(stunden, sort_by_label=True),
+            tage=bars(tage, sort_by_label=True),
+            einsatzkraefte=bars(einsatzkraefte, limit=15),
+            verdacht=bars(verdacht, limit=15),
+            wv=bars(wv),
+        )
+
     @app.route("/export/central-csv")
     @decentral_view_required
     def export_central_csv():
