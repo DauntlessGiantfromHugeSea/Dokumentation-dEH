@@ -1764,6 +1764,9 @@ def create_app(test_config: dict | None = None) -> Flask:
             return redirect(url_for("frodor_uploads_overview"))
         db = models.get_db()
         datum = (request.form.get("datum") or "").strip() or None
+        # force: auch bereits Übertragenes erneut senden (Ausnahmefall,
+        # z. B. wenn in frodor etwas verloren ging)
+        force = bool(request.form.get("force"))
 
         # Kandidaten einsammeln (+ Patient je Protokoll für die Akten)
         if datum:
@@ -1784,7 +1787,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             ).fetchall()
 
         stats = {"up": 0, "done": 0, "unlinked": 0, "fail": 0,
-                 "akte_up": 0, "akte_fail": 0}
+                 "akte_up": 0, "akte_done": 0, "akte_fail": 0}
         akte_patient_ids = set()
         for source_type, rows in (("decentral", deh_rows),
                                   ("central", zeh_rows)):
@@ -1793,7 +1796,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 if row["patient_id"]:
                     akte_patient_ids.add(row["patient_id"])
                 up = models.get_frodor_upload(db, source_type, sid)
-                if up and up["status"] == "uploaded":
+                if up and up["status"] == "uploaded" and not force:
                     stats["done"] += 1
                     continue
                 try:
@@ -1827,6 +1830,11 @@ def create_app(test_config: dict | None = None) -> Flask:
                 "WHERE frodor_registration_uuid IS NOT NULL ORDER BY id"
             ).fetchall()
         for p in patient_rows:
+            # Unveränderte Akten nicht erneut hochladen — sonst legt
+            # jeder Lauf eine weitere Kopie in frodor ab.
+            if not force and not models.akte_needs_frodor_upload(db, p["id"]):
+                stats["akte_done"] += 1
+                continue
             try:
                 ok, _msg = _push_akte_to_frodor(p["id"])
             except Exception:
@@ -1839,7 +1847,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             f"{stats['done']} waren schon drüben, "
             f"{stats['unlinked']} ohne frodor-Verknüpfung, "
             f"{stats['fail']} fehlgeschlagen · "
-            f"Akten: {stats['akte_up']} übertragen"
+            f"Akten: {stats['akte_up']} übertragen, "
+            f"{stats['akte_done']} unverändert übersprungen"
             + (f", {stats['akte_fail']} fehlgeschlagen"
                if stats["akte_fail"] else "")
             + ".",

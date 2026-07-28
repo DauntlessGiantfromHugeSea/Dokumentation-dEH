@@ -1348,6 +1348,38 @@ def adopt_frodor_registration(conn: sqlite3.Connection, reg: dict) -> int:
     return patient_id
 
 
+def akte_needs_frodor_upload(conn: sqlite3.Connection,
+                             patient_id: int) -> bool:
+    """True, wenn die Patientenakte neu nach frodor muss: entweder noch
+    nie erfolgreich übertragen, oder seit dem letzten Upload wurde ein
+    Bericht der Person angelegt/geändert. Verhindert, dass beim
+    Sammel-Export unveränderte Akten erneut hochgeladen werden."""
+    up = conn.execute(
+        "SELECT status, updated_at FROM frodor_uploads "
+        "WHERE source_type = 'akte' AND source_id = ?", (patient_id,)
+    ).fetchone()
+    if not up or up["status"] != "uploaded":
+        return True
+    last_upload = up["updated_at"] or ""
+    row = conn.execute(
+        """
+        SELECT MAX(ts) AS newest FROM (
+            SELECT MAX(created_at) AS ts FROM protocols
+             WHERE patient_id = ?
+            UNION ALL
+            SELECT MAX(COALESCE(updated_at, created_at)) AS ts
+              FROM central_protocols WHERE patient_id = ?
+            UNION ALL
+            SELECT MAX(changed_at) AS ts FROM patient_changes
+             WHERE patient_id = ?
+        )
+        """,
+        (patient_id, patient_id, patient_id),
+    ).fetchone()
+    newest = (row["newest"] if row else None) or ""
+    return newest > last_upload
+
+
 def get_frodor_upload(conn: sqlite3.Connection, source_type: str,
                       source_id: int) -> Optional[sqlite3.Row]:
     return conn.execute(
