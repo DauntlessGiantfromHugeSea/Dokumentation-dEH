@@ -26,4 +26,12 @@ VOLUME ["/data"]
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${PORT} app:app"]
+# timeout 300: PDF-Rendering (Akte mit Fotos), Sammel-Exporte und
+#   frodor-Uploads dauern länger als die 30s-Voreinstellung — sonst
+#   killt Gunicorn den Worker und der Browser zeigt einen 500er, ohne
+#   dass die App eine Exception sieht.
+# error-logfile auf dem Volume: überlebt Neustarts und ist über
+#   /healthz einsehbar (wichtig ohne Shell-Zugriff auf den Server).
+CMD ["sh", "-c", "gunicorn -w 2 --timeout 300 --graceful-timeout 30 \
+    --error-logfile /data/gunicorn-error.log --capture-output --log-level info \
+    -b 0.0.0.0:${PORT} app:app"]

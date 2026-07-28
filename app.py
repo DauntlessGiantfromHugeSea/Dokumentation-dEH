@@ -212,18 +212,71 @@ def create_app(test_config: dict | None = None) -> Flask:
     _error_ring: list = []
 
     def _log_error(tb: str) -> str:
+        """Fehler protokollieren — in Datei UND Datenbank.
+
+        Wichtig: Gunicorn läuft mit mehreren Workern, ein
+        In-Memory-Ring wäre also nur im abstürzenden Worker sichtbar.
+        Die DB-Zeile sieht jeder Worker; sie wird über eine eigene
+        Verbindung geschrieben, damit sie auch bei zurückgerollter
+        Request-Transaktion erhalten bleibt."""
         import datetime as _dt
         stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        entry = f"=== {stamp} · {request.method} {request.path} ===\n{tb}\n"
+        try:
+            where = f"{request.method} {request.path}"
+        except RuntimeError:      # außerhalb eines Requests
+            where = "(kein Request-Kontext)"
+        entry = f"=== {stamp} · {where} ===\n{tb}\n"
         _error_ring.append(entry)
-        del _error_ring[:-20]  # letzte 20 behalten
+        del _error_ring[:-20]
         try:
             log_path = Path(app.config["DB_PATH"]).parent / "error.log"
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(entry)
         except OSError:
             pass
+        try:
+            import sqlite3 as _sq
+            conn = _sq.connect(str(app.config["DB_PATH"]), timeout=5)
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS error_log ("
+                " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                " created_at TEXT NOT NULL, path TEXT, traceback TEXT)")
+            conn.execute(
+                "INSERT INTO error_log (created_at, path, traceback) "
+                "VALUES (?, ?, ?)", (stamp, where, tb))
+            conn.execute(
+                "DELETE FROM error_log WHERE id NOT IN "
+                "(SELECT id FROM error_log ORDER BY id DESC LIMIT 50)")
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
         return stamp
+
+    def _read_error_log(limit=10):
+        """Fehler aus der DB lesen (worker-übergreifend, persistent)."""
+        try:
+            import sqlite3 as _sq
+            conn = _sq.connect(str(app.config["DB_PATH"]), timeout=5)
+            conn.row_factory = _sq.Row
+            rows = conn.execute(
+                "SELECT created_at, path, traceback FROM error_log "
+                "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            conn.close()
+            return [(f"{r['created_at']} · {r['path']}", r["traceback"])
+                    for r in rows]
+        except Exception:
+            return []
+
+    def _read_gunicorn_log(lines=40):
+        """Letzte Zeilen des Gunicorn-Logs — zeigt Worker-Timeouts und
+        -Abstürze, die die App selbst nie als Exception sieht."""
+        try:
+            p = Path(app.config["DB_PATH"]).parent / "gunicorn-error.log"
+            return p.read_text(encoding="utf-8",
+                               errors="replace").splitlines()[-lines:]
+        except OSError:
+            return []
 
     @app.errorhandler(Exception)
     def _internal_error(e):
@@ -352,20 +405,23 @@ def create_app(test_config: dict | None = None) -> Flask:
 
         # Letzte Fehler — nur Typ/Ort, kein vollständiger Traceback
         recent = []
-        try:
-            log_path = db_path.parent / "error.log"
-            text = log_path.read_text(encoding="utf-8")
-            blocks = [b for b in text.split("=== ") if b.strip()][-5:]
-            for b in blocks:
-                lines = [l for l in b.splitlines() if l.strip()]
-                head = lines[0] if lines else "?"
-                last = next((l.strip() for l in reversed(lines)
-                             if "Error" in l or "Exception" in l), "")
-                where = next((l.strip() for l in reversed(lines)
-                              if l.strip().startswith("File ")), "")
-                recent.append((head, last[:200], where[:200]))
-        except OSError:
-            pass
+        for head, tb in _read_error_log(limit=5):
+            lines = [l for l in (tb or "").splitlines() if l.strip()]
+            last = next((l.strip() for l in reversed(lines)
+                         if "Error" in l or "Exception" in l),
+                        lines[-1] if lines else "")
+            where = next((l.strip() for l in reversed(lines)
+                          if l.strip().startswith("File ")), "")
+            recent.append((head, last[:200], where[:200]))
+        gunicorn_lines = _read_gunicorn_log(40)
+        # Worker-Timeouts erkennen — das war die Ursache des 500ers ohne
+        # Python-Exception (Gunicorn killt den Worker bei Überschreitung)
+        timeouts = [l for l in gunicorn_lines
+                    if "WORKER TIMEOUT" in l or "Worker was sent" in l]
+        if gunicorn_lines:
+            checks.append(("Worker-Timeouts (Gunicorn)", not timeouts,
+                           "keine" if not timeouts
+                           else f"{len(timeouts)} — Aktion dauerte zu lange"))
 
         from markupsafe import escape as _esc
         rows = "".join(
@@ -389,6 +445,16 @@ def create_app(test_config: dict | None = None) -> Flask:
             err_html += ("<p style='font-size:13px;color:#666;'>Vollständige "
                          "Tracebacks siehe <code>/admin/errors</code> "
                          "(Login als Admin nötig).</p>")
+        if gunicorn_lines:
+            err_html += (
+                "<h2>Server-Log (Gunicorn, letzte Zeilen)</h2>"
+                "<p style='font-size:13px;color:#666;'>Hier stehen auch "
+                "Worker-Abstürze und Zeitüberschreitungen, die die App "
+                "selbst nicht bemerkt.</p>"
+                f"<pre style='background:#f5f5f5;padding:12px;"
+                f"border-radius:8px;font-size:11px;line-height:1.45;"
+                f"overflow-x:auto;'>"
+                f"{_esc(chr(10).join(gunicorn_lines))}</pre>")
         all_ok = all(ok for _, ok, _ in checks)
         return (
             f"<!doctype html><html lang='de'><head><meta charset='utf-8'>"
@@ -420,21 +486,23 @@ def create_app(test_config: dict | None = None) -> Flask:
                  "max-width:1000px;margin:30px auto;padding:0 20px;'>"
                  "<h1 style='color:#7a1f2b;'>Letzte Server-Fehler</h1>"
                  "<p><a href='/'>← zurück</a></p>"]
-        entries = list(_error_ring)
-        if not entries:
-            try:
-                log_path = Path(app.config["DB_PATH"]).parent / "error.log"
-                text = log_path.read_text(encoding="utf-8")
-                entries = ["\n".join(text.splitlines()[-200:])]
-            except OSError:
-                entries = []
+        entries = _read_error_log(limit=15)   # aus DB: alle Worker
         if not entries:
             parts.append("<p>Keine Fehler aufgezeichnet. 🎉</p>")
-        for entry in reversed(entries):
+        for head, tb in entries:
             parts.append(
+                f"<h3 style='font-size:14px;margin:18px 0 4px;'>"
+                f"{_esc(head)}</h3>"
                 f"<pre style='background:#f5f5f5;padding:14px;"
                 f"border-radius:8px;overflow-x:auto;font-size:12px;"
-                f"line-height:1.4;'>{_esc(entry)}</pre>")
+                f"line-height:1.4;'>{_esc(tb or '')}</pre>")
+        gl = _read_gunicorn_log(80)
+        if gl:
+            parts.append(
+                "<h2>Server-Log (Gunicorn)</h2>"
+                f"<pre style='background:#f5f5f5;padding:14px;"
+                f"border-radius:8px;overflow-x:auto;font-size:11px;"
+                f"line-height:1.45;'>{_esc(chr(10).join(gl))}</pre>")
         parts.append("</body></html>")
         return "".join(parts)
 
