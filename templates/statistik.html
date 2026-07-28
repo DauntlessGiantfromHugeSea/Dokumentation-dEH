@@ -5,82 +5,92 @@
   <div>
     <h1>📊 Statistik</h1>
     <p class="tagline">
-      Auswertungen über alle Behandlungen des aktiven Events
       {% if date_from or date_to %}
-        — Zeitraum {{ date_from or '…' }} bis {{ date_to or '…' }}
+        Zeitraum {{ date_from or '…' }} bis {{ date_to or '…' }}
+      {% else %}
+        Gesamtes Event
       {% endif %}
+      · {{ behandlungen }} Behandlungen
     </p>
   </div>
   <div class="btn-row">
-    <a class="btn small secondary" href="{{ url_for('export_form') }}">CSV-Export →</a>
+    <a class="btn" target="_blank"
+       href="{{ url_for('statistik_pdf', date_from=date_from, date_to=date_to) }}">
+      🖨 Als PDF
+    </a>
+    <a class="btn small secondary" href="{{ url_for('export_form') }}">CSV →</a>
   </div>
 </div>
 
-<form method="get" class="card" style="margin-bottom: 18px;">
+<form method="get" class="card" style="margin-bottom: 16px;">
   <div class="row" style="grid-template-columns: 1fr 1fr auto auto; gap: 8px; align-items: end;">
     <label class="field">Datum von <input name="date_from" type="date" value="{{ date_from }}"></label>
     <label class="field">Datum bis <input name="date_to" type="date" value="{{ date_to }}"></label>
     <button class="btn" type="submit">Filtern</button>
-    <a class="btn secondary" href="{{ url_for('statistik') }}">Zurücksetzen</a>
+    <a class="btn secondary" href="{{ url_for('statistik') }}">Alles</a>
   </div>
 </form>
 
-<div class="dash-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px;">
-  <div class="dash-stat card" style="text-align: center;">
-    <div class="dash-stat-value" style="font-size: 1.8rem; font-weight: 700; color: var(--accent-dark);">{{ zeh_count }}</div>
-    <div class="dash-stat-label muted">Zentrale Protokolle</div>
+{% macro kpi(value, label, accent=False) %}
+  <div class="stat-kpi{% if accent %} stat-kpi-accent{% endif %}">
+    <div class="stat-kpi-value">{{ value }}</div>
+    <div class="stat-kpi-label">{{ label }}</div>
   </div>
-  <div class="dash-stat card" style="text-align: center;">
-    <div class="dash-stat-value" style="font-size: 1.8rem; font-weight: 700; color: var(--accent-dark);">{{ deh_count }}</div>
-    <div class="dash-stat-label muted">Dezentrale Berichte</div>
-  </div>
-  <div class="dash-stat card" style="text-align: center;">
-    <div class="dash-stat-value" style="font-size: 1.8rem; font-weight: 700; color: var(--accent-dark);">{{ triage_count }}</div>
-    <div class="dash-stat-label muted">Triage-Anmeldungen</div>
-  </div>
-  <div class="dash-stat card" style="text-align: center;">
-    <div class="dash-stat-value" style="font-size: 1.8rem; font-weight: 700; color: {{ 'var(--error)' if rettungs_quote > 20 else 'var(--accent-dark)' }};">{{ rettungs_quote }} %</div>
-    <div class="dash-stat-label muted">Quote Rettung / Klinik</div>
-  </div>
+{% endmacro %}
+
+<div class="stat-kpi-grid">
+  {{ kpi(behandlungen, 'Behandlungen gesamt') }}
+  {{ kpi(zeh_count, 'zentral (zEH)') }}
+  {{ kpi(deh_count, 'dezentral (dEH)') }}
+  {{ kpi(triage_count, 'Triage-Anmeldungen') }}
+  {{ kpi(rettungs_quote ~ ' %', 'Rettung / Klinik', accent=True) }}
 </div>
 
-{% macro barchart(title, items, sub=None) %}
+<div class="stat-kpi-grid" style="margin-top: 8px;">
+  {{ kpi(rettung_klinik, 'Fälle Rettung / Klinik') }}
+  {{ kpi(schnitt_pro_tag, 'Behandlungen / Tag') }}
+  {{ kpi(nrs_schnitt if nrs_schnitt is not none else '—', 'Ø Schmerz (NRS)') }}
+  {{ kpi(spitzenstunde, 'Spitzenstunde') }}
+  {{ kpi(stärkster_tag, 'stärkster Tag') }}
+</div>
+
+{% macro block(title, items, hint=None, note=None) %}
   <div class="card">
     <div class="card-header">{{ title }}</div>
-    {% if sub %}<p class="muted" style="font-size: 0.85rem; margin: 0 0 10px;">{{ sub }}</p>{% endif %}
+    {% if hint %}<p class="muted" style="font-size: 0.82rem; margin: 0 0 8px;">{{ hint }}</p>{% endif %}
     {% if items %}
       <div class="stat-bars">
-        {% for label, n, pct in items %}
+        {% for label, n, pct, barpct in items %}
           <div class="stat-bar-row">
-            <div class="stat-bar-label">{{ label }}</div>
+            <div class="stat-bar-label" title="{{ label }}">{{ label }}</div>
             <div class="stat-bar-track">
-              <div class="stat-bar-fill" style="width: {{ pct }}%;"></div>
+              <div class="stat-bar-fill" style="width: {{ barpct }}%;"></div>
             </div>
             <div class="stat-bar-value">{{ n }}</div>
+            <div class="stat-bar-pct">{{ pct }} %</div>
           </div>
         {% endfor %}
       </div>
+      {% if note %}<p class="muted" style="font-size: 0.78rem; margin: 8px 0 0;">{{ note }}</p>{% endif %}
     {% else %}
-      <p class="muted">Keine Daten im Zeitraum.</p>
+      <p class="muted" style="margin: 0;">Keine Daten im Zeitraum.</p>
     {% endif %}
   </div>
 {% endmacro %}
 
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; align-items: start;">
-  {{ barchart('Übergabe — Gruppen', uebergabe_gruppe,
-              'Rettungsdienst/Klinik vs. vor Ort versorgt') }}
-  {{ barchart('Übergabe an (im Detail)', uebergabe) }}
-  {{ barchart('Triage-Kategorien (mSTaRT)', triage_kat) }}
-  {{ barchart('Triage-Status', triage_status) }}
-  {{ barchart('Notfallarten', notfallart, 'Mehrfachnennung möglich') }}
-  {{ barchart('Ergebnis der Behandlung', ergebnis) }}
-  {{ barchart('Alarmierung durch', alarm) }}
-  {{ barchart('Maßnahmen (Top 15)', massnahmen, 'Mehrfachnennung möglich') }}
-  {{ barchart('Behandlungen pro Tag', tage, 'dezentral + zentral') }}
-  {{ barchart('Einsatzbeginn nach Uhrzeit', stunden) }}
-  {{ barchart('Behandlungen je Einsatzkraft (Top 15)', einsatzkraefte,
-              'EK 1 + EK 2 aus den zentralen Protokollen') }}
-  {{ barchart('Häufigste Verdachtsdiagnosen (Top 15)', verdacht) }}
-  {{ barchart('Wiedervorstellungen', wv) }}
+<div style="margin-top: 16px;">
+  {{ block('Verbleib der Patienten', verbleib,
+            note='Anteile bezogen auf zentrale Protokolle; maßgeblich ist das erste Übergabe-Ziel.') }}
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; align-items: start;">
+  {{ block('Sichtungskategorien (mSTaRT)', triage_kat) }}
+  {{ block('Notfallarten (Top 8)', notfallart, hint='Mehrfachnennung möglich') }}
+  {{ block('Maßnahmen (Top 8)', massnahmen, hint='Mehrfachnennung möglich') }}
+  {{ block('Übergabe-Ziele im Detail', uebergabe) }}
+</div>
+
+<div>
+  {{ block('Behandlungen pro Tag', tage, note='zentral + dezentral zusammengefasst') }}
 </div>
 {% endblock %}

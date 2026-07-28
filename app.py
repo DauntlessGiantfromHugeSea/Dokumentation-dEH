@@ -1727,16 +1727,11 @@ def create_app(test_config: dict | None = None) -> Flask:
             },
         )
 
-    @app.route("/statistik")
-    @decentral_view_required
-    def statistik():
-        """Auswertungs-Dashboard: Übergabe (Rettung/Krankenhaus vs. vor
-        Ort), Notfallarten, Triage-Kategorien, Maßnahmen, Tages- und
-        Stunden-Verteilung u. a. — optional auf einen Zeitraum gefiltert."""
+    def _build_statistics(event_id, date_from, date_to):
+        """Verdichtete Auswertung — gemeinsame Datenquelle für die
+        Statistik-Seite und den PDF-Export. Liefert Kennzahlen plus
+        Auswertungen mit absoluten Zahlen UND Prozentanteilen."""
         from collections import Counter
-        event_id = _require_event_view()
-        date_from = (request.args.get("date_from") or "").strip()
-        date_to = (request.args.get("date_to") or "").strip()
         db = models.get_db()
 
         def in_range(day):
@@ -1756,22 +1751,22 @@ def create_app(test_config: dict | None = None) -> Flask:
             s = str(v).strip()
             return [s] if s else []
 
+        # Übergabe-Ziele → Verbleib-Gruppen (Kernfrage der Auswertung)
+        RETTUNG = {"Notarzt", "RTW"}
+        KLINIK = {"Klinik – Notaufnahme", "Klinik – Schockraum",
+                  "Klinik – Station", "Hausarzt"}
+        VOR_ORT = {"vor Ort belassen", "zurück zur Veranstaltung"}
+        VERLASSEN = {"Abholung durch Eltern", "verlässt Veranstaltung"}
+
+        verbleib = Counter()
         uebergabe = Counter()
-        uebergabe_gruppe = Counter()
         notfallart = Counter()
-        ergebnis = Counter()
-        alarm = Counter()
         massnahmen = Counter()
         stunden = Counter()
         tage = Counter()
-        einsatzkraefte = Counter()
-        verdacht = Counter()
-        RETTUNG = {"Notarzt", "RTW", "Klinik – Notaufnahme",
-                   "Klinik – Schockraum", "Klinik – Station", "Hausarzt"}
-        VOR_ORT = {"vor Ort belassen", "zurück zur Veranstaltung",
-                   "Abholung durch Eltern", "verlässt Veranstaltung"}
-
         zeh_count = 0
+        nrs_werte = []
+        wv_neu = 0
         for r in models.list_central_protocols(db, event_id=event_id):
             rec = models.get_central_protocol(db, r["id"])
             if not rec:
@@ -1783,48 +1778,52 @@ def create_app(test_config: dict | None = None) -> Flask:
                 continue
             zeh_count += 1
             tage[day] += 1
-            for v in as_list(d.get("uebergabe_an")):
+            ziele = as_list(d.get("uebergabe_an"))
+            for v in ziele:
                 uebergabe[v] += 1
+            if ziele:
+                v = ziele[0]
                 if v in RETTUNG:
-                    uebergabe_gruppe["Rettungsdienst / Arzt / Klinik"] += 1
+                    verbleib["Rettungsdienst (RTW / Notarzt)"] += 1
+                elif v in KLINIK:
+                    verbleib["Klinik / Arzt"] += 1
                 elif v in VOR_ORT:
-                    uebergabe_gruppe["vor Ort versorgt / Veranstaltung"] += 1
+                    verbleib["vor Ort versorgt"] += 1
+                elif v in VERLASSEN:
+                    verbleib["Veranstaltung verlassen"] += 1
                 else:
-                    uebergabe_gruppe["Sonstige"] += 1
+                    verbleib["Sonstige"] += 1
+            else:
+                verbleib["ohne Angabe"] += 1
             for v in as_list(d.get("notfallart")):
                 notfallart[v] += 1
-            for v in as_list(d.get("ergebnis")):
-                ergebnis[v] += 1
-            for v in as_list(d.get("alarm_durch")):
-                alarm[v] += 1
             for v in as_list(d.get("massnahme")):
                 massnahmen[v] += 1
             beginn = str(d.get("einsatzbeginn") or "").strip()
             if len(beginn) >= 2 and beginn[:2].isdigit():
-                stunden[f"{int(beginn[:2]):02d} Uhr"] += 1
-            for key in ("einsatzkraft1", "einsatzkraft2"):
-                for v in as_list(d.get(key)):
-                    einsatzkraefte[v] += 1
-            vd = str(d.get("verdachtsdiagnose")
-                     or d.get("erstdiagnose") or "").strip()
-            if vd:
-                verdacht[vd[:60]] += 1
+                stunden[f"{int(beginn[:2]):02d}:00"] += 1
+            try:
+                nrs = int(str(d.get("nrs_1") or "0").strip() or 0)
+                if nrs > 0:
+                    nrs_werte.append(nrs)
+            except ValueError:
+                pass
+            if str(d.get("wiedervorstellung_datum") or "").strip():
+                wv_neu += 1
 
         deh_count = 0
         for r in models.list_protocols(db, event_id=event_id):
             full = models.get_protocol(db, r["id"])
-            day = ((full["eh_datum_uhrzeit"] or full["created_at"]
-                    or "")[:10])
+            day = (full["eh_datum_uhrzeit"] or full["created_at"] or "")[:10]
             if not in_range(day):
                 continue
             deh_count += 1
             tage[day] += 1
 
         triage_kat = Counter()
-        triage_status = Counter()
         triage_count = 0
         for t in db.execute(
-                "SELECT category, status, "
+                "SELECT category, "
                 "       COALESCE(date(arrival_at), date(created_at)) AS day "
                 "FROM triage_entries WHERE (? IS NULL OR event_id = ?)",
                 (event_id, event_id)).fetchall():
@@ -1832,45 +1831,97 @@ def create_app(test_config: dict | None = None) -> Flask:
                 continue
             triage_count += 1
             triage_kat[t["category"]] += 1
-            triage_status[t["status"]] += 1
 
-        wv = Counter()
-        for w in db.execute(
-                "SELECT status FROM wiedervorstellungen").fetchall():
-            wv[w["status"]] += 1
-
-        def bars(counter, limit=None, sort_by_label=False):
-            items = (sorted(counter.items())
-                     if sort_by_label
-                     else counter.most_common(limit))
+        def rows(counter, total=None, limit=None):
+            """[(Label, Anzahl, Prozent, Balken-Prozent), …]"""
+            items = counter.most_common(limit)
+            base = total if total else sum(counter.values())
             mx = max((n for _, n in items), default=1)
-            return [(label, n, round(n / mx * 100)) for label, n in items]
+            return [(label, n,
+                     round(n / base * 100) if base else 0,
+                     round(n / mx * 100))
+                    for label, n in items]
 
-        kat_labels = {"SK1": "SK I · rot", "SK2": "SK II · gelb",
-                      "SK3": "SK III · grün", "TOT": "schwarz"}
-        return render_template(
-            "statistik.html",
-            date_from=date_from, date_to=date_to,
-            zeh_count=zeh_count, deh_count=deh_count,
-            triage_count=triage_count,
-            rettungs_quote=(round(
-                uebergabe_gruppe["Rettungsdienst / Arzt / Klinik"]
-                / zeh_count * 100) if zeh_count else 0),
-            uebergabe_gruppe=bars(uebergabe_gruppe),
-            uebergabe=bars(uebergabe),
-            notfallart=bars(notfallart),
-            triage_kat=[(kat_labels.get(k, k), n, p)
-                        for k, n, p in bars(triage_kat)],
-            triage_status=bars(triage_status),
-            ergebnis=bars(ergebnis),
-            alarm=bars(alarm),
-            massnahmen=bars(massnahmen, limit=15),
-            stunden=bars(stunden, sort_by_label=True),
-            tage=bars(tage, sort_by_label=True),
-            einsatzkraefte=bars(einsatzkraefte, limit=15),
-            verdacht=bars(verdacht, limit=15),
-            wv=bars(wv),
-        )
+        def rows_sorted(counter, total=None):
+            items = sorted(counter.items())
+            base = total if total else sum(counter.values())
+            mx = max((n for _, n in items), default=1)
+            return [(label, n,
+                     round(n / base * 100) if base else 0,
+                     round(n / mx * 100))
+                    for label, n in items]
+
+        kat_label = {"SK1": "SK I · rot (sofort)",
+                     "SK2": "SK II · gelb (dringend)",
+                     "SK3": "SK III · grün (kann warten)",
+                     "TOT": "SK IV · schwarz"}
+        behandlungen = zeh_count + deh_count
+        rettung_klinik = (verbleib["Rettungsdienst (RTW / Notarzt)"]
+                          + verbleib["Klinik / Arzt"])
+        spitze = stunden.most_common(1)
+        top_tag = tage.most_common(1)
+        return {
+            "date_from": date_from, "date_to": date_to,
+            "behandlungen": behandlungen,
+            "zeh_count": zeh_count, "deh_count": deh_count,
+            "triage_count": triage_count,
+            "rettung_klinik": rettung_klinik,
+            "rettungs_quote": (round(rettung_klinik / zeh_count * 100)
+                               if zeh_count else 0),
+            "nrs_schnitt": (round(sum(nrs_werte) / len(nrs_werte), 1)
+                            if nrs_werte else None),
+            "wv_neu": wv_neu,
+            "schnitt_pro_tag": (round(behandlungen / len(tage), 1)
+                                if tage else 0),
+            "spitzenstunde": (f"{spitze[0][0]} ({spitze[0][1]})"
+                              if spitze else "—"),
+            "stärkster_tag": (f"{top_tag[0][0]} ({top_tag[0][1]})"
+                              if top_tag else "—"),
+            "verbleib": rows(verbleib, total=zeh_count),
+            "uebergabe": rows(uebergabe, total=zeh_count, limit=8),
+            "triage_kat": [(kat_label.get(k, k), n, p, b)
+                           for k, n, p, b in rows(triage_kat,
+                                                  total=triage_count)],
+            "notfallart": rows(notfallart, total=zeh_count, limit=8),
+            "massnahmen": rows(massnahmen, total=zeh_count, limit=8),
+            "tage": rows_sorted(tage, total=behandlungen),
+        }
+
+    @app.route("/statistik")
+    @decentral_view_required
+    def statistik():
+        """Verdichtete Auswertung: Kennzahlen + Verbleib (Rettung/Klinik
+        vs. vor Ort), Triage-Kategorien, Notfallarten, Maßnahmen,
+        Tagesverteilung — optional auf einen Zeitraum gefiltert."""
+        event_id = _require_event_view()
+        stats = _build_statistics(
+            event_id,
+            (request.args.get("date_from") or "").strip(),
+            (request.args.get("date_to") or "").strip())
+        return render_template("statistik.html", **stats)
+
+    @app.route("/statistik/pdf")
+    @decentral_view_required
+    def statistik_pdf():
+        """Auswertung als A4-PDF (eine Seite, kompakt)."""
+        event_id = _require_event_view()
+        stats = _build_statistics(
+            event_id,
+            (request.args.get("date_from") or "").strip(),
+            (request.args.get("date_to") or "").strip())
+        db = models.get_db()
+        event = models.get_event(db, event_id) if event_id else None
+        from statistik_pdf import render_statistik_pdf
+        pdf_bytes = render_statistik_pdf(
+            stats,
+            event_name=(event["name"] if event else None),
+            exporter_label=(current_user.full_name
+                            or current_user.username))
+        return Response(
+            pdf_bytes, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     'inline; filename="Statistik-Auswertung.pdf"'})
+
 
     @app.route("/export/central-csv")
     @decentral_view_required

@@ -2966,13 +2966,48 @@ header.topbar nav a.nav-cta:hover {
   .ab-entry-fields .field { max-width: none !important; }
 }
 
+/* --- Statistik: Kennzahlen-Kacheln --- */
+.stat-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+.stat-kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 10px;
+  text-align: center;
+}
+.stat-kpi-accent { background: var(--accent-soft); border-color: var(--accent-light); }
+.stat-kpi-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent-dark);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.stat-kpi-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.25;
+}
+
 /* --- Statistik-Balken --- */
 .stat-bars { display: grid; gap: 7px; }
 .stat-bar-row {
   display: grid;
-  grid-template-columns: minmax(90px, 38%) 1fr 34px;
+  grid-template-columns: minmax(80px, 34%) 1fr 34px 44px;
   gap: 8px;
   align-items: center;
+}
+.stat-bar-pct {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .stat-bar-label {
   font-size: 0.85rem;
