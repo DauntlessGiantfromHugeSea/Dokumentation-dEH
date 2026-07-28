@@ -246,6 +246,18 @@ def create_app(test_config: dict | None = None) -> Flask:
                       f"line-height:1.4;'>{_esc(tb)}</pre>"
                       f"<p><a href='/admin/errors'>Alle letzten Fehler "
                       f"ansehen →</a></p>")
+        # Kurzform der Ursache auch ohne Login zeigen — sonst ist ein
+        # Fehler, der schon den Login trifft, von außen nicht greifbar.
+        # Nur Fehlertyp/Ort, keine Daten.
+        if not is_admin:
+            from markupsafe import escape as _esc
+            lines = [l for l in tb.splitlines() if l.strip()]
+            last = lines[-1] if lines else ""
+            where = next((l.strip() for l in reversed(lines)
+                          if l.strip().startswith("File ")), "")
+            detail = (f"<pre style='background:#f5f5f5;padding:12px;"
+                      f"border-radius:8px;font-size:12px;overflow-x:auto;'>"
+                      f"{_esc(last[:300])}\n{_esc(where[:300])}</pre>")
         return (
             f"<!doctype html><html lang='de'><head><meta charset='utf-8'>"
             f"<meta name='viewport' content='width=device-width, "
@@ -253,11 +265,144 @@ def create_app(test_config: dict | None = None) -> Flask:
             f"<body style='font-family:system-ui,sans-serif;max-width:900px;"
             f"margin:40px auto;padding:0 20px;'>"
             f"<h1 style='color:#7a1f2b;'>Interner Fehler</h1>"
-            f"<p>Der Fehler wurde protokolliert ({stamp}). "
-            f"Bitte dem Admin melden.</p>"
-            f"<p><a href='/'>← Zur Startseite</a></p>"
+            f"<p>Der Fehler wurde protokolliert ({stamp}).</p>"
+            f"<p><a href='/'>← Zur Startseite</a> · "
+            f"<a href='/healthz'>Systemdiagnose öffnen →</a></p>"
             f"{detail}</body></html>",
             500,
+        )
+
+    @app.route("/healthz")
+    def healthz():
+        """Selbstdiagnose — absichtlich OHNE Login erreichbar, damit sich
+        Startprobleme auch dann finden lassen, wenn keine Anmeldung
+        möglich ist. Zeigt nur technische Prüfergebnisse: keine
+        Patienten-, Kontakt- oder Zugangsdaten."""
+        import shutil
+        import sqlite3 as _sq
+        checks = []          # (Name, ok?, Detail)
+
+        db_path = Path(app.config["DB_PATH"])
+        checks.append(("Datenbank-Pfad", True, str(db_path)))
+        checks.append(("Datei vorhanden", db_path.exists(),
+                       "ja" if db_path.exists() else "FEHLT"))
+
+        # Verzeichnis beschreibbar? (SQLite braucht das für WAL/Journal)
+        parent = db_path.parent
+        writable = os.access(parent, os.W_OK)
+        checks.append(("Ordner beschreibbar", writable,
+                       str(parent) + ("" if writable
+                                      else "  ← Schreibrechte fehlen!")))
+
+        # Freier Speicherplatz
+        try:
+            free_mb = shutil.disk_usage(parent).free // (1024 * 1024)
+            checks.append(("Freier Speicher", free_mb > 20, f"{free_mb} MB"))
+        except OSError as e:
+            checks.append(("Freier Speicher", False, str(e)))
+
+        # Lesen + Schreiben wirklich testen
+        try:
+            conn = _sq.connect(str(db_path))
+            conn.execute("SELECT COUNT(*) FROM users").fetchone()
+            checks.append(("Lesen aus users", True, "ok"))
+            conn.execute("CREATE TABLE IF NOT EXISTS _healthz_probe (x INTEGER)")
+            conn.execute("DROP TABLE _healthz_probe")
+            conn.commit()
+            checks.append(("Schreiben in DB", True, "ok"))
+            # Migrationen: erwartete Spalten/Tabellen
+            ucols = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+            need_u = {"role", "totp_required", "admin_pin_hash",
+                      "login_pin_hash", "is_doctor", "perm_write_decentral"}
+            missing_u = sorted(need_u - ucols)
+            checks.append(("Spalten in users", not missing_u,
+                           "vollständig" if not missing_u
+                           else "FEHLEN: " + ", ".join(missing_u)))
+            pcols = {r[1] for r in conn.execute("PRAGMA table_info(patients)")}
+            need_p = {"stammnummer", "tetanus", "frodor_registration_uuid"}
+            missing_p = sorted(need_p - pcols)
+            checks.append(("Spalten in patients", not missing_p,
+                           "vollständig" if not missing_p
+                           else "FEHLEN: " + ", ".join(missing_p)))
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            need_t = {"users", "events", "patients", "protocols",
+                      "central_protocols", "triage_entries", "manv_events",
+                      "manv_cards", "medications", "app_settings",
+                      "central_attachments", "wiedervorstellungen",
+                      "outbreak_lists", "outbreak_entries", "frodor_uploads"}
+            missing_t = sorted(need_t - tables)
+            checks.append(("Tabellen", not missing_t,
+                           f"{len(tables)} vorhanden" if not missing_t
+                           else "FEHLEN: " + ", ".join(missing_t)))
+            checks.append(("Integrität", True, conn.execute(
+                "PRAGMA integrity_check").fetchone()[0]))
+            conn.close()
+        except Exception as e:
+            checks.append(("Datenbank-Zugriff", False,
+                           f"{type(e).__name__}: {e}"))
+
+        checks.append(("Anzeige-Zeitzone", True,
+                       os.environ.get("TZ", "(nicht gesetzt)")))
+        checks.append(("SECRET_KEY gesetzt", bool(
+            os.environ.get("SECRET_KEY")),
+            "ja" if os.environ.get("SECRET_KEY") else "NEIN (Dev-Fallback)"))
+        checks.append(("frodor konfiguriert", True,
+                       "ja" if frodor_client.is_configured() else "nein"))
+
+        # Letzte Fehler — nur Typ/Ort, kein vollständiger Traceback
+        recent = []
+        try:
+            log_path = db_path.parent / "error.log"
+            text = log_path.read_text(encoding="utf-8")
+            blocks = [b for b in text.split("=== ") if b.strip()][-5:]
+            for b in blocks:
+                lines = [l for l in b.splitlines() if l.strip()]
+                head = lines[0] if lines else "?"
+                last = next((l.strip() for l in reversed(lines)
+                             if "Error" in l or "Exception" in l), "")
+                where = next((l.strip() for l in reversed(lines)
+                              if l.strip().startswith("File ")), "")
+                recent.append((head, last[:200], where[:200]))
+        except OSError:
+            pass
+
+        from markupsafe import escape as _esc
+        rows = "".join(
+            f"<tr><td style='padding:5px 10px;border-bottom:1px solid #eee;'>"
+            f"{'✅' if ok else '❌'} {_esc(name)}</td>"
+            f"<td style='padding:5px 10px;border-bottom:1px solid #eee;"
+            f"font-family:monospace;font-size:12px;"
+            f"color:{'#b3261e' if not ok else '#333'};'>"
+            f"{_esc(detail)}</td></tr>"
+            for name, ok, detail in checks)
+        err_html = ""
+        if recent:
+            err_html = "<h2>Letzte Fehler (Kurzform)</h2>"
+            for head, last, where in reversed(recent):
+                err_html += (
+                    f"<div style='background:#fce8e6;padding:10px 12px;"
+                    f"border-radius:6px;margin-bottom:8px;font-family:"
+                    f"monospace;font-size:12px;'>"
+                    f"<strong>{_esc(head)}</strong><br>{_esc(last)}<br>"
+                    f"<span style='color:#666;'>{_esc(where)}</span></div>")
+            err_html += ("<p style='font-size:13px;color:#666;'>Vollständige "
+                         "Tracebacks siehe <code>/admin/errors</code> "
+                         "(Login als Admin nötig).</p>")
+        all_ok = all(ok for _, ok, _ in checks)
+        return (
+            f"<!doctype html><html lang='de'><head><meta charset='utf-8'>"
+            f"<meta name='viewport' content='width=device-width,"
+            f"initial-scale=1'><title>Systemdiagnose</title></head>"
+            f"<body style='font-family:system-ui,sans-serif;max-width:900px;"
+            f"margin:30px auto;padding:0 20px;'>"
+            f"<h1 style='color:{'#1f6b3a' if all_ok else '#b3261e'};'>"
+            f"{'✅ System in Ordnung' if all_ok else '❌ Problem erkannt'}</h1>"
+            f"<table style='width:100%;border-collapse:collapse;'>{rows}"
+            f"</table>{err_html}"
+            f"<p style='margin-top:20px;'><a href='/'>← Zur App</a></p>"
+            f"</body></html>",
+            200 if all_ok else 503,
         )
 
     @app.route("/admin/errors")
